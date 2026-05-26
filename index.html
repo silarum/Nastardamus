@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Nastardamus 🔮</title>
+    <title>Nastardamus</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -18,18 +18,18 @@
     <!-- Приветственный экран -->
     <div id="welcome-screen" class="screen active">
         <div class="welcome-box">
-            <div class="mage-sigil"></div>
-            <h1 class="title-glow">Nastardamus</h1>
-            <p class="mage-name">Маг Эзотериум</p>
+            <!-- Буквы собираются через JS, но для структуры оставим заголовок -->
+            <h1 id="title-animated" class="title-glow">Nastardamus</h1>
+            <p class="mage-name">Вас приветствует Маг Эзотериум</p>
             <p class="mage-desc">Ясновидящий, астролог, повелитель Таро</p>
             <div class="api-key-section">
-                <input type="password" id="api-key-input" placeholder="Введите ваш ключ DeepSeek (если есть)">
+                <input type="password" id="api-key-input" placeholder="Введите ключ DeepSeek (если есть)">
             </div>
-            <button id="continue-btn" class="magic-btn">Продолжить</button>
+            <button id="continue-btn" class="magic-btn">Войти в мир тайн</button>
         </div>
     </div>
 
-    <!-- Главное меню -->
+    <!-- Остальные экраны (меню, Таро, Натальная, Совместимость) – как в предыдущем ответе, но с обновленными классами -->
     <div id="menu-screen" class="screen">
         <h1 class="title">✨ Nastardamus ✨</h1>
         <p class="mage-tag">Маг Эзотериум</p>
@@ -40,7 +40,7 @@
         </div>
     </div>
 
-    <!-- Экран ввода вопроса Таро -->
+    <!-- Таро: вопрос -->
     <div id="tarot-input-screen" class="screen">
         <h2>Задайте вопрос</h2>
         <textarea id="tarot-question" placeholder="Что вас волнует?"></textarea>
@@ -48,7 +48,7 @@
         <button class="back-btn" data-target="menu-screen">← Назад</button>
     </div>
 
-    <!-- Экран выбора карт -->
+    <!-- Таро: выбор карт -->
     <div id="tarot-cards-screen" class="screen">
         <h2>Коснитесь колоды трижды</h2>
         <div id="deck-container">
@@ -59,14 +59,14 @@
         <div id="selected-cards"></div>
     </div>
 
-    <!-- Результат Таро -->
+    <!-- Таро: результат -->
     <div id="tarot-result-screen" class="screen">
         <div id="result-cards"></div>
         <div id="prediction-text" class="scroll-box"></div>
         <button class="back-btn" data-target="menu-screen">← В меню</button>
     </div>
 
-    <!-- Натальная карта (ввод) -->
+    <!-- Натальная карта -->
     <div id="natal-input-screen" class="screen">
         <h2>Натальная карта</h2>
         <input type="date" id="natal-date">
@@ -74,14 +74,12 @@
         <button id="get-natal" class="magic-btn">Рассчитать</button>
         <button class="back-btn" data-target="menu-screen">← Назад</button>
     </div>
-
-    <!-- Результат натальной -->
     <div id="natal-result-screen" class="screen">
         <div id="natal-text" class="scroll-box"></div>
         <button class="back-btn" data-target="menu-screen">← В меню</button>
     </div>
 
-    <!-- Совместимость (ввод) -->
+    <!-- Совместимость -->
     <div id="compat-input-screen" class="screen">
         <h2>Совместимость</h2>
         <input type="text" id="person1-name" placeholder="Имя первого">
@@ -91,7 +89,6 @@
         <button id="get-compat" class="magic-btn">Узнать</button>
         <button class="back-btn" data-target="menu-screen">← Назад</button>
     </div>
-
     <div id="compat-result-screen" class="screen">
         <div id="compat-text" class="scroll-box"></div>
         <button class="back-btn" data-target="menu-screen">← В меню</button>
