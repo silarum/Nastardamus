@@ -6,6 +6,7 @@ const DEEPSEEK_API_KEY = 'sk-c1ef1e8bb11a4563aae3cb3d6101976c';
 
 // Экраны
 const screens = {
+    welcome: document.getElementById('welcome-screen'),
     menu: document.getElementById('menu-screen'),
     tarotInput: document.getElementById('tarot-input-screen'),
     tarotCards: document.getElementById('tarot-cards-screen'),
@@ -16,21 +17,25 @@ const screens = {
     compatResult: document.getElementById('compat-result-screen')
 };
 
-// Показать экран
 function showScreen(screen) {
     Object.values(screens).forEach(s => s.classList.remove('active'));
     screen.classList.add('active');
 }
 
-// Кнопки "Назад"
+// ПРИВЕТСТВИЕ
+document.getElementById('continue-btn').addEventListener('click', () => {
+    showScreen(screens.menu);
+});
+
+// Кнопки "Назад" (универсальные)
 document.querySelectorAll('.back-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const target = btn.dataset.target;
-        showScreen(screens[target]);
+        if (screens[target]) showScreen(screens[target]);
     });
 });
 
-// === ГЛАВНОЕ МЕНЮ ===
+// МЕНЮ
 document.getElementById('tarot-btn').addEventListener('click', () => showScreen(screens.tarotInput));
 document.getElementById('natal-btn').addEventListener('click', () => showScreen(screens.natalInput));
 document.getElementById('compat-btn').addEventListener('click', () => showScreen(screens.compatInput));
@@ -50,35 +55,29 @@ const tarotDeck = [
 
 document.getElementById('start-tarot').addEventListener('click', () => {
     tarotQuestion = document.getElementById('tarot-question').value.trim() || 'Что меня ждёт?';
-    // Проверка бесплатного вопроса (пока без реальной оплаты, просто счётчик)
     if (!freeQuestionUsed) {
         freeQuestionUsed = true;
-        // Переход к выбору карт
-        selectedCards = [];
-        updateCardsOpened();
-        showScreen(screens.tarotCards);
+        startCardSelection();
+    } else if (paidQuestions > 0) {
+        paidQuestions--;
+        startCardSelection();
     } else {
-        if (paidQuestions > 0) {
-            paidQuestions--;
-            selectedCards = [];
-            updateCardsOpened();
-            showScreen(screens.tarotCards);
-        } else {
-            alert('Нет оплаченных вопросов. Купите вопрос за 1 SILARUM.');
-            // Пока заглушка: предлагаем добавить тестовый вопрос
-            if (confirm('Добавить 1 оплаченный вопрос для теста?')) {
-                paidQuestions++;
-                selectedCards = [];
-                updateCardsOpened();
-                showScreen(screens.tarotCards);
-            }
+        if (confirm('Нет оплаченных вопросов. Добавить 1 вопрос (тест)?')) {
+            paidQuestions++;
+            startCardSelection();
         }
     }
 });
 
-// Переменные для выбора карт
+function startCardSelection() {
+    selectedCards = [];
+    updateCardsOpened();
+    showScreen(screens.tarotCards);
+    deckDiv.style.pointerEvents = 'auto';
+}
+
 let selectedCards = [];
-let cardsToSelect = 3;
+const cardsToSelect = 3;
 const selectedCardsDiv = document.getElementById('selected-cards');
 const cardsOpenedSpan = document.getElementById('cards-opened');
 const deckDiv = document.getElementById('deck');
@@ -92,23 +91,18 @@ function updateCardsOpened() {
 
 deckDiv.addEventListener('click', () => {
     if (selectedCards.length >= cardsToSelect) return;
-    // Выбор случайной карты
     const randomCard = tarotDeck[Math.floor(Math.random() * tarotDeck.length)];
     selectedCards.push(randomCard);
     updateCardsOpened();
-    // Анимация колоды (имитация переворота)
     deckDiv.style.transform = 'rotateY(90deg)';
-    setTimeout(() => {
-        deckDiv.style.transform = 'rotateY(0deg)';
-    }, 300);
+    setTimeout(() => { deckDiv.style.transform = 'rotateY(0deg)'; }, 300);
     if (selectedCards.length === cardsToSelect) {
-        // Все карты выбраны, получить предсказание
+        deckDiv.style.pointerEvents = 'none';
         setTimeout(() => getTarotPrediction(), 500);
     }
 });
 
 async function getTarotPrediction() {
-    deckDiv.style.pointerEvents = 'none';
     showScreen(screens.tarotResult);
     const resultEmoji = document.getElementById('result-emoji');
     const predictionText = document.getElementById('prediction-text');
@@ -127,7 +121,6 @@ async function getTarotPrediction() {
     } catch (e) {
         predictionText.textContent = 'Ошибка связи с нейросетью.';
     }
-    deckDiv.style.pointerEvents = 'auto';
 }
 
 // === НАТАЛЬНАЯ КАРТА ===
@@ -174,5 +167,5 @@ document.getElementById('get-compat').addEventListener('click', async () => {
     }
 });
 
-// Инициализация: показать меню
-showScreen(screens.menu);
+// Инициализация: показываем приветствие
+showScreen(screens.welcome);
