@@ -8,91 +8,92 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-    <!-- Фоновая анимация (звёзды, искры) -->
-    <div class="bg-animation" id="bg-animation">
-        <div class="star"></div><div class="star"></div><div class="star"></div>
-        <div class="star"></div><div class="star"></div><div class="star"></div>
-        <div class="star"></div><div class="star"></div><div class="star"></div>
-        <div class="star"></div>
+    <!-- Магический фон -->
+    <div class="magic-bg">
+        <div class="rune-circle"></div>
+        <div class="rune-circle small"></div>
+        <div class="stars"></div>
     </div>
 
     <!-- Приветственный экран -->
     <div id="welcome-screen" class="screen active">
-        <div class="welcome-content">
-            <div class="magic-symbols">✨🔮🌟✨</div>
-            <h1 class="welcome-title">Nastardamus</h1>
-            <p class="welcome-mage">Вас приветствует Мак. Эзотериум</p>
-            <p class="welcome-subtitle">магистр тайных знаний и предсказаний</p>
-            <div class="magic-orb"></div>
-            <button id="continue-btn" class="glow-button">Продолжить</button>
+        <div class="welcome-box">
+            <div class="mage-sigil"></div>
+            <h1 class="title-glow">Nastardamus</h1>
+            <p class="mage-name">Маг Эзотериум</p>
+            <p class="mage-desc">Ясновидящий, астролог, повелитель Таро</p>
+            <div class="api-key-section">
+                <input type="password" id="api-key-input" placeholder="Введите ваш ключ DeepSeek (если есть)">
+            </div>
+            <button id="continue-btn" class="magic-btn">Продолжить</button>
         </div>
     </div>
 
-    <!-- Главное меню (изначально скрыто) -->
+    <!-- Главное меню -->
     <div id="menu-screen" class="screen">
         <h1 class="title">✨ Nastardamus ✨</h1>
-        <p class="menu-mage">Мак. Эзотериум</p>
-        <p class="subtitle">Магия Таро и звёзд</p>
-        <button id="tarot-btn" class="menu-btn">🔮 Расклад Таро</button>
-        <button id="natal-btn" class="menu-btn">🌌 Натальная карта</button>
-        <button id="compat-btn" class="menu-btn">💞 Совместимость</button>
+        <p class="mage-tag">Маг Эзотериум</p>
+        <div class="menu-buttons">
+            <button id="tarot-btn" class="menu-btn">🔮 Расклад Таро</button>
+            <button id="natal-btn" class="menu-btn">🌌 Натальная карта</button>
+            <button id="compat-btn" class="menu-btn">💞 Совместимость</button>
+        </div>
     </div>
 
-    <!-- Экран ввода для расклада Таро -->
+    <!-- Экран ввода вопроса Таро -->
     <div id="tarot-input-screen" class="screen">
-        <h2>Расклад Таро</h2>
-        <input type="text" id="tarot-question" placeholder="Ваш вопрос..." maxlength="200">
-        <div class="info-box">Первый расклад бесплатный, далее — 1 SILARUM</div>
-        <button id="start-tarot">Начать расклад</button>
+        <h2>Задайте вопрос</h2>
+        <textarea id="tarot-question" placeholder="Что вас волнует?"></textarea>
+        <button id="start-tarot" class="magic-btn">Тасовать карты</button>
         <button class="back-btn" data-target="menu-screen">← Назад</button>
     </div>
 
     <!-- Экран выбора карт -->
     <div id="tarot-cards-screen" class="screen">
-        <h2>Нажмите на колоду, чтобы открыть карту</h2>
-        <div id="deck-area">
-            <div id="deck" class="deck"></div>
+        <h2>Коснитесь колоды трижды</h2>
+        <div id="deck-container">
+            <div id="deck" class="magic-deck"></div>
+            <canvas id="spark-canvas"></canvas>
         </div>
-        <p id="cards-opened">Осталось открыть: 3</p>
-        <div id="selected-cards" class="selected-cards"></div>
+        <p id="cards-left"></p>
+        <div id="selected-cards"></div>
     </div>
 
-    <!-- Экран результата Таро -->
+    <!-- Результат Таро -->
     <div id="tarot-result-screen" class="screen">
-        <div id="result-emoji"></div>
-        <div id="prediction-text" class="prediction-box"></div>
+        <div id="result-cards"></div>
+        <div id="prediction-text" class="scroll-box"></div>
         <button class="back-btn" data-target="menu-screen">← В меню</button>
     </div>
 
-    <!-- Экран ввода Натальной карты -->
+    <!-- Натальная карта (ввод) -->
     <div id="natal-input-screen" class="screen">
         <h2>Натальная карта</h2>
-        <input type="date" id="natal-date" placeholder="Дата рождения">
-        <input type="time" id="natal-time" placeholder="Время рождения">
-        <button id="get-natal">Получить натальную карту</button>
+        <input type="date" id="natal-date">
+        <input type="time" id="natal-time" value="12:00">
+        <button id="get-natal" class="magic-btn">Рассчитать</button>
         <button class="back-btn" data-target="menu-screen">← Назад</button>
     </div>
 
-    <!-- Экран результата Натальной карты -->
+    <!-- Результат натальной -->
     <div id="natal-result-screen" class="screen">
-        <div id="natal-text" class="prediction-box"></div>
+        <div id="natal-text" class="scroll-box"></div>
         <button class="back-btn" data-target="menu-screen">← В меню</button>
     </div>
 
-    <!-- Экран ввода Совместимости -->
+    <!-- Совместимость (ввод) -->
     <div id="compat-input-screen" class="screen">
         <h2>Совместимость</h2>
-        <input type="text" id="person1-name" placeholder="Имя первого человека">
-        <input type="date" id="person1-date" placeholder="Дата рождения 1">
-        <input type="text" id="person2-name" placeholder="Имя второго человека">
-        <input type="date" id="person2-date" placeholder="Дата рождения 2">
-        <button id="get-compat">Узнать совместимость</button>
+        <input type="text" id="person1-name" placeholder="Имя первого">
+        <input type="date" id="person1-date">
+        <input type="text" id="person2-name" placeholder="Имя второго">
+        <input type="date" id="person2-date">
+        <button id="get-compat" class="magic-btn">Узнать</button>
         <button class="back-btn" data-target="menu-screen">← Назад</button>
     </div>
 
-    <!-- Экран результата Совместимости -->
     <div id="compat-result-screen" class="screen">
-        <div id="compat-text" class="prediction-box"></div>
+        <div id="compat-text" class="scroll-box"></div>
         <button class="back-btn" data-target="menu-screen">← В меню</button>
     </div>
 
