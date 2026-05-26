@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Nastardamus 🔮 Таро</title>
+    <title>Nastardamus 🔮</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -14,31 +14,74 @@
         <div class="star"></div><div class="star"></div><div class="star"></div>
         <div class="star"></div>
     </div>
-    <div id="app">
-        <div id="cards-screen" class="screen active">
-            <h1 class="title">✨ Nastardamus ✨</h1>
-            <p class="subtitle">Выбери карту Таро</p>
-            <div id="cards-container"></div>
-            <button id="draw-button" disabled>
-                <span class="btn-text">Получить предсказание</span>
-            </button>
-            <div id="questions-info">
-                <span class="gem">💎</span> 
-                <span id="questions-count">0</span> 
-                <span class="label">вопросов</span>
-            </div>
-            <button id="buy-button" class="buy-btn" style="display:none;">
-                <span>🔥 Купить вопрос за 1 SILARUM</span>
-            </button>
-        </div>
-        <div id="result-screen" class="screen">
-            <div id="card-emoji" class="big-emoji"></div>
-            <div id="prediction-text" class="prediction-box"></div>
-            <button id="back-button">
-                <span>← Задать новый вопрос</span>
-            </button>
-        </div>
+
+    <!-- Меню -->
+    <div id="menu-screen" class="screen active">
+        <h1 class="title">✨ Nastardamus ✨</h1>
+        <p class="subtitle">Магия Таро и звёзд</p>
+        <button id="tarot-btn" class="menu-btn">🔮 Расклад Таро</button>
+        <button id="natal-btn" class="menu-btn">🌌 Натальная карта</button>
+        <button id="compat-btn" class="menu-btn">💞 Совместимость</button>
     </div>
+
+    <!-- Экран ввода для расклада Таро -->
+    <div id="tarot-input-screen" class="screen">
+        <h2>Расклад Таро</h2>
+        <input type="text" id="tarot-question" placeholder="Ваш вопрос..." maxlength="200">
+        <div class="info-box">Первый расклад бесплатный, далее — 1 SILARUM</div>
+        <button id="start-tarot">Начать расклад</button>
+        <button class="back-btn" data-target="menu-screen">← Назад</button>
+    </div>
+
+    <!-- Экран выбора карт -->
+    <div id="tarot-cards-screen" class="screen">
+        <h2>Нажмите на колоду, чтобы открыть карту</h2>
+        <div id="deck-area">
+            <div id="deck" class="deck"></div>
+        </div>
+        <p id="cards-opened">Осталось открыть: 3</p>
+        <div id="selected-cards" class="selected-cards"></div>
+    </div>
+
+    <!-- Экран результата Таро -->
+    <div id="tarot-result-screen" class="screen">
+        <div id="result-emoji"></div>
+        <div id="prediction-text" class="prediction-box"></div>
+        <button class="back-btn" data-target="menu-screen">← В меню</button>
+    </div>
+
+    <!-- Экран ввода Натальной карты -->
+    <div id="natal-input-screen" class="screen">
+        <h2>Натальная карта</h2>
+        <input type="date" id="natal-date" placeholder="Дата рождения">
+        <input type="time" id="natal-time" placeholder="Время рождения">
+        <button id="get-natal">Получить натальную карту</button>
+        <button class="back-btn" data-target="menu-screen">← Назад</button>
+    </div>
+
+    <!-- Экран результата Натальной карты -->
+    <div id="natal-result-screen" class="screen">
+        <div id="natal-text" class="prediction-box"></div>
+        <button class="back-btn" data-target="menu-screen">← В меню</button>
+    </div>
+
+    <!-- Экран ввода Совместимости -->
+    <div id="compat-input-screen" class="screen">
+        <h2>Совместимость</h2>
+        <input type="text" id="person1-name" placeholder="Имя первого человека">
+        <input type="date" id="person1-date" placeholder="Дата рождения 1">
+        <input type="text" id="person2-name" placeholder="Имя второго человека">
+        <input type="date" id="person2-date" placeholder="Дата рождения 2">
+        <button id="get-compat">Узнать совместимость</button>
+        <button class="back-btn" data-target="menu-screen">← Назад</button>
+    </div>
+
+    <!-- Экран результата Совместимости -->
+    <div id="compat-result-screen" class="screen">
+        <div id="compat-text" class="prediction-box"></div>
+        <button class="back-btn" data-target="menu-screen">← В меню</button>
+    </div>
+
     <script src="app.js"></script>
 </body>
 </html>
