@@ -1,1 +1,56 @@
-
+:root {
+    --tg-theme-bg-color: #1a1a2e;
+    --tg-theme-text-color: #e0e0e0;
+    --tg-theme-hint-color: #888;
+    --tg-theme-link-color: #bb86fc;
+    --tg-theme-button-color: #6200ea;
+    --tg-theme-button-text-color: #ffffff;
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0; padding: 0;
+    background: var(--tg-theme-bg-color);
+    color: var(--tg-theme-text-color);
+    font-family: 'Georgia', serif;
+    display: flex; justify-content: center; align-items: center;
+    min-height: 100vh; overflow-x: hidden;
+}
+.screen {
+    display: none; flex-direction: column; align-items: center;
+    width: 100%; max-width: 400px; padding: 20px;
+}
+.screen.active { display: flex; }
+#cards-container {
+    display: flex; flex-wrap: wrap; justify-content: center;
+    gap: 12px; margin-bottom: 20px;
+}
+.card {
+    width: 65px; height: 95px;
+    background: linear-gradient(145deg, #2d2d44, #1f1f32);
+    border: 2px solid #bb86fc; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    user-select: none;
+}
+.card.selected {
+    transform: scale(1.15);
+    box-shadow: 0 0 20px #bb86fc;
+}
+.card.disabled { opacity: 0.5; pointer-events: none; }
+button {
+    background: var(--tg-theme-button-color);
+    color: var(--tg-theme-button-text-color);
+    border: none; padding: 12px 24px; border-radius: 12px;
+    font-size: 16px; margin: 8px; cursor: pointer;
+    transition: opacity 0.3s; width: 100%; max-width: 280px;
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+#result-screen { text-align: center; }
+#card-emoji { font-size: 100px; margin: 30px 0; }
+#prediction-text {
+    background: rgba(187, 134, 252, 0.1); border-radius: 12px;
+    padding: 20px; margin: 20px 0; word-wrap: break-word;
+    width: 100%;
+}
+#questions-left { margin: 10px 0; font-size: 14px; color: var(--tg-theme-hint-color); }
