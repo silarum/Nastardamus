@@ -3,19 +3,41 @@ const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
 const DEEPSEEK_API_KEY = 'sk-c1ef1e8bb11a4563aae3cb3d6101976c';
-let freeQuestionUsed = false, paidQuestions = 0, selectedCardIndex = null, isLoading = false;
 
-const cardsContainer = document.getElementById('cards-container');
-const drawButton = document.getElementById('draw-button');
-const questionsCount = document.getElementById('questions-count');
-const buyButton = document.getElementById('buy-button');
-const resultScreen = document.getElementById('result-screen');
-const cardsScreen = document.getElementById('cards-screen');
-const predictionText = document.getElementById('prediction-text');
-const cardEmoji = document.getElementById('card-emoji');
-const backButton = document.getElementById('back-button');
-const btnText = drawButton.querySelector('.btn-text');
+// Экраны
+const screens = {
+    menu: document.getElementById('menu-screen'),
+    tarotInput: document.getElementById('tarot-input-screen'),
+    tarotCards: document.getElementById('tarot-cards-screen'),
+    tarotResult: document.getElementById('tarot-result-screen'),
+    natalInput: document.getElementById('natal-input-screen'),
+    natalResult: document.getElementById('natal-result-screen'),
+    compatInput: document.getElementById('compat-input-screen'),
+    compatResult: document.getElementById('compat-result-screen')
+};
 
+// Показать экран
+function showScreen(screen) {
+    Object.values(screens).forEach(s => s.classList.remove('active'));
+    screen.classList.add('active');
+}
+
+// Кнопки "Назад"
+document.querySelectorAll('.back-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const target = btn.dataset.target;
+        showScreen(screens[target]);
+    });
+});
+
+// === ГЛАВНОЕ МЕНЮ ===
+document.getElementById('tarot-btn').addEventListener('click', () => showScreen(screens.tarotInput));
+document.getElementById('natal-btn').addEventListener('click', () => showScreen(screens.natalInput));
+document.getElementById('compat-btn').addEventListener('click', () => showScreen(screens.compatInput));
+
+// === РАСКЛАД ТАРО ===
+let freeQuestionUsed = false, paidQuestions = 0;
+let tarotQuestion = '';
 const tarotDeck = [
     { name: 'Шут', emoji: '🃏' }, { name: 'Маг', emoji: '🎩' }, { name: 'Верховная Жрица', emoji: '🔮' },
     { name: 'Императрица', emoji: '👑' }, { name: 'Император', emoji: '🏰' }, { name: 'Иерофант', emoji: '📜' },
@@ -26,75 +48,131 @@ const tarotDeck = [
     { name: 'Луна', emoji: '🌙' }, { name: 'Солнце', emoji: '☀️' }, { name: 'Суд', emoji: '📯' }, { name: 'Мир', emoji: '🌍' }
 ];
 
-function renderCards() {
-    cardsContainer.innerHTML = '';
-    tarotDeck.forEach((card, index) => {
-        const div = document.createElement('div');
-        div.className = 'card';
-        div.textContent = card.emoji;
-        div.addEventListener('click', () => selectCard(index, div));
-        cardsContainer.appendChild(div);
-    });
-}
-function selectCard(index, el) {
-    if (isLoading) return;
-    document.querySelectorAll('.card').forEach(c => c.classList.remove('selected'));
-    el.classList.add('selected');
-    selectedCardIndex = index;
-    drawButton.disabled = false;
-    updateButtonText();
-}
-function updateButtonText() {
-    btnText.textContent = freeQuestionUsed ? '🔮 Получить предсказание (платное)' : '✨ Получить бесплатное предсказание';
-}
-function updateUI() {
-    questionsCount.textContent = paidQuestions;
-    questionsCount.style.transform = 'scale(1.3)';
-    setTimeout(() => questionsCount.style.transform = 'scale(1)', 200);
-    buyButton.style.display = freeQuestionUsed ? 'block' : 'none';
-    updateButtonText();
-}
-drawButton.addEventListener('click', async () => {
-    if (isLoading || selectedCardIndex === null) return;
-    if (!freeQuestionUsed) { freeQuestionUsed = true; updateUI(); await getPrediction(); }
-    else if (paidQuestions > 0) { paidQuestions--; updateUI(); await getPrediction(); }
-    else { alert('Нет оплаченных вопросов. Купите вопрос за 1 SILARUM.'); }
-});
-buyButton.addEventListener('click', () => {
-    if (confirm('Добавить 1 оплаченный вопрос (тест)?')) {
-        paidQuestions++; updateUI();
+document.getElementById('start-tarot').addEventListener('click', () => {
+    tarotQuestion = document.getElementById('tarot-question').value.trim() || 'Что меня ждёт?';
+    // Проверка бесплатного вопроса (пока без реальной оплаты, просто счётчик)
+    if (!freeQuestionUsed) {
+        freeQuestionUsed = true;
+        // Переход к выбору карт
+        selectedCards = [];
+        updateCardsOpened();
+        showScreen(screens.tarotCards);
+    } else {
+        if (paidQuestions > 0) {
+            paidQuestions--;
+            selectedCards = [];
+            updateCardsOpened();
+            showScreen(screens.tarotCards);
+        } else {
+            alert('Нет оплаченных вопросов. Купите вопрос за 1 SILARUM.');
+            // Пока заглушка: предлагаем добавить тестовый вопрос
+            if (confirm('Добавить 1 оплаченный вопрос для теста?')) {
+                paidQuestions++;
+                selectedCards = [];
+                updateCardsOpened();
+                showScreen(screens.tarotCards);
+            }
+        }
     }
 });
-async function getPrediction() {
-    isLoading = true; drawButton.disabled = true; btnText.textContent = '⏳ Загрузка...';
-    const card = tarotDeck[selectedCardIndex];
+
+// Переменные для выбора карт
+let selectedCards = [];
+let cardsToSelect = 3;
+const selectedCardsDiv = document.getElementById('selected-cards');
+const cardsOpenedSpan = document.getElementById('cards-opened');
+const deckDiv = document.getElementById('deck');
+
+function updateCardsOpened() {
+    cardsOpenedSpan.textContent = `Осталось открыть: ${cardsToSelect - selectedCards.length}`;
+    selectedCardsDiv.innerHTML = selectedCards.map(card => 
+        `<div class="selected-card">${card.emoji}</div>`
+    ).join('');
+}
+
+deckDiv.addEventListener('click', () => {
+    if (selectedCards.length >= cardsToSelect) return;
+    // Выбор случайной карты
+    const randomCard = tarotDeck[Math.floor(Math.random() * tarotDeck.length)];
+    selectedCards.push(randomCard);
+    updateCardsOpened();
+    // Анимация колоды (имитация переворота)
+    deckDiv.style.transform = 'rotateY(90deg)';
+    setTimeout(() => {
+        deckDiv.style.transform = 'rotateY(0deg)';
+    }, 300);
+    if (selectedCards.length === cardsToSelect) {
+        // Все карты выбраны, получить предсказание
+        setTimeout(() => getTarotPrediction(), 500);
+    }
+});
+
+async function getTarotPrediction() {
+    deckDiv.style.pointerEvents = 'none';
+    showScreen(screens.tarotResult);
+    const resultEmoji = document.getElementById('result-emoji');
+    const predictionText = document.getElementById('prediction-text');
+    resultEmoji.innerHTML = selectedCards.map(c => c.emoji).join(' ');
+    predictionText.textContent = 'Анализируем...';
+    const cardsNames = selectedCards.map(c => c.name).join(', ');
+    const prompt = `Ты таролог. Пользователь спросил: "${tarotQuestion}". Выпали карты: ${cardsNames}. Дай развёрнутое предсказание на русском языке, примерно 150 слов.`;
     try {
         const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_API_KEY}` },
-            body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: `Ты таролог. Истолкуй карту "${card.name}" ${card.emoji}. Дай предсказание на русском, 100 слов.` }], temperature: 1.0, max_tokens: 200 })
+            body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 1.0, max_tokens: 300 })
         });
         const data = await response.json();
-        const prediction = data.choices?.[0]?.message?.content || 'Предсказание не получено.';
-        showResult(card, prediction);
+        predictionText.textContent = data.choices?.[0]?.message?.content || 'Предсказание не получено.';
     } catch (e) {
-        showResult(card, 'Ошибка связи с нейросетью. Попробуйте позже.');
-    } finally {
-        isLoading = false; drawButton.disabled = false; updateButtonText();
+        predictionText.textContent = 'Ошибка связи с нейросетью.';
     }
+    deckDiv.style.pointerEvents = 'auto';
 }
-function showResult(card, text) {
-    cardsScreen.classList.remove('active');
-    resultScreen.classList.add('active');
-    cardEmoji.textContent = card.emoji;
-    predictionText.textContent = text;
-    document.querySelectorAll('.card').forEach(c => c.classList.remove('selected'));
-    selectedCardIndex = null;
-    drawButton.disabled = true;
-}
-backButton.addEventListener('click', () => {
-    resultScreen.classList.remove('active');
-    cardsScreen.classList.add('active');
-    updateUI();
+
+// === НАТАЛЬНАЯ КАРТА ===
+document.getElementById('get-natal').addEventListener('click', async () => {
+    const date = document.getElementById('natal-date').value;
+    const time = document.getElementById('natal-time').value || '00:00';
+    if (!date) return alert('Введите дату рождения');
+    showScreen(screens.natalResult);
+    document.getElementById('natal-text').textContent = 'Рассчитываем натальную карту...';
+    const prompt = `Ты астролог. Составь натальную карту для человека, рождённого ${date} в ${time}. Опиши положение планет в знаках, асцендент, основные аспекты и их значение. Дай развёрнутый ответ на русском языке.`;
+    try {
+        const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_API_KEY}` },
+            body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 500 })
+        });
+        const data = await response.json();
+        document.getElementById('natal-text').textContent = data.choices?.[0]?.message?.content || 'Ошибка расчёта.';
+    } catch (e) {
+        document.getElementById('natal-text').textContent = 'Ошибка связи.';
+    }
 });
-renderCards(); updateUI();
+
+// === СОВМЕСТИМОСТЬ ===
+document.getElementById('get-compat').addEventListener('click', async () => {
+    const name1 = document.getElementById('person1-name').value.trim() || 'Партнёр 1';
+    const date1 = document.getElementById('person1-date').value;
+    const name2 = document.getElementById('person2-name').value.trim() || 'Партнёр 2';
+    const date2 = document.getElementById('person2-date').value;
+    if (!date1 || !date2) return alert('Введите даты рождения обоих людей');
+    showScreen(screens.compatResult);
+    document.getElementById('compat-text').textContent = 'Анализируем совместимость...';
+    const prompt = `Ты астролог. Проанализируй совместимость двух людей: ${name1} (рождён ${date1}) и ${name2} (рождён ${date2}). Опиши сильные и слабые стороны, эмоциональную, интеллектуальную и физическую совместимость. Дай развёрнутый ответ на русском языке.`;
+    try {
+        const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_API_KEY}` },
+            body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 500 })
+        });
+        const data = await response.json();
+        document.getElementById('compat-text').textContent = data.choices?.[0]?.message?.content || 'Ошибка анализа.';
+    } catch (e) {
+        document.getElementById('compat-text').textContent = 'Ошибка связи.';
+    }
+});
+
+// Инициализация: показать меню
+showScreen(screens.menu);
