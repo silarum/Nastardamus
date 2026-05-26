@@ -14,6 +14,8 @@ body {
     font-family: 'Georgia', serif; display: flex; justify-content: center; align-items: center;
     min-height: 100vh; overflow-x: hidden; position: relative;
 }
+
+/* Фоновая анимация */
 .bg-animation { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; overflow: hidden; }
 .star { position: absolute; background: white; border-radius: 50%; animation: twinkle linear infinite; opacity: 0; }
 .star:nth-child(1) { width: 2px; height: 2px; top: 10%; left: 20%; animation-duration: 3s; }
@@ -27,10 +29,28 @@ body {
 .star:nth-child(9) { width: 2px; height: 2px; top: 90%; left: 60%; animation-duration: 2.2s; animation-delay: 0.3s; }
 .star:nth-child(10) { width: 1px; height: 1px; top: 5%; left: 50%; animation-duration: 3.8s; animation-delay: 1.8s; }
 @keyframes twinkle { 0%, 100% { opacity: 0; } 50% { opacity: 0.8; } }
+
+/* Экраны */
 .screen { display: none; flex-direction: column; align-items: center; width: 100%; max-width: 420px; padding: 25px 20px; animation: fadeIn 0.5s ease; }
 .screen.active { display: flex; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Приветственный экран */
+.welcome-content { text-align: center; animation: floatUp 1s ease; }
+@keyframes floatUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+.magic-symbols { font-size: 36px; margin-bottom: 10px; animation: glowPulse 2s infinite; }
+.welcome-title { font-size: 36px; color: var(--gold); text-shadow: 0 0 25px rgba(255,215,0,0.8); letter-spacing: 3px; margin: 10px 0; animation: titleGlow 2s infinite alternate; }
+@keyframes titleGlow { from { text-shadow: 0 0 20px var(--gold); } to { text-shadow: 0 0 40px var(--gold), 0 0 60px var(--glow); } }
+.welcome-mage { font-size: 20px; color: #fff; margin: 10px 0 0; text-shadow: 0 0 15px var(--glow); font-style: italic; }
+.welcome-subtitle { font-size: 14px; color: #ccc; margin: 5px 0 20px; }
+.magic-orb { width: 80px; height: 80px; border-radius: 50%; background: radial-gradient(circle, rgba(255,215,0,0.6), rgba(187,134,252,0.3)); margin: 20px auto; animation: orbPulse 2s infinite; box-shadow: 0 0 40px var(--glow); }
+@keyframes orbPulse { 0% { transform: scale(1); box-shadow: 0 0 20px var(--glow); } 50% { transform: scale(1.1); box-shadow: 0 0 40px var(--gold); } 100% { transform: scale(1); box-shadow: 0 0 20px var(--glow); } }
+.glow-button { background: var(--button-gradient); border: none; border-radius: 50px; padding: 14px 32px; font-size: 18px; font-weight: bold; color: white; cursor: pointer; box-shadow: 0 0 20px rgba(187,134,252,0.6); transition: all 0.3s; margin-top: 20px; animation: glowPulse 2s infinite; }
+.glow-button:hover { transform: scale(1.05); box-shadow: 0 0 35px rgba(255,215,0,0.8); }
+
+/* Меню */
 .title { font-size: 32px; margin: 0 0 5px; color: var(--gold); text-shadow: 0 0 20px rgba(255,215,0,0.7); letter-spacing: 3px; }
+.menu-mage { font-size: 18px; color: #fff; text-shadow: 0 0 10px var(--glow); font-style: italic; margin: 0 0 5px; }
 .subtitle { color: #aaa; margin: 0 0 30px; font-size: 18px; }
 .menu-btn { background: var(--button-gradient); border: none; border-radius: 50px; padding: 16px 32px; margin: 10px 0; font-size: 18px; font-weight: bold; color: white; width: 100%; max-width: 300px; box-shadow: 0 5px 20px rgba(98,0,234,0.5); cursor: pointer; transition: all var(--transition); }
 .menu-btn:hover { transform: scale(1.03); box-shadow: 0 8px 30px rgba(187,134,252,0.7); }
