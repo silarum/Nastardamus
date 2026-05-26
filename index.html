@@ -8,16 +8,30 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-    <div class="bg-animation">
+    <!-- Фоновая анимация (звёзды, искры) -->
+    <div class="bg-animation" id="bg-animation">
         <div class="star"></div><div class="star"></div><div class="star"></div>
         <div class="star"></div><div class="star"></div><div class="star"></div>
         <div class="star"></div><div class="star"></div><div class="star"></div>
         <div class="star"></div>
     </div>
 
-    <!-- Меню -->
-    <div id="menu-screen" class="screen active">
+    <!-- Приветственный экран -->
+    <div id="welcome-screen" class="screen active">
+        <div class="welcome-content">
+            <div class="magic-symbols">✨🔮🌟✨</div>
+            <h1 class="welcome-title">Nastardamus</h1>
+            <p class="welcome-mage">Вас приветствует Мак. Эзотериум</p>
+            <p class="welcome-subtitle">магистр тайных знаний и предсказаний</p>
+            <div class="magic-orb"></div>
+            <button id="continue-btn" class="glow-button">Продолжить</button>
+        </div>
+    </div>
+
+    <!-- Главное меню (изначально скрыто) -->
+    <div id="menu-screen" class="screen">
         <h1 class="title">✨ Nastardamus ✨</h1>
+        <p class="menu-mage">Мак. Эзотериум</p>
         <p class="subtitle">Магия Таро и звёзд</p>
         <button id="tarot-btn" class="menu-btn">🔮 Расклад Таро</button>
         <button id="natal-btn" class="menu-btn">🌌 Натальная карта</button>
