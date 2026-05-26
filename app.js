@@ -1,10 +1,9 @@
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
-// API-ключ по умолчанию (можно переопределить на экране приветствия)
 let API_KEY = 'sk-c1ef1e8bb11a4563aae3cb3d6101976c';
 const PROXY_URL = 'https://corsproxy.io/?' + encodeURIComponent('https://api.deepseek.com/v1/chat/completions');
-const USE_PROXY = true; // если прямой запрос не работает, используем прокси
+const USE_PROXY = true;
 
 // Экраны
 const screens = {
@@ -21,17 +20,50 @@ const screens = {
 
 function showScreen(s) {
     Object.values(screens).forEach(el => el.classList.remove('active'));
-    screens[s].classList.add('active');
+    if (screens[s]) screens[s].classList.add('active');
 }
 
-// Приветствие и установка ключа
+// --- АНИМАЦИЯ БУКВ В ЗАГОЛОВКЕ ---
+function animateTitle() {
+    const titleEl = document.getElementById('title-animated');
+    const text = titleEl.textContent;
+    titleEl.innerHTML = '';
+    text.split('').forEach((letter, i) => {
+        const span = document.createElement('span');
+        span.textContent = letter;
+        span.style.opacity = '0';
+        span.style.display = 'inline-block';
+        span.style.animation = `flyIn 0.5s ${i * 0.1}s forwards, glowLetter 2s ${i * 0.1}s infinite alternate`;
+        titleEl.appendChild(span);
+    });
+
+    // Добавим стили для анимации в head, если их нет
+    if (!document.getElementById('dynamic-keyframes')) {
+        const styleSheet = document.createElement('style');
+        styleSheet.id = 'dynamic-keyframes';
+        styleSheet.textContent = `
+            @keyframes flyIn {
+                from { transform: translateY(-40px) rotateY(90deg); opacity: 0; }
+                to { transform: translateY(0) rotateY(0); opacity: 1; }
+            }
+            @keyframes glowLetter {
+                from { text-shadow: 0 0 10px var(--gold); }
+                to { text-shadow: 0 0 25px var(--gold), 0 0 40px var(--glow); }
+            }
+        `;
+        document.head.appendChild(styleSheet);
+    }
+}
+animateTitle();
+
+// Приветствие -> меню
 document.getElementById('continue-btn').addEventListener('click', () => {
     const customKey = document.getElementById('api-key-input').value.trim();
     if (customKey) API_KEY = customKey;
     showScreen('menu');
 });
 
-// Навигация "Назад"
+// Навигация
 document.querySelectorAll('.back-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const target = btn.dataset.target;
@@ -44,7 +76,7 @@ document.getElementById('tarot-btn').onclick = () => showScreen('tarotInput');
 document.getElementById('natal-btn').onclick = () => showScreen('natalInput');
 document.getElementById('compat-btn').onclick = () => showScreen('compatInput');
 
-// ==================== ТАРО ====================
+// ===== ТАРО =====
 let freeUsed = false, paid = 0;
 const deckData = [
     { name: 'Шут', emoji: '🃏' }, { name: 'Маг', emoji: '🎩' }, { name: 'Жрица', emoji: '🔮' },
@@ -70,61 +102,62 @@ document.getElementById('start-tarot').onclick = () => {
 function startTarotDraw() {
     window.selectedCards = [];
     document.getElementById('selected-cards').innerHTML = '';
-    document.getElementById('cards-left').textContent = 'Осталось карт: 3';
+    document.getElementById('cards-left').textContent = 'Осталось открыть: 3';
     showScreen('tarotCards');
+    document.getElementById('deck').style.pointerEvents = 'auto';
 }
 
-// Обработка кликов по колоде с частицами
-const deck = document.getElementById('deck');
+// Холст для искр
 const canvas = document.getElementById('spark-canvas');
-let ctx = canvas?.getContext('2d');
+const ctx = canvas.getContext('2d');
 let sparks = [];
-
-function initCanvas() {
-    canvas.width = deck.offsetWidth;
-    canvas.height = deck.offsetHeight;
-    canvas.style.position = 'absolute';
-    canvas.style.top = deck.offsetTop + 'px';
-    canvas.style.left = deck.offsetLeft + 'px';
+function resizeCanvas() {
+    const deck = document.getElementById('deck');
+    const container = document.getElementById('deck-container');
+    canvas.width = container.offsetWidth;
+    canvas.height = container.offsetHeight;
 }
-window.addEventListener('resize', initCanvas);
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 
-deck.addEventListener('click', (e) => {
+// Клик по колоде
+document.getElementById('deck').addEventListener('click', (e) => {
     if (window.selectedCards.length >= 3) return;
     const card = deckData[Math.floor(Math.random() * deckData.length)];
     window.selectedCards.push(card);
-    // анимация переворота колоды
-    deck.style.transform = 'rotateY(90deg)';
-    setTimeout(() => { deck.style.transform = 'rotateY(0deg)'; }, 200);
+    const deckEl = document.getElementById('deck');
+    deckEl.style.transform = 'rotateY(90deg)';
+    setTimeout(() => { deckEl.style.transform = 'rotateY(0deg)'; }, 200);
 
-    // золотые искры
-    const rect = deck.getBoundingClientRect();
-    for (let i = 0; i < 12; i++) {
+    // Искры
+    const rect = deckEl.getBoundingClientRect();
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    for (let i = 0; i < 15; i++) {
         sparks.push({
-            x: rect.width/2, y: rect.height/2,
-            vx: (Math.random() - 0.5) * 4,
-            vy: (Math.random() - 1) * 4,
-            life: 1, size: Math.random() * 3 + 1
+            x: cx + (Math.random()-0.5)*80,
+            y: cy + (Math.random()-0.5)*100,
+            vx: (Math.random()-0.5)*5,
+            vy: (Math.random()-1)*5,
+            life: 1,
+            size: Math.random()*3+1
         });
     }
 
-    // отображаем выбранные карты
-    const container = document.getElementById('selected-cards');
+    // Показать выбранную карту
     const cardEl = document.createElement('div');
     cardEl.className = 'selected-card';
     cardEl.textContent = card.emoji;
-    container.appendChild(cardEl);
-    document.getElementById('cards-left').textContent = `Осталось карт: ${3 - window.selectedCards.length}`;
+    document.getElementById('selected-cards').appendChild(cardEl);
+    document.getElementById('cards-left').textContent = `Осталось открыть: ${3 - window.selectedCards.length}`;
 
     if (window.selectedCards.length === 3) {
-        deck.style.pointerEvents = 'none';
+        document.getElementById('deck').style.pointerEvents = 'none';
         setTimeout(getTarotPrediction, 600);
     }
 });
 
-// Анимация искр
 function animateSparks() {
-    if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     sparks = sparks.filter(s => s.life > 0);
     sparks.forEach(s => {
@@ -138,10 +171,9 @@ function animateSparks() {
     });
     requestAnimationFrame(animateSparks);
 }
-initCanvas();
 animateSparks();
 
-// Запрос к API с промптом Мага Эзотериума
+// Универсальная функция запроса к DeepSeek
 async function callDeepSeek(systemPrompt, userMessage) {
     const url = USE_PROXY ? PROXY_URL : 'https://api.deepseek.com/v1/chat/completions';
     const body = JSON.stringify({
@@ -159,27 +191,28 @@ async function callDeepSeek(systemPrompt, userMessage) {
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}` },
             body
         });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error('API error:', response.status, errText);
+            return null;
+        }
         const data = await response.json();
         return data.choices[0].message.content;
-    } catch (err) {
-        console.error('Ошибка API:', err);
-        // fallback – локальное предсказание
-        return '✨ Маг Эзотериум временно недоступен. Но карты говорят: сегодня вас ждут неожиданные перемены.';
+    } catch (e) {
+        console.error('Fetch error:', e);
+        return null;
     }
 }
 
 async function getTarotPrediction() {
     showScreen('tarotResult');
-    const resCards = document.getElementById('result-cards');
-    resCards.innerHTML = window.selectedCards.map(c => c.emoji).join(' ');
+    document.getElementById('result-cards').innerHTML = window.selectedCards.map(c => c.emoji).join(' ');
     const textEl = document.getElementById('prediction-text');
     textEl.textContent = '🔮 Маг Эзотериум вглядывается в карты...';
     const cardsNames = window.selectedCards.map(c => c.name).join(', ');
     const system = 'Ты — Маг Эзотериум, великий таролог. Начинай ответ с фразы "Маг Эзотериум видит..."';
     const answer = await callDeepSeek(system, `Вопрос: "${window.tarotQuestion}". Выпали карты: ${cardsNames}. Дай предсказание.`);
-    textEl.textContent = answer;
-    deck.style.pointerEvents = 'auto';
+    textEl.textContent = answer || '✨ Маг Эзотериум сегодня отдыхает, но звёзды говорят: вас ждёт удача. Попробуйте позже или проверьте ключ API.';
 }
 
 // Натальная карта
@@ -190,7 +223,7 @@ document.getElementById('get-natal').onclick = async () => {
     document.getElementById('natal-text').textContent = 'Рассчитываем...';
     const system = 'Ты — Маг Эзотериум, астролог. Начинай со слов "Звёзды поведали..."';
     const answer = await callDeepSeek(system, `Натальная карта для рождения ${date} ${document.getElementById('natal-time').value}.`);
-    document.getElementById('natal-text').textContent = answer;
+    document.getElementById('natal-text').textContent = answer || 'Не удалось получить ответ от Мага. Проверьте ключ или баланс.';
 };
 
 // Совместимость
@@ -204,8 +237,7 @@ document.getElementById('get-compat').onclick = async () => {
     document.getElementById('compat-text').textContent = 'Анализируем...';
     const system = 'Ты — Маг Эзотериум, эксперт по отношениям. Начинай с "Маг Эзотериум раскрывает..."';
     const answer = await callDeepSeek(system, `Совместимость ${n1} (${d1}) и ${n2} (${d2}).`);
-    document.getElementById('compat-text').textContent = answer;
+    document.getElementById('compat-text').textContent = answer || 'Маг не смог заглянуть в вашу связь. Попробуйте позже.';
 };
 
-// Старт
 showScreen('welcome');
