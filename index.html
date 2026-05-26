@@ -3,23 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Nastardamus – Таро</title>
+    <title>Nastardamus 🔮 Таро</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
+    <div class="bg-animation">
+        <div class="star"></div><div class="star"></div><div class="star"></div>
+        <div class="star"></div><div class="star"></div><div class="star"></div>
+        <div class="star"></div><div class="star"></div><div class="star"></div>
+        <div class="star"></div>
+    </div>
     <div id="app">
         <div id="cards-screen" class="screen active">
-            <h2>✨ Выбери карту Таро ✨</h2>
+            <h1 class="title">✨ Nastardamus ✨</h1>
+            <p class="subtitle">Выбери карту Таро</p>
             <div id="cards-container"></div>
-            <button id="draw-button" disabled>Получить предсказание</button>
-            <p id="questions-left">Оплачено вопросов: 0</p>
-            <button id="buy-button" style="display:none;">Купить вопрос за 1 SILARUM</button>
+            <button id="draw-button" disabled>
+                <span class="btn-text">Получить предсказание</span>
+            </button>
+            <div id="questions-info">
+                <span class="gem">💎</span> 
+                <span id="questions-count">0</span> 
+                <span class="label">вопросов</span>
+            </div>
+            <button id="buy-button" class="buy-btn" style="display:none;">
+                <span>🔥 Купить вопрос за 1 SILARUM</span>
+            </button>
         </div>
         <div id="result-screen" class="screen">
-            <div id="card-emoji"></div>
-            <div id="prediction-text"></div>
-            <button id="back-button">Задать новый вопрос</button>
+            <div id="card-emoji" class="big-emoji"></div>
+            <div id="prediction-text" class="prediction-box"></div>
+            <button id="back-button">
+                <span>← Задать новый вопрос</span>
+            </button>
         </div>
     </div>
     <script src="app.js"></script>
