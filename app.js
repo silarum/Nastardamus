@@ -1,9 +1,10 @@
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
-// Твой ключ OpenRouter (уже вставлен)
-let API_KEY = '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';
-const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+// Ключ OpenRouter (жестко вшит)
+const API_KEY = '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';
+// Прокси для обхода CORS
+const API_URL = 'https://corsproxy.io/?' + encodeURIComponent('https://openrouter.ai/api/v1/chat/completions');
 const MODEL = 'deepseek/deepseek-v4-flash:free';
 
 // Экраны
@@ -24,7 +25,7 @@ function showScreen(s) {
     if (screens[s]) screens[s].classList.add('active');
 }
 
-// --- АНИМАЦИЯ БУКВ В ЗАГОЛОВКЕ ---
+// --- АНИМАЦИЯ БУКВ В ЗАГОЛОВКЕ (без изменений) ---
 function animateTitle() {
     const titleEl = document.getElementById('title-animated');
     const text = titleEl.textContent;
@@ -57,8 +58,6 @@ animateTitle();
 
 // Приветствие -> меню
 document.getElementById('continue-btn').addEventListener('click', () => {
-    const customKey = document.getElementById('api-key-input').value.trim();
-    if (customKey) API_KEY = customKey;
     showScreen('menu');
 });
 
@@ -111,7 +110,6 @@ const canvas = document.getElementById('spark-canvas');
 const ctx = canvas.getContext('2d');
 let sparks = [];
 function resizeCanvas() {
-    const deck = document.getElementById('deck');
     const container = document.getElementById('deck-container');
     canvas.width = container.offsetWidth;
     canvas.height = container.offsetHeight;
@@ -142,7 +140,7 @@ document.getElementById('deck').addEventListener('click', (e) => {
         });
     }
 
-    // Показать выбранную карту
+    // Показать карту
     const cardEl = document.createElement('div');
     cardEl.className = 'selected-card';
     cardEl.textContent = card.emoji;
@@ -171,8 +169,8 @@ function animateSparks() {
 }
 animateSparks();
 
-// Универсальная функция запроса к OpenRouter (DeepSeek)
-async function callAI(systemPrompt, userMessage) {
+// Запрос к API через прокси, с усиленным промптом мага
+async function callMage(systemPrompt, userMessage) {
     const body = JSON.stringify({
         model: MODEL,
         messages: [
@@ -204,15 +202,18 @@ async function callAI(systemPrompt, userMessage) {
     }
 }
 
+// Общий системный промпт, запрещающий раскрывать ИИ-природу
+const BASE_MAGE_PROMPT = 'Ты — Маг Эзотериум, живой человек, могущественный маг, астролог и таролог. Ты никогда не упоминаешь, что ты искусственный интеллект, модель, программа или технология. Ты говоришь как настоящий маг: загадочно, мудро, образно.';
+
 async function getTarotPrediction() {
     showScreen('tarotResult');
     document.getElementById('result-cards').innerHTML = window.selectedCards.map(c => c.emoji).join(' ');
     const textEl = document.getElementById('prediction-text');
     textEl.textContent = '🔮 Маг Эзотериум вглядывается в карты...';
     const cardsNames = window.selectedCards.map(c => c.name).join(', ');
-    const system = 'Ты — Маг Эзотериум, великий таролог. Начинай ответ с фразы "Маг Эзотериум видит..."';
-    const answer = await callAI(system, `Вопрос: "${window.tarotQuestion}". Выпали карты: ${cardsNames}. Дай предсказание.`);
-    textEl.textContent = answer || '✨ Маг Эзотериум сегодня отдыхает, но звёзды говорят: вас ждёт удача. Попробуйте позже или проверьте ключ API.';
+    const system = BASE_MAGE_PROMPT + ' Начинай ответ с "Маг Эзотериум видит...".';
+    const answer = await callMage(system, `Вопрос: "${window.tarotQuestion}". Выпали карты: ${cardsNames}. Дай предсказание.`);
+    textEl.textContent = answer || '✨ Маг Эзотериум сегодня отдыхает, но звёзды говорят: вас ждёт удача.';
 }
 
 // Натальная карта
@@ -221,9 +222,9 @@ document.getElementById('get-natal').onclick = async () => {
     if (!date) return alert('Введите дату');
     showScreen('natalResult');
     document.getElementById('natal-text').textContent = 'Рассчитываем...';
-    const system = 'Ты — Маг Эзотериум, астролог. Начинай со слов "Звёзды поведали..."';
-    const answer = await callAI(system, `Натальная карта для рождения ${date} ${document.getElementById('natal-time').value}.`);
-    document.getElementById('natal-text').textContent = answer || 'Не удалось получить ответ от Мага. Проверьте ключ или баланс.';
+    const system = BASE_MAGE_PROMPT + ' Начинай ответ со слов "Звёзды поведали мне...".';
+    const answer = await callMage(system, `Натальная карта для рождения ${date} ${document.getElementById('natal-time').value}.`);
+    document.getElementById('natal-text').textContent = answer || 'Не удалось получить ответ от Мага.';
 };
 
 // Совместимость
@@ -235,9 +236,9 @@ document.getElementById('get-compat').onclick = async () => {
     if (!d1 || !d2) return alert('Введите даты');
     showScreen('compatResult');
     document.getElementById('compat-text').textContent = 'Анализируем...';
-    const system = 'Ты — Маг Эзотериум, эксперт по отношениям. Начинай с "Маг Эзотериум раскрывает..."';
-    const answer = await callAI(system, `Совместимость ${n1} (${d1}) и ${n2} (${d2}).`);
-    document.getElementById('compat-text').textContent = answer || 'Маг не смог заглянуть в вашу связь. Попробуйте позже.';
+    const system = BASE_MAGE_PROMPT + ' Начинай ответ с "Маг Эзотериум раскрывает тайну вашей связи...".';
+    const answer = await callMage(system, `Совместимость ${n1} (${d1}) и ${n2} (${d2}).`);
+    document.getElementById('compat-text').textContent = answer || 'Маг не смог заглянуть в вашу связь.';
 };
 
 showScreen('welcome');
