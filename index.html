@@ -8,28 +8,23 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-    <!-- Магический фон -->
     <div class="magic-bg">
         <div class="rune-circle"></div>
         <div class="rune-circle small"></div>
         <div class="stars"></div>
     </div>
 
-    <!-- Приветственный экран -->
+    <!-- Приветственный экран (без поля API) -->
     <div id="welcome-screen" class="screen active">
         <div class="welcome-box">
-            <!-- Буквы собираются через JS, но для структуры оставим заголовок -->
             <h1 id="title-animated" class="title-glow">Nastardamus</h1>
             <p class="mage-name">Вас приветствует Маг Эзотериум</p>
             <p class="mage-desc">Ясновидящий, астролог, повелитель Таро</p>
-            <div class="api-key-section">
-                <input type="password" id="api-key-input" placeholder="Введите ключ DeepSeek (если есть)">
-            </div>
             <button id="continue-btn" class="magic-btn">Войти в мир тайн</button>
         </div>
     </div>
 
-    <!-- Остальные экраны (меню, Таро, Натальная, Совместимость) – как в предыдущем ответе, но с обновленными классами -->
+    <!-- Меню -->
     <div id="menu-screen" class="screen">
         <h1 class="title">✨ Nastardamus ✨</h1>
         <p class="mage-tag">Маг Эзотериум</p>
@@ -42,7 +37,7 @@
 
     <!-- Таро: вопрос -->
     <div id="tarot-input-screen" class="screen">
-        <h2>Задайте вопрос</h2>
+        <h2>Задайте вопрос магу</h2>
         <textarea id="tarot-question" placeholder="Что вас волнует?"></textarea>
         <button id="start-tarot" class="magic-btn">Тасовать карты</button>
         <button class="back-btn" data-target="menu-screen">← Назад</button>
