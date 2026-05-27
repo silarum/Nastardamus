@@ -1,9 +1,10 @@
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
-let API_KEY = 'sk-c1ef1e8bb11a4563aae3cb3d6101976c';
-const PROXY_URL = 'https://corsproxy.io/?' + encodeURIComponent('https://api.deepseek.com/v1/chat/completions');
-const USE_PROXY = true;
+// Твой ключ OpenRouter (уже вставлен)
+let API_KEY = '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';
+const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const MODEL = 'deepseek/deepseek-v4-flash:free';
 
 // Экраны
 const screens = {
@@ -36,8 +37,6 @@ function animateTitle() {
         span.style.animation = `flyIn 0.5s ${i * 0.1}s forwards, glowLetter 2s ${i * 0.1}s infinite alternate`;
         titleEl.appendChild(span);
     });
-
-    // Добавим стили для анимации в head, если их нет
     if (!document.getElementById('dynamic-keyframes')) {
         const styleSheet = document.createElement('style');
         styleSheet.id = 'dynamic-keyframes';
@@ -63,7 +62,7 @@ document.getElementById('continue-btn').addEventListener('click', () => {
     showScreen('menu');
 });
 
-// Навигация
+// Навигация "Назад"
 document.querySelectorAll('.back-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const target = btn.dataset.target;
@@ -130,7 +129,6 @@ document.getElementById('deck').addEventListener('click', (e) => {
     setTimeout(() => { deckEl.style.transform = 'rotateY(0deg)'; }, 200);
 
     // Искры
-    const rect = deckEl.getBoundingClientRect();
     const cx = canvas.width / 2;
     const cy = canvas.height / 2;
     for (let i = 0; i < 15; i++) {
@@ -173,11 +171,10 @@ function animateSparks() {
 }
 animateSparks();
 
-// Универсальная функция запроса к DeepSeek
-async function callDeepSeek(systemPrompt, userMessage) {
-    const url = USE_PROXY ? PROXY_URL : 'https://api.deepseek.com/v1/chat/completions';
+// Универсальная функция запроса к OpenRouter (DeepSeek)
+async function callAI(systemPrompt, userMessage) {
     const body = JSON.stringify({
-        model: 'deepseek-chat',
+        model: MODEL,
         messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage }
@@ -186,9 +183,12 @@ async function callDeepSeek(systemPrompt, userMessage) {
         max_tokens: 400
     });
     try {
-        const response = await fetch(url, {
+        const response = await fetch(API_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}` },
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${API_KEY}`
+            },
             body
         });
         if (!response.ok) {
@@ -211,7 +211,7 @@ async function getTarotPrediction() {
     textEl.textContent = '🔮 Маг Эзотериум вглядывается в карты...';
     const cardsNames = window.selectedCards.map(c => c.name).join(', ');
     const system = 'Ты — Маг Эзотериум, великий таролог. Начинай ответ с фразы "Маг Эзотериум видит..."';
-    const answer = await callDeepSeek(system, `Вопрос: "${window.tarotQuestion}". Выпали карты: ${cardsNames}. Дай предсказание.`);
+    const answer = await callAI(system, `Вопрос: "${window.tarotQuestion}". Выпали карты: ${cardsNames}. Дай предсказание.`);
     textEl.textContent = answer || '✨ Маг Эзотериум сегодня отдыхает, но звёзды говорят: вас ждёт удача. Попробуйте позже или проверьте ключ API.';
 }
 
@@ -222,7 +222,7 @@ document.getElementById('get-natal').onclick = async () => {
     showScreen('natalResult');
     document.getElementById('natal-text').textContent = 'Рассчитываем...';
     const system = 'Ты — Маг Эзотериум, астролог. Начинай со слов "Звёзды поведали..."';
-    const answer = await callDeepSeek(system, `Натальная карта для рождения ${date} ${document.getElementById('natal-time').value}.`);
+    const answer = await callAI(system, `Натальная карта для рождения ${date} ${document.getElementById('natal-time').value}.`);
     document.getElementById('natal-text').textContent = answer || 'Не удалось получить ответ от Мага. Проверьте ключ или баланс.';
 };
 
@@ -236,7 +236,7 @@ document.getElementById('get-compat').onclick = async () => {
     showScreen('compatResult');
     document.getElementById('compat-text').textContent = 'Анализируем...';
     const system = 'Ты — Маг Эзотериум, эксперт по отношениям. Начинай с "Маг Эзотериум раскрывает..."';
-    const answer = await callDeepSeek(system, `Совместимость ${n1} (${d1}) и ${n2} (${d2}).`);
+    const answer = await callAI(system, `Совместимость ${n1} (${d1}) и ${n2} (${d2}).`);
     document.getElementById('compat-text').textContent = answer || 'Маг не смог заглянуть в вашу связь. Попробуйте позже.';
 };
 
