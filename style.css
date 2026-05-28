@@ -12,163 +12,107 @@ body {
     font-family: 'Georgia', serif;
     display: flex; justify-content: center; align-items: center;
     min-height: 100vh; overflow: hidden;
-    position: relative;
 }
 
 /* Фон */
 .magic-bg {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    z-index: -1;
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1;
     background: radial-gradient(ellipse at center, #1a1a3e 0%, #0a0a1a 70%);
 }
 .rune-circle {
-    position: absolute;
-    width: 300px; height: 300px;
-    border: 2px solid rgba(255,215,0,0.3);
-    border-radius: 50%;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
+    position: absolute; width: 300px; height: 300px;
+    border: 2px solid rgba(255,215,0,0.3); border-radius: 50%;
+    top: 50%; left: 50%; transform: translate(-50%, -50%);
     animation: spin 20s linear infinite;
 }
 .rune-circle.small {
     width: 200px; height: 200px;
     border-color: rgba(187,134,252,0.3);
-    animation-duration: 15s;
-    animation-direction: reverse;
+    animation-duration: 15s; animation-direction: reverse;
 }
 @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
 .stars {
     position: absolute; width: 100%; height: 100%;
-    background-image: 
-        radial-gradient(2px 2px at 20% 30%, #fff, transparent),
-        radial-gradient(2px 2px at 80% 70%, #fff, transparent),
-        radial-gradient(1px 1px at 50% 20%, #ffd700, transparent),
-        radial-gradient(1px 1px at 10% 80%, #fff, transparent),
-        radial-gradient(2px 2px at 90% 40%, #ffd700, transparent),
-        radial-gradient(1px 1px at 30% 60%, #bb86fc, transparent);
+    background: radial-gradient(2px 2px at 20% 30%, #fff, transparent),
+                radial-gradient(2px 2px at 80% 70%, #fff, transparent),
+                radial-gradient(1px 1px at 50% 20%, #ffd700, transparent),
+                radial-gradient(1px 1px at 10% 80%, #fff, transparent),
+                radial-gradient(2px 2px at 90% 40%, #ffd700, transparent),
+                radial-gradient(1px 1px at 30% 60%, #bb86fc, transparent);
     animation: twinkle 4s infinite alternate;
 }
-@keyframes twinkle { 0% { opacity: 0.3; } 100% { opacity: 1; } }
+@keyframes twinkle { from { opacity: 0.3; } to { opacity: 1; } }
+.fog {
+    position: absolute; width: 200%; height: 200%;
+    background: radial-gradient(circle at 50% 50%, rgba(187,134,252,0.2) 0%, transparent 60%);
+    top: -50%; left: -50%;
+    animation: fogMove 10s infinite linear;
+}
+@keyframes fogMove { 0% { transform: translate(0,0); } 100% { transform: translate(-10%, -10%); } }
 
 /* Экраны */
 .screen {
     display: none; flex-direction: column; align-items: center;
     width: 100%; max-width: 420px; padding: 20px;
-    animation: fadeSlide 0.6s ease;
-    position: relative; z-index: 1;
+    animation: fadeSlide 0.6s ease; position: relative; z-index: 1;
 }
 .screen.active { display: flex; }
-@keyframes fadeSlide {
-    from { opacity: 0; transform: translateY(30px); }
-    to { opacity: 1; transform: translateY(0); }
-}
+@keyframes fadeSlide { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
 
 /* Приветствие */
 .welcome-box { text-align: center; width: 100%; }
-#title-animated {
-    font-size: 38px; margin: 0 0 15px;
-    color: var(--gold);
-    text-shadow: 0 0 30px var(--gold);
-    letter-spacing: 4px;
-    /* Буквы будут анимироваться через JS */
-}
-.mage-name {
-    font-size: 22px; margin: 10px 0 0;
-    color: #fff; text-shadow: 0 0 15px var(--glow);
-    animation: glowText 2s infinite alternate;
-}
-@keyframes glowText {
-    from { text-shadow: 0 0 10px var(--glow); }
-    to { text-shadow: 0 0 25px var(--glow), 0 0 40px var(--gold); }
-}
+#title-animated { font-size: 38px; margin: 0 0 15px; color: var(--gold); text-shadow: 0 0 30px var(--gold); letter-spacing: 4px; }
+.mage-name { font-size: 22px; margin: 10px 0 0; color: #fff; text-shadow: 0 0 15px var(--glow); animation: glowText 2s infinite alternate; }
+@keyframes glowText { from { text-shadow: 0 0 10px var(--glow); } to { text-shadow: 0 0 25px var(--glow), 0 0 40px var(--gold); } }
 .mage-desc { font-size: 14px; color: #ccc; margin: 5px 0 20px; }
-.api-key-section input {
-    width: 100%; padding: 10px; border-radius: 20px;
-    border: 1px solid var(--gold); background: rgba(255,255,255,0.05);
-    color: white; text-align: center; margin: 10px 0;
-}
 
 /* Кнопки */
 .magic-btn {
-    background: var(--btn-grad);
-    border: none; border-radius: 30px; padding: 14px 28px;
-    font-weight: bold; color: #000; font-size: 16px;
-    cursor: pointer; margin: 10px 0; width: 100%;
-    box-shadow: 0 0 25px var(--gold); transition: all 0.3s;
-    text-transform: uppercase; letter-spacing: 1px;
+    background: var(--btn-grad); border: none; border-radius: 30px; padding: 14px 28px;
+    font-weight: bold; color: #000; font-size: 16px; cursor: pointer; margin: 10px 0; width: 100%;
+    box-shadow: 0 0 25px var(--gold); transition: all 0.3s; text-transform: uppercase; letter-spacing: 1px;
     animation: btnGlow 2s infinite;
 }
-@keyframes btnGlow {
-    0% { box-shadow: 0 0 15px var(--gold); }
-    50% { box-shadow: 0 0 40px var(--gold), 0 0 60px var(--glow); }
-    100% { box-shadow: 0 0 15px var(--gold); }
-}
+@keyframes btnGlow { 0% { box-shadow: 0 0 15px var(--gold); } 50% { box-shadow: 0 0 40px var(--gold), 0 0 60px var(--glow); } 100% { box-shadow: 0 0 15px var(--gold); } }
 .magic-btn:hover { transform: scale(1.05); }
 .menu-btn {
-    background: linear-gradient(135deg, #6200ea, #bb86fc);
-    border: none; border-radius: 30px; padding: 14px 28px;
-    margin: 8px 0; width: 100%; color: white; font-weight: bold;
-    box-shadow: 0 0 20px #bb86fc66; transition: all 0.3s;
-    animation: btnGlowPurple 2s infinite;
+    background: linear-gradient(135deg, #6200ea, #bb86fc); border: none; border-radius: 30px;
+    padding: 14px 28px; margin: 8px 0; width: 100%; color: white; font-weight: bold;
+    box-shadow: 0 0 20px #bb86fc66; transition: all 0.3s; animation: menuGlow 2s infinite;
 }
-@keyframes btnGlowPurple {
-    0% { box-shadow: 0 0 15px #bb86fc; }
-    50% { box-shadow: 0 0 30px #bb86fc, 0 0 50px #6200ea; }
-    100% { box-shadow: 0 0 15px #bb86fc; }
-}
+@keyframes menuGlow { 0% { box-shadow: 0 0 15px #bb86fc; } 50% { box-shadow: 0 0 30px #bb86fc, 0 0 50px #6200ea; } 100% { box-shadow: 0 0 15px #bb86fc; } }
 .menu-btn:hover { transform: scale(1.03); }
 .back-btn {
-    background: transparent; border: 2px solid var(--glow);
-    color: var(--glow); border-radius: 30px; padding: 12px 24px;
-    margin-top: 15px; width: auto;
+    background: transparent; border: 2px solid var(--glow); color: var(--glow);
+    border-radius: 30px; padding: 12px 24px; margin-top: 15px; width: auto; cursor: pointer;
 }
 
-/* Колода и карты */
+/* Карты */
 #deck-container { position: relative; margin: 20px 0; }
 .magic-deck {
-    width: 140px; height: 210px;
-    background: linear-gradient(45deg, #2d2d44, #1f1f32);
-    border: 3px solid var(--gold); border-radius: 16px;
-    cursor: pointer;
+    width: 140px; height: 210px; background: linear-gradient(45deg, #2d2d44, #1f1f32);
+    border: 3px solid var(--gold); border-radius: 16px; cursor: pointer;
     box-shadow: 0 0 30px var(--gold), inset 0 0 20px rgba(255,215,0,0.3);
-    transition: transform 0.2s;
-    margin: 0 auto;
-    position: relative;
-    z-index: 2;
-    /* Рубашка карты */
+    transition: transform 0.2s; margin: 0 auto; position: relative; z-index: 2;
     background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,215,0,0.1) 5px, rgba(255,215,0,0.1) 10px);
 }
 .magic-deck:active { transform: scale(0.95); }
-#spark-canvas {
-    position: absolute; top: 0; left: 0;
-    width: 100%; height: 100%;
-    pointer-events: none;
-    z-index: 3;
-}
-#selected-cards {
-    display: flex; gap: 12px; margin: 20px 0; justify-content: center;
-}
+#spark-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
+#selected-cards { display: flex; gap: 12px; margin: 20px 0; justify-content: center; }
 .selected-card {
-    width: 90px; height: 135px;
-    background: #2d2d44; border: 2px solid var(--gold);
+    width: 90px; height: 135px; background: #2d2d44; border: 2px solid var(--gold);
     border-radius: 10px; display: flex; align-items: center; justify-content: center;
-    font-size: 50px; box-shadow: 0 0 25px var(--gold);
-    animation: cardReveal 0.5s ease;
+    font-size: 50px; box-shadow: 0 0 25px var(--gold); animation: cardReveal 0.5s ease;
 }
-@keyframes cardReveal {
-    from { transform: rotateY(90deg) scale(0.8); opacity: 0; }
-    to { transform: rotateY(0) scale(1); opacity: 1; }
-}
+@keyframes cardReveal { from { transform: rotateY(90deg) scale(0.8); opacity: 0; } to { transform: rotateY(0) scale(1); opacity: 1; } }
 .scroll-box {
-    background: rgba(20,20,40,0.8); border: 1px solid var(--glow);
-    border-radius: 16px; padding: 16px; margin: 20px 0;
-    width: 100%; max-height: 300px; overflow-y: auto;
+    background: rgba(20,20,40,0.8); border: 1px solid var(--glow); border-radius: 16px;
+    padding: 16px; margin: 20px 0; width: 100%; max-height: 300px; overflow-y: auto;
     font-size: 16px; line-height: 1.5; backdrop-filter: blur(10px);
 }
 input, textarea {
-    width: 100%; padding: 12px; margin: 10px 0;
-    border-radius: 20px; border: 1px solid var(--glow);
-    background: rgba(255,255,255,0.05); color: white;
+    width: 100%; padding: 12px; margin: 10px 0; border-radius: 20px;
+    border: 1px solid var(--glow); background: rgba(255,255,255,0.05); color: white;
     font-family: inherit;
 }
 textarea { height: 80px; resize: vertical; }
