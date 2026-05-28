@@ -8,13 +8,15 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
+    <!-- Магический фон -->
     <div class="magic-bg">
         <div class="rune-circle"></div>
         <div class="rune-circle small"></div>
         <div class="stars"></div>
+        <div class="fog"></div>
     </div>
 
-    <!-- Приветственный экран (без поля API) -->
+    <!-- Приветствие -->
     <div id="welcome-screen" class="screen active">
         <div class="welcome-box">
             <h1 id="title-animated" class="title-glow">Nastardamus</h1>
@@ -24,18 +26,18 @@
         </div>
     </div>
 
-    <!-- Меню -->
+    <!-- Главное меню -->
     <div id="menu-screen" class="screen">
         <h1 class="title">✨ Nastardamus ✨</h1>
         <p class="mage-tag">Маг Эзотериум</p>
         <div class="menu-buttons">
-            <button id="tarot-btn" class="menu-btn">🔮 Расклад Таро</button>
-            <button id="natal-btn" class="menu-btn">🌌 Натальная карта</button>
-            <button id="compat-btn" class="menu-btn">💞 Совместимость</button>
+            <button id="go-tarot" class="menu-btn">🔮 Расклад Таро</button>
+            <button id="go-natal" class="menu-btn">🌌 Натальная карта</button>
+            <button id="go-compat" class="menu-btn">💞 Совместимость</button>
         </div>
     </div>
 
-    <!-- Таро: вопрос -->
+    <!-- Вопрос для Таро -->
     <div id="tarot-input-screen" class="screen">
         <h2>Задайте вопрос магу</h2>
         <textarea id="tarot-question" placeholder="Что вас волнует?"></textarea>
@@ -43,7 +45,7 @@
         <button class="back-btn" data-target="menu-screen">← Назад</button>
     </div>
 
-    <!-- Таро: выбор карт -->
+    <!-- Выбор карт -->
     <div id="tarot-cards-screen" class="screen">
         <h2>Коснитесь колоды трижды</h2>
         <div id="deck-container">
@@ -54,7 +56,7 @@
         <div id="selected-cards"></div>
     </div>
 
-    <!-- Таро: результат -->
+    <!-- Результат Таро -->
     <div id="tarot-result-screen" class="screen">
         <div id="result-cards"></div>
         <div id="prediction-text" class="scroll-box"></div>
