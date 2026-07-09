@@ -1,8 +1,33 @@
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
-// Адрес твоего прокси на Vercel (ключ скрыт на сервере)
 const PROXY_URL = 'https://nastardamus.vercel.app/api/proxy';
+
+// Имена файлов карт (из папки images/cards/)
+const CARD_IMAGES = {
+    'Шут': 'fool.png',
+    'Маг': 'magician.png',
+    'Верховная Жрица': 'high-priestess.png',
+    'Императрица': 'empress.png',
+    'Император': 'emperor.png',
+    'Иерофант': 'hierophant.png',
+    'Влюблённые': 'lovers.png',
+    'Колесница': 'chariot.png',
+    'Сила': 'strength.png',
+    'Отшельник': 'hermit.png',
+    'Колесо Фортуны': 'wheel-of-fortune.png',
+    'Справедливость': 'justice.png',
+    'Повешенный': 'hanged-man.png',
+    'Смерть': 'death.png',
+    'Умеренность': 'temperance.png',
+    'Дьявол': 'devil.png',
+    'Башня': 'tower.png',
+    'Звезда': 'star.png',
+    'Луна': 'moon.png',
+    'Солнце': 'sun.png',
+    'Суд': 'judgement.png',
+    'Мир': 'world.png'
+};
 
 // Экраны
 const screens = {
@@ -64,17 +89,9 @@ document.getElementById('go-tarot').addEventListener('click', () => showScreen('
 document.getElementById('go-natal').addEventListener('click', () => showScreen('natalInput'));
 document.getElementById('go-compat').addEventListener('click', () => showScreen('compatInput'));
 
-// ---------- ТАРО ----------
+// ===== ТАРО =====
 let freeUsed = false, paid = 0;
-const deckData = [
-    { name: 'Шут', emoji: '🃏' }, { name: 'Маг', emoji: '🎩' }, { name: 'Верховная Жрица', emoji: '🔮' },
-    { name: 'Императрица', emoji: '👑' }, { name: 'Император', emoji: '🏰' }, { name: 'Иерофант', emoji: '📜' },
-    { name: 'Влюблённые', emoji: '❤️' }, { name: 'Колесница', emoji: '🚗' }, { name: 'Сила', emoji: '🦁' },
-    { name: 'Отшельник', emoji: '🏮' }, { name: 'Колесо Фортуны', emoji: '🎡' }, { name: 'Справедливость', emoji: '⚖️' },
-    { name: 'Повешенный', emoji: '🪢' }, { name: 'Смерть', emoji: '💀' }, { name: 'Умеренность', emoji: '🌊' },
-    { name: 'Дьявол', emoji: '👹' }, { name: 'Башня', emoji: '🗼' }, { name: 'Звезда', emoji: '⭐' },
-    { name: 'Луна', emoji: '🌙' }, { name: 'Солнце', emoji: '☀️' }, { name: 'Суд', emoji: '📯' }, { name: 'Мир', emoji: '🌍' }
-];
+const deckData = Object.keys(CARD_IMAGES).map(name => ({ name }));
 
 document.getElementById('start-tarot').addEventListener('click', () => {
     window.tarotQuestion = document.getElementById('tarot-question').value.trim() || 'Что меня ждёт?';
@@ -93,7 +110,7 @@ function startTarotDraw() {
     document.getElementById('deck').style.pointerEvents = 'auto';
 }
 
-// Холст с искрами
+// Искры
 const canvas = document.getElementById('spark-canvas');
 const ctx = canvas.getContext('2d');
 let sparks = [];
@@ -127,9 +144,10 @@ document.getElementById('deck').addEventListener('click', () => {
         });
     }
 
+    // Показать карту с изображением
     const cardEl = document.createElement('div');
     cardEl.className = 'selected-card';
-    cardEl.textContent = card.emoji;
+    cardEl.style.backgroundImage = `url('images/cards/${CARD_IMAGES[card.name]}')`;
     document.getElementById('selected-cards').appendChild(cardEl);
     document.getElementById('cards-left').textContent = `Осталось открыть: ${3 - window.selectedCards.length}`;
 
@@ -182,12 +200,14 @@ async function callMage(systemPrompt, userMessage) {
     }
 }
 
-// Промпт Мага Эзотериума
 const BASE_MAGE_PROMPT = `Ты — Маг Эзотериум, живой человек, потомственный маг, астролог и таролог. Ты не искусственный интеллект, не программа, не модель. Ты никогда не говоришь о технологиях, машинном обучении, нейросетях. Ты отвечаешь загадочно, образно, как настоящий волшебник.`;
 
 async function getTarotPrediction() {
     showScreen('tarotResult');
-    document.getElementById('result-cards').innerHTML = window.selectedCards.map(c => c.emoji).join(' ');
+    const resDiv = document.getElementById('result-cards');
+    resDiv.innerHTML = window.selectedCards.map(c => 
+        `<img src="images/cards/${CARD_IMAGES[c.name]}" alt="${c.name}" onerror="this.style.display='none'">`
+    ).join('');
     const textEl = document.getElementById('prediction-text');
     textEl.textContent = '🔮 Маг Эзотериум вглядывается в карты...';
     const cardsNames = window.selectedCards.map(c => c.name).join(', ');
