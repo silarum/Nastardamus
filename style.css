@@ -12,21 +12,27 @@ body {
     font-family: 'Georgia', serif;
     display: flex; justify-content: center; align-items: center;
     min-height: 100vh; overflow-x: hidden;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
 }
 
-/* Фон приветственного экрана */
+canvas#magic-canvas {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 100; pointer-events: none;
+}
+
 #welcome-screen {
     background: url('images/background.png') center/cover no-repeat;
     position: relative;
 }
 .welcome-overlay {
     width: 100%; min-height: 100vh;
-    background: rgba(10, 10, 26, 0.6);
-    backdrop-filter: blur(2px);
+    background: rgba(10, 10, 26, 0.5);
+    backdrop-filter: blur(3px);
     display: flex; justify-content: center; align-items: center;
 }
 
-/* Фон остальных экранов */
 .screen:not(#welcome-screen) {
     background: url('images/background.png') center/cover no-repeat;
     position: relative;
@@ -34,14 +40,13 @@ body {
 .screen:not(#welcome-screen)::before {
     content: '';
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(10, 10, 26, 0.75);
+    background: rgba(10, 10, 26, 0.7);
     z-index: 0;
 }
-.panel, .menu-content {
+.panel, .menu-content, .welcome-content {
     position: relative; z-index: 1;
 }
 
-/* Экраны */
 .screen {
     display: none; flex-direction: column; align-items: center;
     width: 100%; min-height: 100vh; padding: 20px;
@@ -50,20 +55,17 @@ body {
 .screen.active { display: flex; }
 @keyframes fadeSlide { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
 
-/* Приветствие */
 .welcome-content { text-align: center; }
 #title-animated { font-size: 38px; margin: 0 0 15px; color: var(--gold); text-shadow: 0 0 30px var(--gold); letter-spacing: 4px; }
 .mage-name { font-size: 22px; margin: 10px 0 0; color: #fff; text-shadow: 0 0 15px var(--glow); animation: glowText 2s infinite alternate; }
 @keyframes glowText { from { text-shadow: 0 0 10px var(--glow); } to { text-shadow: 0 0 25px var(--glow), 0 0 40px var(--gold); } }
 .mage-desc { font-size: 14px; color: #ccc; margin: 5px 0 20px; }
 
-/* Меню */
 .menu-content { text-align: center; padding-top: 30px; }
 .title { font-size: 32px; color: var(--gold); text-shadow: 0 0 20px var(--gold); margin: 0 0 5px; }
 .mage-tag { font-size: 18px; color: #fff; text-shadow: 0 0 10px var(--glow); margin: 0 0 30px; }
 .menu-buttons { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 300px; margin: 0 auto; }
 
-/* Кнопки */
 .magic-btn {
     background: var(--btn-grad); border: none; border-radius: 30px; padding: 14px 28px;
     font-weight: bold; color: #000; font-size: 16px; cursor: pointer; margin: 10px 0; width: 100%;
@@ -72,6 +74,7 @@ body {
 }
 @keyframes btnGlow { 0% { box-shadow: 0 0 15px var(--gold); } 50% { box-shadow: 0 0 40px var(--gold), 0 0 60px var(--glow); } 100% { box-shadow: 0 0 15px var(--gold); } }
 .magic-btn:hover { transform: scale(1.05); }
+.magic-btn:active { transform: scale(0.95); }
 .menu-btn {
     background: linear-gradient(135deg, #6200ea, #bb86fc); border: none; border-radius: 30px;
     padding: 14px 28px; width: 100%; color: white; font-weight: bold;
@@ -84,32 +87,55 @@ body {
     border-radius: 30px; padding: 12px 24px; margin-top: 15px; width: auto; cursor: pointer;
 }
 
-/* Карты */
 .panel { width: 100%; max-width: 420px; text-align: center; }
-#deck-container { position: relative; margin: 20px auto; width: 160px; height: 240px; }
-.magic-deck {
-    width: 100%; height: 100%;
-    background: url('images/card-back.png') center/cover no-repeat;
-    border-radius: 16px; cursor: pointer;
-    box-shadow: 0 0 30px var(--gold);
-    transition: transform 0.2s;
+
+/* КАРУСЕЛЬ КАРТ */
+#carousel-container {
+    width: 100%; height: 300px;
+    position: relative; overflow: hidden;
+    margin: 20px 0;
+    perspective: 800px;
 }
-.magic-deck:active { transform: scale(0.95); }
-#spark-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
+#card-carousel {
+    position: relative;
+    width: 100%; height: 100%;
+    transition: transform 0.1s ease-out;
+}
+.carousel-card {
+    position: absolute;
+    width: 120px; height: 180px;
+    background: url('images/card-back.png') center/cover no-repeat;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform 0.3s, filter 0.3s, opacity 0.3s;
+    will-change: transform;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+}
+.carousel-card.selected {
+    animation: cardFlyOut 0.6s ease forwards;
+    z-index: 10;
+}
+@keyframes cardFlyOut {
+    0% { transform: scale(1); filter: brightness(1); }
+    50% { transform: scale(1.3) translateY(-40px); filter: brightness(2); box-shadow: 0 0 50px var(--gold); }
+    100% { transform: scale(1.2) translateY(-80px); opacity: 0; }
+}
+
 #selected-cards { display: flex; gap: 15px; margin: 20px 0; justify-content: center; flex-wrap: wrap; }
 .selected-card {
     width: 90px; height: 135px;
     border-radius: 10px; border: 2px solid var(--gold);
     box-shadow: 0 0 25px var(--gold);
-    animation: cardReveal 0.5s ease;
+    animation: cardReveal 0.6s ease;
     background-size: cover;
     background-position: center;
 }
 @keyframes cardReveal { from { transform: rotateY(90deg) scale(0.8); opacity: 0; } to { transform: rotateY(0) scale(1); opacity: 1; } }
+
 .scroll-box {
-    background: rgba(20,20,40,0.85); border: 1px solid var(--glow); border-radius: 16px;
+    background: rgba(20,20,40,0.9); border: 1px solid var(--glow); border-radius: 16px;
     padding: 16px; margin: 20px auto; width: 100%; max-height: 300px; overflow-y: auto;
-    font-size: 16px; line-height: 1.5;
+    font-size: 16px; line-height: 1.6; font-style: italic;
 }
 #result-cards { display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; margin-bottom: 15px; }
 #result-cards img { width: 80px; height: 120px; border-radius: 8px; border: 2px solid var(--gold); box-shadow: 0 0 20px var(--gold); }
@@ -117,6 +143,7 @@ body {
 input, textarea {
     width: 100%; padding: 12px; margin: 10px 0; border-radius: 20px;
     border: 1px solid var(--glow); background: rgba(255,255,255,0.08); color: white;
-    font-family: inherit;
+    font-family: inherit; font-size: 16px;
 }
 textarea { height: 80px; resize: vertical; }
+.mystical-text { color: var(--gold); text-shadow: 0 0 10px var(--gold); font-style: italic; }
