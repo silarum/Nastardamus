@@ -8,6 +8,8 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
+    <canvas id="magic-canvas"></canvas>
+
     <!-- Приветственный экран -->
     <div id="welcome-screen" class="screen active">
         <div class="welcome-overlay">
@@ -36,22 +38,21 @@
     <!-- Вопрос для Таро -->
     <div id="tarot-input-screen" class="screen">
         <div class="panel">
-            <h2>Задайте вопрос магу</h2>
-            <textarea id="tarot-question" placeholder="Что вас волнует?"></textarea>
-            <button id="start-tarot" class="magic-btn">Тасовать карты</button>
+            <h2 class="mystical-text">Поведайте свою тайну</h2>
+            <textarea id="tarot-question" placeholder="Что тревожит вашу душу?"></textarea>
+            <button id="start-tarot" class="magic-btn">Разбудить колоду</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
     </div>
 
-    <!-- Выбор карт -->
+    <!-- Интерактивная колода -->
     <div id="tarot-cards-screen" class="screen">
         <div class="panel">
-            <h2>Коснитесь колоды трижды</h2>
-            <div id="deck-container">
-                <div id="deck" class="magic-deck"></div>
-                <canvas id="spark-canvas"></canvas>
+            <h2 class="mystical-text">Дважды коснитесь карты</h2>
+            <div id="carousel-container">
+                <div id="card-carousel"></div>
             </div>
-            <p id="cards-left"></p>
+            <p id="cards-left" class="mystical-text"></p>
             <div id="selected-cards"></div>
         </div>
     </div>
@@ -68,10 +69,10 @@
     <!-- Натальная карта -->
     <div id="natal-input-screen" class="screen">
         <div class="panel">
-            <h2>Натальная карта</h2>
+            <h2 class="mystical-text">Звёзды ждут</h2>
             <input type="date" id="natal-date">
             <input type="time" id="natal-time" value="12:00">
-            <button id="get-natal" class="magic-btn">Рассчитать</button>
+            <button id="get-natal" class="magic-btn">Открыть гороскоп</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
     </div>
@@ -85,12 +86,12 @@
     <!-- Совместимость -->
     <div id="compat-input-screen" class="screen">
         <div class="panel">
-            <h2>Совместимость</h2>
+            <h2 class="mystical-text">Союз сердец</h2>
             <input type="text" id="person1-name" placeholder="Имя первого">
             <input type="date" id="person1-date">
             <input type="text" id="person2-name" placeholder="Имя второго">
             <input type="date" id="person2-date">
-            <button id="get-compat" class="magic-btn">Узнать</button>
+            <button id="get-compat" class="magic-btn">Проверить совместимость</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
     </div>
