@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Nastardamus</title>
+    <title>Nastardamus 🔮</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -14,6 +14,7 @@
     <div id="welcome-screen" class="screen active">
         <div class="welcome-overlay">
             <div class="welcome-content">
+                <div class="mage-sigil"></div>
                 <h1 id="title-animated" class="title-glow">Nastardamus</h1>
                 <p class="mage-name">Вас приветствует Маг Эзотериум</p>
                 <p class="mage-desc">Ясновидящий, астролог, повелитель Таро</p>
@@ -23,42 +24,55 @@
         </div>
     </div>
 
-    <!-- Видео-приветствие -->
-    <div id="video-screen" class="screen">
-        <div class="video-container">
-            <div id="video-loader" class="video-loader">
-                <div class="loader-spin"></div>
-                <p>Маг Эзотериум готовится...</p>
-            </div>
-            <video id="mage-video" playsinline preload="auto" muted>
-                <source src="video/welcome.mp4" type="video/mp4">
-            </video>
-            <div id="video-overlay">
-                <p class="mage-video-text">Маг Эзотериум приветствует вас</p>
-                <button id="skip-video-btn" class="skip-btn">Пропустить →</button>
-            </div>
-            <button class="back-btn video-back" data-target="menu-screen">← Назад</button>
-        </div>
-    </div>
-
-    <!-- Главное меню -->
+    <!-- Главное меню (расширенное) -->
     <div id="menu-screen" class="screen">
         <div class="menu-content">
             <h1 class="title">✨ Nastardamus ✨</h1>
             <p class="mage-tag">Маг Эзотериум</p>
-            <div id="menu-credits" class="credits-badge">
+            <div class="credits-badge">
                 💎 <span id="credit-count">1</span> бесплатный · <span id="paid-count">0</span> оплаченных
             </div>
-            <div class="menu-buttons">
-                <button id="go-tarot" class="menu-btn">🔮 Расклад Таро <span class="btn-hint">3 карты</span></button>
-                <button id="go-natal" class="menu-btn">🌌 Натальная карта <span class="btn-hint">по дате рождения</span></button>
-                <button id="go-compat" class="menu-btn">💞 Совместимость <span class="btn-hint">двух людей</span></button>
+
+            <!-- Основные разделы -->
+            <div class="menu-section">
+                <h3 class="section-title">🔮 Гадания</h3>
+                <button id="go-tarot" class="menu-btn">Расклад Таро <span class="btn-hint">1, 3 или 5 карт</span></button>
+                <button id="go-card-day" class="menu-btn">Карта дня <span class="btn-hint">ежедневное предсказание</span></button>
+                <button id="go-quick-answer" class="menu-btn">Быстрый ответ <span class="btn-hint">мгновенное пророчество</span></button>
             </div>
-            <button id="help-btn-menu" class="help-icon">?</button>
+
+            <!-- Астрология -->
+            <div class="menu-section">
+                <h3 class="section-title">🌌 Астрология</h3>
+                <button id="go-horoscope" class="menu-btn">Ежедневный гороскоп <span class="btn-hint">все знаки зодиака</span></button>
+                <button id="go-natal" class="menu-btn">Натальная карта <span class="btn-hint">персональный расчёт</span></button>
+                <button id="go-compat" class="menu-btn">Совместимость <span class="btn-hint">анализ отношений</span></button>
+                <button id="go-moon" class="menu-btn">Лунный календарь <span class="btn-hint">фазы и рекомендации</span></button>
+            </div>
+
+            <!-- Обучение -->
+            <div class="menu-section">
+                <h3 class="section-title">📚 Обучение</h3>
+                <button id="go-tarot-meanings" class="menu-btn">Значения карт Таро <span class="btn-hint">22 старших аркана</span></button>
+                <button id="go-astrology-guide" class="menu-btn">Астрологический ликбез <span class="btn-hint">основы для начинающих</span></button>
+            </div>
+
+            <!-- Профиль -->
+            <div class="menu-section">
+                <h3 class="section-title">👤 Профиль</h3>
+                <button id="go-profile" class="menu-btn">Мой кабинет <span class="btn-hint">история, статистика, достижения</span></button>
+            </div>
+
+            <!-- Настройки -->
+            <div class="menu-footer">
+                <button id="toggle-sound" class="icon-btn">🔊</button>
+                <button id="toggle-theme" class="icon-btn">🌓</button>
+                <button id="help-btn-menu" class="icon-btn">❓</button>
+            </div>
         </div>
     </div>
 
-    <!-- Вопрос для Таро -->
+    <!-- Экран Таро (вопрос) -->
     <div id="tarot-input-screen" class="screen">
         <div class="panel">
             <div class="header-row">
@@ -66,12 +80,17 @@
                 <button class="help-icon-small" data-help="tarot-question">?</button>
             </div>
             <textarea id="tarot-question" placeholder="Что тревожит вашу душу? (можно оставить пустым)"></textarea>
+            <div class="spread-selector">
+                <button class="spread-option active" data-cards="1">1 карта</button>
+                <button class="spread-option" data-cards="3">3 карты</button>
+                <button class="spread-option" data-cards="5">5 карт</button>
+            </div>
             <button id="start-tarot" class="magic-btn">Разбудить колоду</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
     </div>
 
-    <!-- Экран тасовки и выбора карт -->
+    <!-- Экран тасовки (адаптирован под 1/3/5 карт) -->
     <div id="tarot-cards-screen" class="screen">
         <div class="panel full-height">
             <div class="header-row">
@@ -91,51 +110,166 @@
             </div>
             <p id="cards-left" class="mystical-text">Выбрано: 0 из 3</p>
             <div id="selected-cards-preview"></div>
-            <button class="back-btn" data-target="menu-screen" id="back-from-cards">← Выйти (сбросить выбор)</button>
+            <button class="back-btn" data-target="menu-screen" id="back-from-cards">← Выйти</button>
         </div>
     </div>
 
-    <!-- Результат Таро -->
+    <!-- Результат Таро (общий) -->
     <div id="tarot-result-screen" class="screen">
         <div class="panel">
             <h2 class="mystical-text">Ваше предсказание</h2>
             <div id="result-cards"></div>
             <div id="prediction-text" class="scroll-box">
-                <span class="loading-dots">Маг Эзотериум вглядывается в карты</span><span class="dots-anim">...</span>
+                <span class="loading-dots">Маг советуется со звёздами</span><span class="dots-anim">...</span>
             </div>
             <div class="result-actions">
+                <button id="save-result" class="magic-btn small">💾 Сохранить</button>
                 <button id="share-btn" class="magic-btn small">📤 Поделиться</button>
                 <button class="back-btn" data-target="menu-screen">← В меню</button>
             </div>
         </div>
     </div>
 
-    <!-- Натальная карта -->
+    <!-- Карта дня -->
+    <div id="card-day-screen" class="screen">
+        <div class="panel">
+            <h2 class="mystical-text">Карта дня</h2>
+            <div id="card-day-image"></div>
+            <div id="card-day-text" class="scroll-box">
+                <span class="loading-dots">Маг выбирает карту</span><span class="dots-anim">...</span>
+            </div>
+            <button class="back-btn" data-target="menu-screen">← В меню</button>
+        </div>
+    </div>
+
+    <!-- Быстрый ответ -->
+    <div id="quick-answer-screen" class="screen">
+        <div class="panel">
+            <h2 class="mystical-text">Быстрый ответ</h2>
+            <textarea id="quick-question" placeholder="Задайте вопрос..."></textarea>
+            <button id="get-quick-answer" class="magic-btn">Получить ответ</button>
+            <div id="quick-answer-text" class="scroll-box" style="display:none;"></div>
+            <button class="back-btn" data-target="menu-screen">← Назад</button>
+        </div>
+    </div>
+
+    <!-- Гороскоп -->
+    <div id="horoscope-screen" class="screen">
+        <div class="panel">
+            <h2 class="mystical-text">Ежедневный гороскоп</h2>
+            <select id="zodiac-select" class="zodiac-select">
+                <option value="">Выберите знак зодиака</option>
+                <option value="овен">♈ Овен (21.03-19.04)</option>
+                <option value="телец">♉ Телец (20.04-20.05)</option>
+                <option value="близнецы">♊ Близнецы (21.05-21.06)</option>
+                <option value="рак">♋ Рак (22.06-22.07)</option>
+                <option value="лев">♌ Лев (23.07-22.08)</option>
+                <option value="дева">♍ Дева (23.08-22.09)</option>
+                <option value="весы">♎ Весы (23.09-22.10)</option>
+                <option value="скорпион">♏ Скорпион (23.10-21.11)</option>
+                <option value="стрелец">♐ Стрелец (22.11-21.12)</option>
+                <option value="козерог">♑ Козерог (22.12-19.01)</option>
+                <option value="водолей">♒ Водолей (20.01-18.02)</option>
+                <option value="рыбы">♓ Рыбы (19.02-20.03)</option>
+            </select>
+            <div id="horoscope-text" class="scroll-box" style="display:none;"></div>
+            <button class="back-btn" data-target="menu-screen">← Назад</button>
+        </div>
+    </div>
+
+    <!-- Лунный календарь -->
+    <div id="moon-screen" class="screen">
+        <div class="panel">
+            <h2 class="mystical-text">Лунный календарь</h2>
+            <div id="moon-phase" class="moon-phase">🌕</div>
+            <div id="moon-text" class="scroll-box">
+                <span class="loading-dots">Маг советуется с Луной</span><span class="dots-anim">...</span>
+            </div>
+            <button class="back-btn" data-target="menu-screen">← Назад</button>
+        </div>
+    </div>
+
+    <!-- Значения карт Таро -->
+    <div id="tarot-meanings-screen" class="screen">
+        <div class="panel">
+            <h2 class="mystical-text">Старшие Арканы</h2>
+            <div id="meanings-grid" class="meanings-grid"></div>
+            <button class="back-btn" data-target="menu-screen">← Назад</button>
+        </div>
+    </div>
+
+    <!-- Астрологический ликбез -->
+    <div id="astrology-guide-screen" class="screen">
+        <div class="panel">
+            <h2 class="mystical-text">Астрологический ликбез</h2>
+            <div id="guide-text" class="scroll-box">
+                <p>🌞 <b>Солнце</b> — ваша личность, эго, жизненная сила.</p>
+                <p>🌙 <b>Луна</b> — эмоции, подсознание, интуиция.</p>
+                <p>⬆️ <b>Асцендент</b> — маска, первое впечатление.</p>
+                <p>☿ <b>Меркурий</b> — мышление, общение.</p>
+                <p>♀ <b>Венера</b> — любовь, красота, ценности.</p>
+                <p>♂ <b>Марс</b> — энергия, действие, страсть.</p>
+                <p>♃ <b>Юпитер</b> — удача, расширение, мудрость.</p>
+                <p>♄ <b>Сатурн</b> — дисциплина, ограничения, уроки.</p>
+                <p>♅ <b>Уран</b> — инновации, бунт, перемены.</p>
+                <p>♆ <b>Нептун</b> — мечты, иллюзии, духовность.</p>
+                <p>♇ <b>Плутон</b> — трансформация, власть, глубина.</p>
+            </div>
+            <button class="back-btn" data-target="menu-screen">← Назад</button>
+        </div>
+    </div>
+
+    <!-- Профиль -->
+    <div id="profile-screen" class="screen">
+        <div class="panel">
+            <h2 class="mystical-text">Мой кабинет</h2>
+            <div class="stats-row">
+                <div class="stat-item">🔮 <span id="stat-readings">0</span> раскладов</div>
+                <div class="stat-item">🌌 <span id="stat-natal">0</span> гороскопов</div>
+                <div class="stat-item">💞 <span id="stat-compat">0</span> совместимостей</div>
+            </div>
+            <h3 class="section-title">🏆 Достижения</h3>
+            <div id="achievements-list" class="achievements-list"></div>
+            <h3 class="section-title">📜 История</h3>
+            <div id="history-list" class="history-list"></div>
+            <button id="clear-history" class="magic-btn small">Очистить историю</button>
+            <button class="back-btn" data-target="menu-screen">← Назад</button>
+        </div>
+    </div>
+
+    <!-- Остальные экраны (натальная, совместимость) без изменений -->
     <div id="natal-input-screen" class="screen">
         <div class="panel">
             <div class="header-row"><h2 class="mystical-text">Звёзды ждут</h2><button class="help-icon-small" data-help="natal">?</button></div>
-            <label class="input-label">Дата рождения</label><input type="date" id="natal-date" placeholder="ДД.ММ.ГГГГ">
-            <label class="input-label">Время рождения</label><input type="time" id="natal-time" value="12:00">
+            <input type="date" id="natal-date"><input type="time" id="natal-time" value="12:00">
             <button id="get-natal" class="magic-btn">Открыть гороскоп</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
     </div>
     <div id="natal-result-screen" class="screen">
-        <div class="panel"><h2 class="mystical-text">Ваша натальная карта</h2><div id="natal-text" class="scroll-box"><span class="loading-dots">Рассчитываем</span><span class="dots-anim">...</span></div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
+        <div class="panel"><h2 class="mystical-text">Натальная карта</h2><div id="natal-text" class="scroll-box"><span class="loading-dots">Рассчитываем</span><span class="dots-anim">...</span></div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
     </div>
-
-    <!-- Совместимость -->
     <div id="compat-input-screen" class="screen">
         <div class="panel">
             <div class="header-row"><h2 class="mystical-text">Союз сердец</h2><button class="help-icon-small" data-help="compat">?</button></div>
-            <label class="input-label">Первый партнёр</label><input type="text" id="person1-name" placeholder="Имя"><input type="date" id="person1-date">
-            <label class="input-label">Второй партнёр</label><input type="text" id="person2-name" placeholder="Имя"><input type="date" id="person2-date">
-            <button id="get-compat" class="magic-btn">Проверить совместимость</button>
+            <input type="text" id="person1-name" placeholder="Имя"><input type="date" id="person1-date">
+            <input type="text" id="person2-name" placeholder="Имя"><input type="date" id="person2-date">
+            <button id="get-compat" class="magic-btn">Проверить</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
     </div>
     <div id="compat-result-screen" class="screen">
         <div class="panel"><h2 class="mystical-text">Совместимость</h2><div id="compat-text" class="scroll-box"><span class="loading-dots">Анализируем</span><span class="dots-anim">...</span></div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
+    </div>
+
+    <!-- Видео-приветствие -->
+    <div id="video-screen" class="screen">
+        <div class="video-container">
+            <div id="video-loader" class="video-loader"><div class="loader-spin"></div><p>Маг готовится...</p></div>
+            <video id="mage-video" playsinline preload="auto" muted><source src="video/welcome.mp4" type="video/mp4"></video>
+            <div id="video-overlay"><p class="mage-video-text">Маг Эзотериум приветствует вас</p><button id="skip-video-btn" class="skip-btn">Пропустить →</button></div>
+            <button class="back-btn video-back" data-target="menu-screen">← Назад</button>
+        </div>
     </div>
 
     <!-- Модальное окно помощи -->
