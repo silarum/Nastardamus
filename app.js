@@ -59,13 +59,22 @@ function animateTitle() {
         span.style.animation = `flyIn 0.5s ${i * 0.1}s forwards, glowLetter 2s ${i * 0.1}s infinite alternate`;
         titleEl.appendChild(span);
     });
+    if (!document.getElementById('dynamic-keyframes')) {
+        const styleSheet = document.createElement('style');
+        styleSheet.id = 'dynamic-keyframes';
+        styleSheet.textContent = `
+            @keyframes flyIn { from { transform: translateY(-40px) rotateY(90deg); opacity: 0; } to { transform: translateY(0) rotateY(0); opacity: 1; } }
+            @keyframes glowLetter { from { text-shadow: 0 0 10px var(--gold); } to { text-shadow: 0 0 25px var(--gold), 0 0 40px var(--glow); } }
+        `;
+        document.head.appendChild(styleSheet);
+    }
 }
 animateTitle();
 
 // Приветствие
 document.getElementById('continue-btn').addEventListener('click', () => showScreen('menu'));
 
-// Навигация "назад"
+// Навигация
 document.querySelectorAll('.back-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const target = btn.dataset.target;
@@ -78,167 +87,164 @@ document.getElementById('go-tarot').addEventListener('click', () => showScreen('
 document.getElementById('go-natal').addEventListener('click', () => showScreen('natalInput'));
 document.getElementById('go-compat').addEventListener('click', () => showScreen('compatInput'));
 
-// ===== МАГИЧЕСКАЯ КОЛОДА =====
+// ===== ФОНОВЫЕ ЧАСТИЦЫ =====
+const pCanvas = document.getElementById('particles-canvas');
+const pCtx = pCanvas.getContext('2d');
+let bgParticles = [];
+function resizeCanvas() {
+    pCanvas.width = window.innerWidth;
+    pCanvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// Создаём фон из пылинок
+for (let i = 0; i < 60; i++) {
+    bgParticles.push({
+        x: Math.random() * pCanvas.width,
+        y: Math.random() * pCanvas.height,
+        size: Math.random() * 2 + 0.5,
+        speedX: (Math.random() - 0.5) * 0.3,
+        speedY: (Math.random() - 0.5) * 0.3,
+        opacity: Math.random() * 0.5 + 0.2
+    });
+}
+function animateBgParticles() {
+    pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+    bgParticles.forEach(p => {
+        p.x += p.speedX;
+        p.y += p.speedY;
+        if (p.x < 0) p.x = pCanvas.width;
+        if (p.x > pCanvas.width) p.x = 0;
+        if (p.y < 0) p.y = pCanvas.height;
+        if (p.y > pCanvas.height) p.y = 0;
+        pCtx.fillStyle = `rgba(255, 215, 0, ${p.opacity})`;
+        pCtx.beginPath();
+        pCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        pCtx.fill();
+    });
+    requestAnimationFrame(animateBgParticles);
+}
+animateBgParticles();
+
+// ===== СВОБОДНАЯ КОЛОДА =====
 let freeUsed = false, paid = 0;
 const deckNames = Object.keys(CARD_IMAGES);
 let selectedCards = [];
 const cardsToSelect = 3;
-let isAnimating = false;
-
-// Canvas для искр
-const magicCanvas = document.getElementById('magic-canvas');
-const mCtx = magicCanvas.getContext('2d');
-magicCanvas.width = window.innerWidth;
-magicCanvas.height = window.innerHeight;
-let particles = [];
-function addParticles(x, y, count) {
-    for (let i = 0; i < count; i++) {
-        particles.push({
-            x, y,
-            vx: (Math.random() - 0.5) * 4,
-            vy: (Math.random() - 1) * 4,
-            life: 1,
-            size: Math.random() * 3 + 1
-        });
-    }
-}
-function animateParticles() {
-    mCtx.clearRect(0, 0, magicCanvas.width, magicCanvas.height);
-    particles = particles.filter(p => p.life > 0);
-    particles.forEach(p => {
-        mCtx.fillStyle = `rgba(255, 215, 0, ${p.life})`;
-        mCtx.beginPath();
-        mCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        mCtx.fill();
-        p.x += p.vx;
-        p.y += p.vy;
-        p.life -= 0.03;
-    });
-    requestAnimationFrame(animateParticles);
-}
-animateParticles();
 
 document.getElementById('start-tarot').addEventListener('click', () => {
     window.tarotQuestion = document.getElementById('tarot-question').value.trim() || 'Что ждёт меня на пути?';
-    if (!freeUsed) { freeUsed = true; buildCarousel(); }
-    else if (paid > 0) { paid--; buildCarousel(); }
+    if (!freeUsed) { freeUsed = true; buildFreeDeck(); }
+    else if (paid > 0) { paid--; buildFreeDeck(); }
     else {
-        if (confirm('Нет оплаченных вопросов. Добавить 1 тестовый?')) { paid++; buildCarousel(); }
+        if (confirm('Нет оплаченных вопросов. Добавить 1 тестовый?')) { paid++; buildFreeDeck(); }
     }
 });
 
-function buildCarousel() {
+function buildFreeDeck() {
     selectedCards = [];
-    document.getElementById('selected-cards').innerHTML = '';
+    document.getElementById('selected-cards-preview').innerHTML = '';
     document.getElementById('cards-left').textContent = 'Выбрано: 0 из 3';
     showScreen('tarotCards');
-    const carousel = document.getElementById('card-carousel');
-    carousel.innerHTML = '';
 
-    // Размещаем 22 карты по кругу
-    const total = 22;
-    const radius = 180;
-    const container = document.getElementById('carousel-container');
-    const centerX = container.offsetWidth / 2;
-    const centerY = container.offsetHeight / 2;
+    const deck = document.getElementById('free-deck');
+    deck.innerHTML = '';
+    const container = document.getElementById('free-deck-container');
+    const w = container.offsetWidth;
+    const h = container.offsetHeight;
 
-    for (let i = 0; i < total; i++) {
-        const angle = (i / total) * Math.PI * 2;
-        const x = centerX + Math.cos(angle) * radius - 60;
-        const y = centerY + Math.sin(angle) * radius - 90;
-
+    // Разбрасываем карты случайно
+    for (let i = 0; i < deckNames.length; i++) {
         const card = document.createElement('div');
-        card.className = 'carousel-card';
-        card.style.left = x + 'px';
-        card.style.top = y + 'px';
-        card.style.transform = `rotate(${angle * 180 / Math.PI - 90}deg)`;
-        card.style.zIndex = Math.floor(Math.sin(angle) * 10) + 10;
-        card.style.opacity = '0.9';
+        card.className = 'free-card';
         card.dataset.name = deckNames[i];
-        card.dataset.angle = angle;
-        card.dataset.origX = x;
-        card.dataset.origY = y;
+        card.dataset.index = i;
 
-        // Двойное касание
+        // Случайная позиция
+        card.style.left = (Math.random() * (w - 100)) + 'px';
+        card.style.top = (Math.random() * (h - 150)) + 'px';
+        card.style.transform = `rotate(${(Math.random() - 0.5) * 60}deg)`;
+
+        // Двойное касание для выбора
         let tapTimer = null;
         card.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (isAnimating) return;
             if (tapTimer) {
                 clearTimeout(tapTimer);
                 tapTimer = null;
-                selectCard(card, e);
+                selectFreeCard(card, e);
             } else {
                 tapTimer = setTimeout(() => { tapTimer = null; }, 300);
             }
         });
-        carousel.appendChild(card);
+
+        deck.appendChild(card);
     }
 
-    // Жест прокрутки колоды
-    let isDragging = false;
-    let startX = 0;
-    let currentRotation = 0;
-    carousel.addEventListener('touchstart', (e) => {
-        if (isAnimating) return;
-        isDragging = true;
-        startX = e.touches[0].clientX;
-    });
-    carousel.addEventListener('touchmove', (e) => {
-        if (!isDragging) return;
-        const dx = e.touches[0].clientX - startX;
-        currentRotation += dx * 0.005;
-        rotateCarousel(currentRotation);
-        startX = e.touches[0].clientX;
-    });
-    carousel.addEventListener('touchend', () => {
-        isDragging = false;
+    // Добавляем возможность перетаскивать карты
+    enableCardDrag(deck);
+}
+
+function enableCardDrag(deckEl) {
+    let draggingCard = null;
+    let offsetX, offsetY;
+
+    deckEl.addEventListener('touchstart', (e) => {
+        const card = e.target.closest('.free-card');
+        if (!card || card.classList.contains('fly-out')) return;
+        draggingCard = card;
+        const rect = card.getBoundingClientRect();
+        offsetX = e.touches[0].clientX - rect.left;
+        offsetY = e.touches[0].clientY - rect.top;
+        card.style.zIndex = 500;
+        card.classList.add('highlight');
+    }, { passive: false });
+
+    deckEl.addEventListener('touchmove', (e) => {
+        if (!draggingCard) return;
+        e.preventDefault();
+        const container = document.getElementById('free-deck-container');
+        const containerRect = container.getBoundingClientRect();
+        const x = e.touches[0].clientX - containerRect.left - offsetX;
+        const y = e.touches[0].clientY - containerRect.top - offsetY;
+        draggingCard.style.left = x + 'px';
+        draggingCard.style.top = y + 'px';
+    }, { passive: false });
+
+    deckEl.addEventListener('touchend', () => {
+        if (!draggingCard) return;
+        draggingCard.classList.remove('highlight');
+        draggingCard.style.zIndex = 1;
+        draggingCard = null;
     });
 }
 
-function rotateCarousel(rotation) {
-    const cards = document.querySelectorAll('.carousel-card');
-    const total = cards.length;
-    const radius = 180;
-    const container = document.getElementById('carousel-container');
-    const centerX = container.offsetWidth / 2;
-    const centerY = container.offsetHeight / 2;
-
-    cards.forEach((card, i) => {
-        const originalAngle = parseFloat(card.dataset.angle);
-        const newAngle = originalAngle + rotation;
-        const x = centerX + Math.cos(newAngle) * radius - 60;
-        const y = centerY + Math.sin(newAngle) * radius - 90;
-        card.style.left = x + 'px';
-        card.style.top = y + 'px';
-        card.style.transform = `rotate(${newAngle * 180 / Math.PI - 90}deg)`;
-        card.style.zIndex = Math.floor(Math.sin(newAngle) * 10) + 10;
-        card.style.opacity = 0.6 + Math.abs(Math.sin(newAngle)) * 0.4;
-    });
-}
-
-function selectCard(cardEl, event) {
+function selectFreeCard(cardEl, event) {
     if (selectedCards.length >= cardsToSelect) return;
-    isAnimating = true;
 
     const cardName = cardEl.dataset.name;
     selectedCards.push({ name: cardName });
 
-    // Искры
-    addParticles(event.clientX, event.clientY, 20);
+    // Вибрация
+    if (navigator.vibrate) navigator.vibrate(30);
 
     // Анимация вылета
-    cardEl.classList.add('selected');
+    cardEl.classList.add('fly-out');
     setTimeout(() => {
         cardEl.style.display = 'none';
-        isAnimating = false;
-    }, 600);
+    }, 500);
 
-    // Показать выбранную карту
-    const img = document.createElement('div');
-    img.className = 'selected-card';
-    img.style.backgroundImage = `url('images/cards/${CARD_IMAGES[cardName]}')`;
-    document.getElementById('selected-cards').appendChild(img);
+    // Затемняем оставшиеся карты
+    document.querySelectorAll('.free-card').forEach(c => {
+        if (!c.classList.contains('fly-out')) c.classList.add('dimmed');
+    });
+
+    // Показываем выбранную карту (уже лицом)
+    const preview = document.createElement('div');
+    preview.className = 'selected-card-preview';
+    preview.style.backgroundImage = `url('images/cards/${CARD_IMAGES[cardName]}')`;
+    document.getElementById('selected-cards-preview').appendChild(preview);
     document.getElementById('cards-left').textContent = `Выбрано: ${selectedCards.length} из 3`;
 
     if (selectedCards.length === cardsToSelect) {
@@ -286,7 +292,7 @@ async function getTarotPrediction() {
     textEl.textContent = answer || '✨ Маг Эзотериум сегодня отдыхает, но звёзды говорят: вас ждёт удача.';
 }
 
-// Натальная карта и Совместимость (без изменений)
+// Натальная карта
 document.getElementById('get-natal').addEventListener('click', async () => {
     const date = document.getElementById('natal-date').value;
     if (!date) return alert('Введите дату');
@@ -297,6 +303,7 @@ document.getElementById('get-natal').addEventListener('click', async () => {
     document.getElementById('natal-text').textContent = answer || 'Не удалось получить ответ от Мага.';
 });
 
+// Совместимость
 document.getElementById('get-compat').addEventListener('click', async () => {
     const n1 = document.getElementById('person1-name').value.trim() || 'Первый партнёр';
     const d1 = document.getElementById('person1-date').value;
