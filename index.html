@@ -23,6 +23,18 @@
         </div>
     </div>
 
+    <!-- Видео-приветствие Мага -->
+    <div id="video-screen" class="screen">
+        <div class="video-container">
+            <video id="mage-video" playsinline preload="auto">
+                <source src="video/welcome.mp4" type="video/mp4">
+            </video>
+            <div id="video-overlay">
+                <p class="mage-video-text">Маг Эзотериум приветствует вас...</p>
+            </div>
+        </div>
+    </div>
+
     <!-- Главное меню -->
     <div id="menu-screen" class="screen">
         <div class="menu-content">
@@ -47,29 +59,26 @@
                 <h2 class="mystical-text">Поведайте свою тайну</h2>
                 <button class="help-icon-small" data-help="tarot-question">?</button>
             </div>
-            <textarea id="tarot-question" placeholder="Например: что ждёт меня в любви?"></textarea>
+            <textarea id="tarot-question" placeholder="Что тревожит вашу душу?"></textarea>
             <button id="start-tarot" class="magic-btn">Разбудить колоду</button>
-            <div class="progress-dots" id="tarot-progress">
-                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-            </div>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
     </div>
 
-    <!-- Свободная колода -->
+    <!-- Экран тасовки и выбора карт -->
     <div id="tarot-cards-screen" class="screen">
         <div class="panel full-height">
             <div class="header-row">
-                <h2 class="mystical-text hint-text">Перемешайте карты свайпом</h2>
+                <h2 id="shuffle-instruction" class="mystical-text">Сдвиньте верхнюю карту</h2>
                 <button class="help-icon-small" data-help="tarot-shuffle">?</button>
             </div>
-            <div id="free-deck-container">
-                <div id="empty-state" class="empty-state">
-                    <div class="empty-icon">🃏</div>
-                    <p>Перетаскивайте карты, чтобы перемешать</p>
-                    <p>Дважды коснитесь, чтобы выбрать</p>
+            <div id="deck-area">
+                <div id="deck-stack" class="deck-stack">
+                    <div class="stack-card" style="z-index:3"></div>
+                    <div class="stack-card" style="z-index:2"></div>
+                    <div class="stack-card" style="z-index:1"></div>
                 </div>
-                <div id="free-deck"></div>
+                <div id="spread-area"></div>
             </div>
             <div class="progress-bar">
                 <div class="progress-fill" id="progress-fill"></div>
@@ -95,58 +104,34 @@
     <!-- Натальная карта -->
     <div id="natal-input-screen" class="screen">
         <div class="panel">
-            <div class="header-row">
-                <h2 class="mystical-text">Звёзды ждут</h2>
-                <button class="help-icon-small" data-help="natal">?</button>
-            </div>
-            <label class="input-label">Дата рождения</label>
-            <input type="date" id="natal-date" placeholder="ДД.ММ.ГГГГ">
-            <label class="input-label">Время рождения (если известно)</label>
-            <input type="time" id="natal-time" value="12:00">
+            <div class="header-row"><h2 class="mystical-text">Звёзды ждут</h2><button class="help-icon-small" data-help="natal">?</button></div>
+            <label class="input-label">Дата рождения</label><input type="date" id="natal-date">
+            <label class="input-label">Время рождения</label><input type="time" id="natal-time" value="12:00">
             <button id="get-natal" class="magic-btn">Открыть гороскоп</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
     </div>
     <div id="natal-result-screen" class="screen">
-        <div class="panel">
-            <h2 class="mystical-text">Ваша натальная карта</h2>
-            <div id="natal-text" class="scroll-box">Рассчитываем...</div>
-            <button class="back-btn" data-target="menu-screen">← В меню</button>
-        </div>
+        <div class="panel"><h2 class="mystical-text">Ваша натальная карта</h2><div id="natal-text" class="scroll-box">Рассчитываем...</div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
     </div>
 
     <!-- Совместимость -->
     <div id="compat-input-screen" class="screen">
         <div class="panel">
-            <div class="header-row">
-                <h2 class="mystical-text">Союз сердец</h2>
-                <button class="help-icon-small" data-help="compat">?</button>
-            </div>
-            <label class="input-label">Первый партнёр</label>
-            <input type="text" id="person1-name" placeholder="Имя">
-            <input type="date" id="person1-date">
-            <label class="input-label">Второй партнёр</label>
-            <input type="text" id="person2-name" placeholder="Имя">
-            <input type="date" id="person2-date">
+            <div class="header-row"><h2 class="mystical-text">Союз сердец</h2><button class="help-icon-small" data-help="compat">?</button></div>
+            <label class="input-label">Первый партнёр</label><input type="text" id="person1-name" placeholder="Имя"><input type="date" id="person1-date">
+            <label class="input-label">Второй партнёр</label><input type="text" id="person2-name" placeholder="Имя"><input type="date" id="person2-date">
             <button id="get-compat" class="magic-btn">Проверить совместимость</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
     </div>
     <div id="compat-result-screen" class="screen">
-        <div class="panel">
-            <h2 class="mystical-text">Совместимость</h2>
-            <div id="compat-text" class="scroll-box">Анализируем...</div>
-            <button class="back-btn" data-target="menu-screen">← В меню</button>
-        </div>
+        <div class="panel"><h2 class="mystical-text">Совместимость</h2><div id="compat-text" class="scroll-box">Анализируем...</div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
     </div>
 
     <!-- Модальное окно помощи -->
     <div id="help-modal" class="modal">
-        <div class="modal-content">
-            <h3 id="help-title">Справка</h3>
-            <p id="help-text"></p>
-            <button id="close-help" class="magic-btn small">Понятно</button>
-        </div>
+        <div class="modal-content"><h3 id="help-title">Справка</h3><p id="help-text"></p><button id="close-help" class="magic-btn small">Понятно</button></div>
     </div>
 
     <script src="app.js"></script>
