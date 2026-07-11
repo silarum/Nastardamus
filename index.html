@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Nastardamus</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -23,15 +23,21 @@
         </div>
     </div>
 
-    <!-- Видео-приветствие Мага -->
+    <!-- Видео-приветствие -->
     <div id="video-screen" class="screen">
         <div class="video-container">
-            <video id="mage-video" playsinline preload="auto">
+            <div id="video-loader" class="video-loader">
+                <div class="loader-spin"></div>
+                <p>Маг Эзотериум готовится...</p>
+            </div>
+            <video id="mage-video" playsinline preload="auto" muted>
                 <source src="video/welcome.mp4" type="video/mp4">
             </video>
             <div id="video-overlay">
-                <p class="mage-video-text">Маг Эзотериум приветствует вас...</p>
+                <p class="mage-video-text">Маг Эзотериум приветствует вас</p>
+                <button id="skip-video-btn" class="skip-btn">Пропустить →</button>
             </div>
+            <button class="back-btn video-back" data-target="menu-screen">← Назад</button>
         </div>
     </div>
 
@@ -59,7 +65,7 @@
                 <h2 class="mystical-text">Поведайте свою тайну</h2>
                 <button class="help-icon-small" data-help="tarot-question">?</button>
             </div>
-            <textarea id="tarot-question" placeholder="Что тревожит вашу душу?"></textarea>
+            <textarea id="tarot-question" placeholder="Что тревожит вашу душу? (можно оставить пустым)"></textarea>
             <button id="start-tarot" class="magic-btn">Разбудить колоду</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
@@ -85,6 +91,7 @@
             </div>
             <p id="cards-left" class="mystical-text">Выбрано: 0 из 3</p>
             <div id="selected-cards-preview"></div>
+            <button class="back-btn" data-target="menu-screen" id="back-from-cards">← Выйти (сбросить выбор)</button>
         </div>
     </div>
 
@@ -93,7 +100,9 @@
         <div class="panel">
             <h2 class="mystical-text">Ваше предсказание</h2>
             <div id="result-cards"></div>
-            <div id="prediction-text" class="scroll-box">🔮 Маг Эзотериум вглядывается в карты...</div>
+            <div id="prediction-text" class="scroll-box">
+                <span class="loading-dots">Маг Эзотериум вглядывается в карты</span><span class="dots-anim">...</span>
+            </div>
             <div class="result-actions">
                 <button id="share-btn" class="magic-btn small">📤 Поделиться</button>
                 <button class="back-btn" data-target="menu-screen">← В меню</button>
@@ -105,14 +114,14 @@
     <div id="natal-input-screen" class="screen">
         <div class="panel">
             <div class="header-row"><h2 class="mystical-text">Звёзды ждут</h2><button class="help-icon-small" data-help="natal">?</button></div>
-            <label class="input-label">Дата рождения</label><input type="date" id="natal-date">
+            <label class="input-label">Дата рождения</label><input type="date" id="natal-date" placeholder="ДД.ММ.ГГГГ">
             <label class="input-label">Время рождения</label><input type="time" id="natal-time" value="12:00">
             <button id="get-natal" class="magic-btn">Открыть гороскоп</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
     </div>
     <div id="natal-result-screen" class="screen">
-        <div class="panel"><h2 class="mystical-text">Ваша натальная карта</h2><div id="natal-text" class="scroll-box">Рассчитываем...</div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
+        <div class="panel"><h2 class="mystical-text">Ваша натальная карта</h2><div id="natal-text" class="scroll-box"><span class="loading-dots">Рассчитываем</span><span class="dots-anim">...</span></div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
     </div>
 
     <!-- Совместимость -->
@@ -126,7 +135,7 @@
         </div>
     </div>
     <div id="compat-result-screen" class="screen">
-        <div class="panel"><h2 class="mystical-text">Совместимость</h2><div id="compat-text" class="scroll-box">Анализируем...</div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
+        <div class="panel"><h2 class="mystical-text">Совместимость</h2><div id="compat-text" class="scroll-box"><span class="loading-dots">Анализируем</span><span class="dots-anim">...</span></div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
     </div>
 
     <!-- Модальное окно помощи -->
