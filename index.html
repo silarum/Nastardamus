@@ -8,7 +8,8 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-    <canvas id="magic-canvas"></canvas>
+    <!-- Постоянный canvas для частиц -->
+    <canvas id="particles-canvas"></canvas>
 
     <!-- Приветственный экран -->
     <div id="welcome-screen" class="screen active">
@@ -45,15 +46,15 @@
         </div>
     </div>
 
-    <!-- Интерактивная колода -->
+    <!-- Свободная колода -->
     <div id="tarot-cards-screen" class="screen">
-        <div class="panel">
-            <h2 class="mystical-text">Дважды коснитесь карты</h2>
-            <div id="carousel-container">
-                <div id="card-carousel"></div>
+        <div class="panel full-height">
+            <h2 class="mystical-text hint-text">Перемешайте карты свайпом, выберите двойным касанием</h2>
+            <div id="free-deck-container">
+                <div id="free-deck"></div>
             </div>
             <p id="cards-left" class="mystical-text"></p>
-            <div id="selected-cards"></div>
+            <div id="selected-cards-preview"></div>
         </div>
     </div>
 
