@@ -8,7 +8,6 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-    <!-- Постоянный canvas для частиц -->
     <canvas id="particles-canvas"></canvas>
 
     <!-- Приветственный экран -->
@@ -19,6 +18,7 @@
                 <p class="mage-name">Вас приветствует Маг Эзотериум</p>
                 <p class="mage-desc">Ясновидящий, астролог, повелитель Таро</p>
                 <button id="continue-btn" class="magic-btn">Войти в мир тайн</button>
+                <button id="help-btn-welcome" class="help-link">Как это работает?</button>
             </div>
         </div>
     </div>
@@ -28,20 +28,30 @@
         <div class="menu-content">
             <h1 class="title">✨ Nastardamus ✨</h1>
             <p class="mage-tag">Маг Эзотериум</p>
-            <div class="menu-buttons">
-                <button id="go-tarot" class="menu-btn">🔮 Расклад Таро</button>
-                <button id="go-natal" class="menu-btn">🌌 Натальная карта</button>
-                <button id="go-compat" class="menu-btn">💞 Совместимость</button>
+            <div id="menu-credits" class="credits-badge">
+                💎 <span id="credit-count">1</span> бесплатный · <span id="paid-count">0</span> оплаченных
             </div>
+            <div class="menu-buttons">
+                <button id="go-tarot" class="menu-btn">🔮 Расклад Таро <span class="btn-hint">3 карты</span></button>
+                <button id="go-natal" class="menu-btn">🌌 Натальная карта <span class="btn-hint">по дате рождения</span></button>
+                <button id="go-compat" class="menu-btn">💞 Совместимость <span class="btn-hint">двух людей</span></button>
+            </div>
+            <button id="help-btn-menu" class="help-icon">?</button>
         </div>
     </div>
 
     <!-- Вопрос для Таро -->
     <div id="tarot-input-screen" class="screen">
         <div class="panel">
-            <h2 class="mystical-text">Поведайте свою тайну</h2>
-            <textarea id="tarot-question" placeholder="Что тревожит вашу душу?"></textarea>
+            <div class="header-row">
+                <h2 class="mystical-text">Поведайте свою тайну</h2>
+                <button class="help-icon-small" data-help="tarot-question">?</button>
+            </div>
+            <textarea id="tarot-question" placeholder="Например: что ждёт меня в любви?"></textarea>
             <button id="start-tarot" class="magic-btn">Разбудить колоду</button>
+            <div class="progress-dots" id="tarot-progress">
+                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            </div>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
     </div>
@@ -49,11 +59,22 @@
     <!-- Свободная колода -->
     <div id="tarot-cards-screen" class="screen">
         <div class="panel full-height">
-            <h2 class="mystical-text hint-text">Перемешайте карты свайпом, выберите двойным касанием</h2>
+            <div class="header-row">
+                <h2 class="mystical-text hint-text">Перемешайте карты свайпом</h2>
+                <button class="help-icon-small" data-help="tarot-shuffle">?</button>
+            </div>
             <div id="free-deck-container">
+                <div id="empty-state" class="empty-state">
+                    <div class="empty-icon">🃏</div>
+                    <p>Перетаскивайте карты, чтобы перемешать</p>
+                    <p>Дважды коснитесь, чтобы выбрать</p>
+                </div>
                 <div id="free-deck"></div>
             </div>
-            <p id="cards-left" class="mystical-text"></p>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <p id="cards-left" class="mystical-text">Выбрано: 0 из 3</p>
             <div id="selected-cards-preview"></div>
         </div>
     </div>
@@ -61,17 +82,26 @@
     <!-- Результат Таро -->
     <div id="tarot-result-screen" class="screen">
         <div class="panel">
+            <h2 class="mystical-text">Ваше предсказание</h2>
             <div id="result-cards"></div>
-            <div id="prediction-text" class="scroll-box"></div>
-            <button class="back-btn" data-target="menu-screen">← В меню</button>
+            <div id="prediction-text" class="scroll-box">🔮 Маг Эзотериум вглядывается в карты...</div>
+            <div class="result-actions">
+                <button id="share-btn" class="magic-btn small">📤 Поделиться</button>
+                <button class="back-btn" data-target="menu-screen">← В меню</button>
+            </div>
         </div>
     </div>
 
     <!-- Натальная карта -->
     <div id="natal-input-screen" class="screen">
         <div class="panel">
-            <h2 class="mystical-text">Звёзды ждут</h2>
-            <input type="date" id="natal-date">
+            <div class="header-row">
+                <h2 class="mystical-text">Звёзды ждут</h2>
+                <button class="help-icon-small" data-help="natal">?</button>
+            </div>
+            <label class="input-label">Дата рождения</label>
+            <input type="date" id="natal-date" placeholder="ДД.ММ.ГГГГ">
+            <label class="input-label">Время рождения (если известно)</label>
             <input type="time" id="natal-time" value="12:00">
             <button id="get-natal" class="magic-btn">Открыть гороскоп</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
@@ -79,7 +109,8 @@
     </div>
     <div id="natal-result-screen" class="screen">
         <div class="panel">
-            <div id="natal-text" class="scroll-box"></div>
+            <h2 class="mystical-text">Ваша натальная карта</h2>
+            <div id="natal-text" class="scroll-box">Рассчитываем...</div>
             <button class="back-btn" data-target="menu-screen">← В меню</button>
         </div>
     </div>
@@ -87,10 +118,15 @@
     <!-- Совместимость -->
     <div id="compat-input-screen" class="screen">
         <div class="panel">
-            <h2 class="mystical-text">Союз сердец</h2>
-            <input type="text" id="person1-name" placeholder="Имя первого">
+            <div class="header-row">
+                <h2 class="mystical-text">Союз сердец</h2>
+                <button class="help-icon-small" data-help="compat">?</button>
+            </div>
+            <label class="input-label">Первый партнёр</label>
+            <input type="text" id="person1-name" placeholder="Имя">
             <input type="date" id="person1-date">
-            <input type="text" id="person2-name" placeholder="Имя второго">
+            <label class="input-label">Второй партнёр</label>
+            <input type="text" id="person2-name" placeholder="Имя">
             <input type="date" id="person2-date">
             <button id="get-compat" class="magic-btn">Проверить совместимость</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
@@ -98,8 +134,18 @@
     </div>
     <div id="compat-result-screen" class="screen">
         <div class="panel">
-            <div id="compat-text" class="scroll-box"></div>
+            <h2 class="mystical-text">Совместимость</h2>
+            <div id="compat-text" class="scroll-box">Анализируем...</div>
             <button class="back-btn" data-target="menu-screen">← В меню</button>
+        </div>
+    </div>
+
+    <!-- Модальное окно помощи -->
+    <div id="help-modal" class="modal">
+        <div class="modal-content">
+            <h3 id="help-title">Справка</h3>
+            <p id="help-text"></p>
+            <button id="close-help" class="magic-btn small">Понятно</button>
         </div>
     </div>
 
