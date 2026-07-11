@@ -213,4 +213,69 @@ function selectCard(cardEl, name) {
     document.getElementById('progress-fill').style.width = (currentRound / cardsToSelect * 100) + '%';
     if (currentRound >= cardsToSelect) {
         setTimeout(() => {
-            document.querySelectorAll('.spread-card').forEach(c => c
+            document.querySelectorAll('.spread-card').forEach(c => c.classList.add('collecting'));
+            setTimeout(() => {
+                document.getElementById('spread-area').innerHTML = '';
+                document.getElementById('deck-stack').style.display = 'none';
+                getTarotPrediction();
+            }, 500);
+        }, 600);
+    } else {
+        setTimeout(() => {
+            document.querySelectorAll('.spread-card').forEach(c => c.classList.add('collecting'));
+            setTimeout(() => {
+                document.getElementById('spread-area').innerHTML = '';
+                document.getElementById('shuffle-instruction').textContent = `Выберите ${3 - currentRound} карту`;
+                resetDeckStack();
+            }, 500);
+        }, 600);
+    }
+}
+
+// ===== ЗАПРОС К ПРОКСИ =====
+async function callMage(systemPrompt, userMessage) {
+    try {
+        const response = await fetch(PROXY_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }] }) });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data.choices[0].message.content;
+    } catch (e) { return null; }
+}
+
+const BASE_MAGE_PROMPT = `Ты — Маг Эзотериум, потомственный маг, астролог и таролог, живой человек. Ты никогда не упоминаешь технологии, ИИ, модели. Ты говоришь загадочно, образно, с психологической глубиной.`;
+
+async function getTarotPrediction() {
+    showScreen('tarotResult'); updateCreditsBadge();
+    document.getElementById('result-cards').innerHTML = selectedCards.map(c => `<img src="images/cards/${CARD_IMAGES[c.name]}" alt="${c.name}" onerror="this.style.display='none'">`).join('');
+    const textEl = document.getElementById('prediction-text');
+    textEl.textContent = '🔮 Маг Эзотериум вглядывается в карты...';
+    const cardsNames = selectedCards.map(c => c.name).join(', ');
+    const answer = await callMage(BASE_MAGE_PROMPT + ' Начинай ответ с "Маг Эзотериум видит...".', `Вопрос: "${window.tarotQuestion}". Выпали карты: ${cardsNames}.`);
+    textEl.textContent = answer || '✨ Маг Эзотериум сегодня отдыхает.';
+}
+
+document.getElementById('share-btn').addEventListener('click', () => {
+    const text = document.getElementById('prediction-text').textContent;
+    if (navigator.share) navigator.share({ title: 'Предсказание Nastardamus', text });
+    else alert('Скопируйте текст предсказания.');
+});
+
+// Натальная
+document.getElementById('get-natal').addEventListener('click', async () => {
+    const date = document.getElementById('natal-date').value; if (!date) return alert('Введите дату');
+    showScreen('natalResult'); document.getElementById('natal-text').textContent = 'Рассчитываем...';
+    const answer = await callMage(BASE_MAGE_PROMPT + ' Начинай со слов "Звёзды поведали мне...".', `Натальная карта для рождения ${date} ${document.getElementById('natal-time').value}.`);
+    document.getElementById('natal-text').textContent = answer || 'Не удалось получить ответ.';
+});
+
+// Совместимость
+document.getElementById('get-compat').addEventListener('click', async () => {
+    const n1 = document.getElementById('person1-name').value.trim() || 'Первый', d1 = document.getElementById('person1-date').value;
+    const n2 = document.getElementById('person2-name').value.trim() || 'Второй', d2 = document.getElementById('person2-date').value;
+    if (!d1 || !d2) return alert('Введите даты');
+    showScreen('compatResult'); document.getElementById('compat-text').textContent = 'Анализируем...';
+    const answer = await callMage(BASE_MAGE_PROMPT + ' Начинай с "Маг Эзотериум раскрывает тайну...".', `Совместимость ${n1} (${d1}) и ${n2} (${d2}).`);
+    document.getElementById('compat-text').textContent = answer || 'Не удалось получить ответ.';
+});
+
+showScreen('welcome');
