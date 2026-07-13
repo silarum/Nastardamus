@@ -1,95 +1,251 @@
-:root {
-    --bg: #0a0a1a;
-    --gold: #ffd700;
-    --glow: #bb86fc;
-    --btn-grad: linear-gradient(135deg, #b8860b, #ffd700);
-    --safe-bottom: env(safe-area-inset-bottom, 0px);
-}
-* { box-sizing: border-box; }
-body {
-    margin: 0; padding: 0; padding-bottom: var(--safe-bottom);
-    background: #0a0a1a; color: #f0e6ff;
-    font-family: 'Georgia', serif;
-    display: flex; justify-content: center; align-items: center;
-    min-height: 100vh; overflow-x: hidden;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    user-select: none; -webkit-user-select: none;
-}
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
 
-/* Экран */
-.screen {
-    display: none; flex-direction: column; align-items: center;
-    width: 100%; min-height: 100vh; padding: 15px;
-    position: relative; z-index: 1;
-}
-.screen.active { display: flex; }
-.screen-bg {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    background: url('images/background.png') center/cover no-repeat;
-    opacity: 0.3; z-index: 0;
-}
-.panel, .menu-content, .welcome-content { position: relative; z-index: 2; width: 100%; max-width: 420px; }
+const PROXY_URL = 'https://nastardamus.vercel.app/api/proxy';
 
-/* Приветствие */
-#welcome-screen { justify-content: center; }
-.welcome-overlay { width: 100%; min-height: 100vh; background: rgba(10,10,26,0.5); display: flex; justify-content: center; align-items: center; }
-.welcome-content { text-align: center; padding: 20px; }
-.title-glow { font-size: clamp(28px,8vw,38px); color: var(--gold); text-shadow: 0 0 30px var(--gold); margin: 0 0 15px; }
-.mage-name { font-size: clamp(18px,5vw,22px); color: #fff; text-shadow: 0 0 15px var(--glow); margin: 10px 0 0; }
-.mage-desc { font-size: 14px; color: #ccc; margin: 5px 0 20px; }
+const CARD_IMAGES = {
+    'Шут':'fool.png','Маг':'magician.png','Верховная Жрица':'high-priestess.png',
+    'Императрица':'empress.png','Император':'emperor.png','Иерофант':'hierophant.png',
+    'Влюблённые':'lovers.png','Колесница':'chariot.png','Сила':'strength.png',
+    'Отшельник':'hermit.png','Колесо Фортуны':'wheel-of-fortune.png','Справедливость':'justice.png',
+    'Повешенный':'hanged-man.png','Смерть':'death.png','Умеренность':'temperance.png',
+    'Дьявол':'devil.png','Башня':'tower.png','Звезда':'star.png',
+    'Луна':'moon.png','Солнце':'sun.png','Суд':'judgement.png','Мир':'world.png'
+};
 
-/* Меню */
-.menu-content { text-align: center; padding-top: 30px; }
-.title { font-size: clamp(26px,7vw,32px); color: var(--gold); text-shadow: 0 0 20px var(--gold); margin: 0 0 5px; }
-.mage-tag { font-size: 18px; color: #fff; text-shadow: 0 0 10px var(--glow); margin: 0 0 20px; }
-.menu-buttons { display: flex; flex-direction: column; gap: 10px; }
+// Экраны
+const S = {
+    welcome: 'welcome-screen',
+    video: 'video-screen',
+    menu: 'menu-screen',
+    tarotInput: 'tarot-input-screen',
+    tarotCards: 'tarot-cards-screen',
+    tarotResult: 'tarot-result-screen',
+    natalInput: 'natal-input-screen',
+    natalResult: 'natal-result-screen',
+    compatInput: 'compat-input-screen',
+    compatResult: 'compat-result-screen',
+    wallet: 'wallet-screen',
+    buy: 'buy-silarum-screen',
+    payment: 'payment-instruction-screen',
+    exchange: 'exchange-screen'
+};
 
-/* Кнопки */
-.magic-btn, .menu-btn {
-    border: none; border-radius: 30px; padding: 14px 28px;
-    font-weight: bold; font-size: 16px; cursor: pointer; margin: 5px 0; width: 100%;
-    transition: all 0.2s; text-transform: uppercase; letter-spacing: 1px;
-}
-.magic-btn { background: var(--btn-grad); color: #000; box-shadow: 0 0 25px var(--gold); }
-.magic-btn:active { transform: scale(0.95); }
-.menu-btn { background: linear-gradient(135deg,#6200ea,#bb86fc); color: white; box-shadow: 0 0 20px #bb86fc66; }
-.back-btn {
-    background: transparent; border: 2px solid var(--glow); color: var(--glow);
-    border-radius: 30px; padding: 10px 20px; margin-top: 10px; cursor: pointer; font-size: 14px;
+function show(id) {
+    document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+    const el = document.getElementById(id);
+    if (el) el.classList.add('active');
 }
 
-/* Карты */
-#deck-area { flex: 1; width: 100%; position: relative; min-height: 300px; margin: 15px 0; }
-.deck-stack { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 110px; height: 165px; z-index: 10; cursor: pointer; }
-.stack-card { position: absolute; width: 100%; height: 100%; background: url('images/card-back.png') center/cover no-repeat; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.6); }
-.stack-card:nth-child(1){top:0;left:0} .stack-card:nth-child(2){top:3px;left:3px} .stack-card:nth-child(3){top:6px;left:6px}
+// Приветствие
+document.getElementById('continue-btn').addEventListener('click', () => show(S.menu));
 
-#spread-area { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-.spread-card { position: absolute; width: 100px; height: 150px; background: url('images/card-back.png') center/cover no-repeat; border-radius: 10px; cursor: pointer; box-shadow: 0 5px 20px rgba(0,0,0,0.6),0 0 15px rgba(255,215,0,0.3); z-index: 5; }
-.spread-card.highlight { box-shadow: 0 0 40px var(--gold); z-index: 50; transform: scale(1.1); }
-.spread-card.fly-out { animation: cardSelect 0.5s ease forwards; pointer-events: none; }
-@keyframes cardSelect { 0%{transform:scale(1)} 50%{transform:scale(1.4) translateY(-50px)} 100%{transform:scale(0.8);opacity:0} }
-.spread-card.collecting { animation: cardCollect 0.5s ease forwards; pointer-events: none; }
-@keyframes cardCollect { 100%{opacity:0;transform:scale(0.5)} }
+// Навигация
+document.querySelectorAll('.back-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const target = btn.dataset.target;
+        if (target) show(target);
+    });
+});
 
-#selected-cards-preview { display: flex; gap: 8px; justify-content: center; min-height: 70px; margin: 8px 0; flex-wrap: wrap; }
-.selected-card-preview { width: 70px; height: 105px; border-radius: 8px; border: 2px solid var(--gold); box-shadow: 0 0 20px var(--gold); background-size: cover; background-position: center; }
+// Меню
+document.getElementById('go-tarot').addEventListener('click', () => playVideo());
+document.getElementById('go-natal').addEventListener('click', () => show(S.natalInput));
+document.getElementById('go-compat').addEventListener('click', () => show(S.compatInput));
+document.getElementById('go-wallet').addEventListener('click', () => { updateBalance(); show(S.wallet); });
 
-/* Кошелёк */
-.wallet-balance { background: linear-gradient(135deg,rgba(255,215,0,0.15),rgba(187,134,252,0.1)); border: 2px solid var(--gold); border-radius: 20px; padding: 25px; margin: 20px 0; text-align: center; }
-.balance-amount { font-size: 36px; font-weight: bold; color: var(--gold); text-shadow: 0 0 20px var(--gold); }
-.wallet-actions { display: flex; flex-direction: column; gap: 10px; }
-.info-box { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); border-radius: 15px; padding: 15px; margin: 15px 0; font-size: 14px; text-align: left; line-height: 1.8; }
+// Видео (исправлено)
+function playVideo() {
+    show(S.video);
+    const v = document.getElementById('mage-video');
+    const skip = document.getElementById('skip-video-btn');
+    v.src = 'video/welcome.mp4';
+    
+    const go = () => { v.pause(); show(S.tarotInput); };
+    skip.onclick = go;
+    v.onclick = go;
+    v.onerror = () => show(S.tarotInput);
+    
+    v.play().catch(() => {}); // Играет если можно, иначе просто висит кнопка
+    setTimeout(() => { if (document.getElementById('video-screen').classList.contains('active')) show(S.tarotInput); }, 5000);
+}
 
-/* Общие */
-.scroll-box { background: rgba(20,20,40,0.9); border: 1px solid var(--glow); border-radius: 16px; padding: 16px; margin: 15px auto; width: 100%; max-height: 300px; overflow-y: auto; font-size: 15px; line-height: 1.6; }
-#result-cards { display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; margin-bottom: 15px; }
-#result-cards img { width: 80px; height: 120px; border-radius: 8px; border: 2px solid var(--gold); box-shadow: 0 0 20px var(--gold); }
-input, textarea, select { width: 100%; padding: 12px; margin: 8px 0; border-radius: 20px; border: 1px solid var(--glow); background: rgba(255,255,255,0.08); color: white; font-family: inherit; font-size: 16px; }
-textarea { height: 80px; resize: vertical; }
-select { color: white; }
-select option { background: #1a1a3e; color: white; }
-label { display: block; text-align: left; font-size: 14px; color: #aaa; margin: 8px 0 4px; }
-.mystical-text { color: var(--gold); text-shadow: 0 0 10px var(--gold); font-style: italic; }
-.full-height { min-height: 80vh; display: flex; flex-direction: column; }
+// Кошелёк
+let balance = parseInt(localStorage.getItem('nastardamus-balance') || '0');
+function updateBalance() {
+    document.getElementById('wallet-balance').textContent = balance;
+}
+
+document.getElementById('go-buy-silarum').addEventListener('click', () => show(S.buy));
+document.getElementById('go-exchange-btn').addEventListener('click', () => { updateBalance(); show(S.exchange); });
+
+document.getElementById('buy-amount').addEventListener('input', function() {
+    document.getElementById('buy-rub-amount').textContent = (parseInt(this.value) || 1) * 100;
+});
+
+document.getElementById('create-payment').addEventListener('click', () => {
+    const amount = parseInt(document.getElementById('buy-amount').value) || 1;
+    document.getElementById('payment-details').innerHTML = `
+        <p><b>📱 Оплата через СБП</b></p>
+        <p>Телефон: <b>+7 (900) 123-45-67</b></p>
+        <p>Банк: Сбербанк</p>
+        <p>Сумма: <b>${amount * 100} ₽</b></p>
+        <p>Код: <b style="color:#ffd700">PAY-${Date.now().toString(36).toUpperCase()}</b></p>
+    `;
+    show(S.payment);
+});
+
+document.getElementById('payment-done').addEventListener('click', () => {
+    alert('Заявка отправлена. Ожидайте подтверждения.');
+    show(S.wallet);
+});
+
+document.getElementById('calculate-exchange').addEventListener('click', () => {
+    const amount = parseInt(document.getElementById('exchange-amount').value) || 50;
+    const currency = document.getElementById('exchange-currency').value;
+    if (amount > balance) return alert('Недостаточно силарумов!');
+    
+    document.getElementById('exchange-result').style.display = 'block';
+    document.getElementById('exchange-result').innerHTML = `
+        <p>💰 Вы получите: <b>~${(amount * 0.00001).toFixed(6)} ${currency}</b></p>
+        <p>📌 Комиссия: 10%</p>
+        <p style="color:#888;">Функция обмена скоро заработает</p>
+    `;
+});
+
+// Тасовка
+let sel = [], round = 0, avail = [], total = 3;
+const deckNames = Object.keys(CARD_IMAGES);
+
+document.getElementById('start-tarot').addEventListener('click', () => {
+    window.tarotQuestion = document.getElementById('tarot-question').value.trim() || 'Что ждёт меня?';
+    startRitual();
+});
+
+function startRitual() {
+    sel = []; round = 0; avail = [...deckNames]; total = 3;
+    document.getElementById('selected-cards-preview').innerHTML = '';
+    document.getElementById('cards-left').textContent = 'Выбрано: 0 из 3';
+    show(S.tarotCards);
+    document.getElementById('deck-stack').style.display = 'block';
+    document.getElementById('spread-area').innerHTML = '';
+    document.getElementById('shuffle-instruction').textContent = 'Сдвиньте верхнюю карту';
+}
+
+document.getElementById('deck-stack').addEventListener('click', () => {
+    if (round >= total || document.querySelectorAll('.spread-card').length > 0) return;
+    spreadCards();
+});
+
+function spreadCards() {
+    const area = document.getElementById('spread-area');
+    area.innerHTML = '';
+    const w = area.offsetWidth || 350;
+    const h = area.offsetHeight || 400;
+    
+    [...avail].sort(() => Math.random() - 0.5).forEach(name => {
+        const c = document.createElement('div');
+        c.className = 'spread-card';
+        c.dataset.name = name;
+        c.style.left = (20 + Math.random() * (w - 120)) + 'px';
+        c.style.top = (20 + Math.random() * (h - 170)) + 'px';
+        c.style.transform = `rotate(${(Math.random() - 0.5) * 40}deg)`;
+        
+        let tap = null;
+        c.addEventListener('click', ev => {
+            ev.stopPropagation();
+            if (tap) { clearTimeout(tap); tap = null; pickCard(c, name); }
+            else { tap = setTimeout(() => { tap = null; }, 300); }
+        });
+        area.appendChild(c);
+    });
+}
+
+function pickCard(el, name) {
+    if (round >= total) return;
+    if (navigator.vibrate) navigator.vibrate(30);
+    
+    avail = avail.filter(n => n !== name);
+    sel.push({ name });
+    round++;
+    
+    el.classList.add('fly-out');
+    setTimeout(() => { if (el.parentNode) el.remove(); }, 500);
+    
+    const p = document.createElement('div');
+    p.className = 'selected-card-preview';
+    p.style.backgroundImage = `url('images/cards/${CARD_IMAGES[name]}')`;
+    p.onerror = function() { this.textContent = '🃏'; };
+    document.getElementById('selected-cards-preview').appendChild(p);
+    document.getElementById('cards-left').textContent = `Выбрано: ${sel.length} из ${total}`;
+    
+    if (round >= total) {
+        setTimeout(() => {
+            document.querySelectorAll('.spread-card').forEach(c => c.classList.add('collecting'));
+            setTimeout(() => {
+                document.getElementById('spread-area').innerHTML = '';
+                document.getElementById('deck-stack').style.display = 'none';
+                getPrediction();
+            }, 500);
+        }, 600);
+    } else {
+        setTimeout(() => {
+            document.querySelectorAll('.spread-card').forEach(c => c.classList.add('collecting'));
+            setTimeout(() => {
+                document.getElementById('spread-area').innerHTML = '';
+                document.getElementById('deck-stack').style.display = 'block';
+                document.getElementById('shuffle-instruction').textContent = `Выберите ${total - round} карту`;
+            }, 500);
+        }, 600);
+    }
+}
+
+// API
+async function callMage(sys, usr) {
+    try {
+        const r = await fetch(PROXY_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: [{ role: 'system', content: sys }, { role: 'user', content: usr }] })
+        });
+        if (!r.ok) return null;
+        const d = await r.json();
+        return d?.choices?.[0]?.message?.content || null;
+    } catch (e) { return null; }
+}
+
+const MAGE = 'Ты — Маг Эзотериум, маг и таролог. Не упоминай ИИ.';
+
+async function getPrediction() {
+    show(S.tarotResult);
+    document.getElementById('result-cards').innerHTML = sel.map(c => `<img src="images/cards/${CARD_IMAGES[c.name]}" alt="${c.name}">`).join('');
+    document.getElementById('prediction-text').textContent = 'Маг советуется со звёздами...';
+    const answer = await callMage(MAGE, `Вопрос: "${window.tarotQuestion}". Карты: ${sel.map(c => c.name).join(', ')}.`);
+    document.getElementById('prediction-text').textContent = answer || 'Маг сегодня отдыхает.';
+}
+
+// Натальная
+document.getElementById('get-natal').addEventListener('click', async () => {
+    const d = document.getElementById('natal-date').value;
+    if (!d) return alert('Введите дату');
+    show(S.natalResult);
+    document.getElementById('natal-text').textContent = 'Рассчитываем...';
+    const a = await callMage(MAGE, `Натальная карта: ${d} ${document.getElementById('natal-time').value}.`);
+    document.getElementById('natal-text').textContent = a || 'Не удалось.';
+});
+
+// Совместимость
+document.getElementById('get-compat').addEventListener('click', async () => {
+    const n1 = document.getElementById('person1-name').value.trim() || 'А';
+    const d1 = document.getElementById('person1-date').value;
+    const n2 = document.getElementById('person2-name').value.trim() || 'Б';
+    const d2 = document.getElementById('person2-date').value;
+    if (!d1 || !d2) return alert('Введите даты');
+    show(S.compatResult);
+    document.getElementById('compat-text').textContent = 'Анализируем...';
+    const a = await callMage(MAGE, `Совместимость ${n1} (${d1}) и ${n2} (${d2}).`);
+    document.getElementById('compat-text').textContent = a || 'Не удалось.';
+});
+
+// Старт
+show(S.welcome);
