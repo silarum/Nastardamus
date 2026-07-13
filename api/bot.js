@@ -19,3 +19,20 @@ export default async function handler(req, res) {
             '🔮 *Nastardamus Admin*\n\nДобро пожаловать!',
             { inline_keyboard: [
                 [{ text: '📊 Дашборд', callback_data: 'dashboard' }],
+                [{ text: '💳 Платежи', callback_data: 'payments' }],
+                [{ text: '🔄 Обмен', callback_data: 'exchanges' }],
+                [{ text: '🎫 Чеки', callback_data: 'vouchers' }]
+            ]}
+        );
+    }
+
+    return res.json({ ok: true });
+}
+
+async function sendTelegram(token, chatId, text, replyMarkup = null) {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown', reply_markup: replyMarkup })
+    });
+}
