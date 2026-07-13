@@ -1,155 +1,107 @@
-// ===== НОВЫЕ ФУНКЦИИ =====
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
 
-// Выбор количества карт
-let cardsToSelect = 3;
-document.querySelectorAll('.spread-option').forEach(btn => {
+const PROXY_URL = 'https://nastardamus.vercel.app/api/proxy';
+
+const CARD_IMAGES = {
+    'Шут':'fool.png','Маг':'magician.png','Верховная Жрица':'high-priestess.png',
+    'Императрица':'empress.png','Император':'emperor.png','Иерофант':'hierophant.png',
+    'Влюблённые':'lovers.png','Колесница':'chariot.png','Сила':'strength.png',
+    'Отшельник':'hermit.png','Колесо Фортуны':'wheel-of-fortune.png','Справедливость':'justice.png',
+    'Повешенный':'hanged-man.png','Смерть':'death.png','Умеренность':'temperance.png',
+    'Дьявол':'devil.png','Башня':'tower.png','Звезда':'star.png',
+    'Луна':'moon.png','Солнце':'sun.png','Суд':'judgement.png','Мир':'world.png'
+};
+
+const screens = {
+    welcome: document.getElementById('welcome-screen'),
+    video: document.getElementById('video-screen'),
+    menu: document.getElementById('menu-screen'),
+    tarotInput: document.getElementById('tarot-input-screen'),
+    tarotCards: document.getElementById('tarot-cards-screen'),
+    tarotResult: document.getElementById('tarot-result-screen'),
+    natalInput: document.getElementById('natal-input-screen'),
+    natalResult: document.getElementById('natal-result-screen'),
+    compatInput: document.getElementById('compat-input-screen'),
+    compatResult: document.getElementById('compat-result-screen'),
+    walletScreen: document.getElementById('wallet-screen'),
+    buySilarumScreen: document.getElementById('buy-silarum-screen'),
+    paymentInstructionScreen: document.getElementById('payment-instruction-screen'),
+    exchangeScreen: document.getElementById('exchange-screen')
+};
+
+function showScreen(s) {
+    Object.values(screens).forEach(el => el.classList.remove('active'));
+    if (screens[s]) screens[s].classList.add('active');
+}
+
+// Анимация букв
+function animateTitle() {
+    const el = document.getElementById('title-animated');
+    if (!el) return;
+    const text = el.textContent; el.innerHTML = '';
+    text.split('').forEach((l,i) => {
+        const s = document.createElement('span'); s.textContent = l;
+        s.style.opacity = '0'; s.style.display = 'inline-block';
+        s.style.animation = `flyIn 0.5s ${i*0.1}s forwards`;
+        el.appendChild(s);
+    });
+}
+animateTitle();
+
+// Приветствие
+document.getElementById('continue-btn').addEventListener('click', () => { updateCreditsBadge(); showScreen('menu'); });
+
+// Навигация
+document.querySelectorAll('.back-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-        document.querySelectorAll('.spread-option').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        cardsToSelect = parseInt(btn.dataset.cards);
+        const t = btn.dataset.target;
+        if (t && screens[t]) showScreen(t);
     });
 });
 
-// Карта дня (с кэшем на 24 часа)
-document.getElementById('go-card-day').addEventListener('click', () => {
-    const cached = localStorage.getItem('card-day');
-    const cacheTime = localStorage.getItem('card-day-time');
-    if (cached && cacheTime && Date.now() - parseInt(cacheTime) < 86400000) {
-        showCardDay(JSON.parse(cached));
-    } else {
-        generateCardDay();
-    }
-});
+// Меню
+document.getElementById('go-tarot').addEventListener('click', () => playMageVideo());
+document.getElementById('go-natal').addEventListener('click', () => showScreen('natalInput'));
+document.getElementById('go-compat').addEventListener('click', () => showScreen('compatInput'));
+document.getElementById('go-wallet').addEventListener('click', () => { updateWalletDisplay(); showScreen('walletScreen'); });
 
-async function generateCardDay() {
-    showScreen('cardDay');
-    document.getElementById('card-day-text').innerHTML = '<span class="loading-dots">Маг выбирает карту</span><span class="dots-anim">...</span>';
-    const card = deckNames[Math.floor(Math.random() * deckNames.length)];
-    const system = BASE_MAGE_PROMPT + ' Дай толкование карты дня.';
-    const answer = await callMage(system, `Сегодня выпала карта "${card}". Дай толкование на день.`);
-    const result = { card, text: answer || 'Сегодня день размышлений.' };
-    localStorage.setItem('card-day', JSON.stringify(result));
-    localStorage.setItem('card-day-time', Date.now().toString());
-    showCardDay(result);
+// Помощь
+const helpTexts = {
+    'tarot-question':'Задайте вопрос — мысленно или письменно.',
+    'tarot-shuffle':'Сдвиньте карту — колода разлетится. Выберите двойным касанием.',
+    'natal':'Введите дату и время рождения.',
+    'compat':'Введите данные двух людей.',
+    'welcome':'Nastardamus — ваш проводник в мир Таро и астрологии.'
+};
+function showHelp(k) {
+    document.getElementById('help-title').textContent = 'Справка';
+    document.getElementById('help-text').textContent = helpTexts[k] || '';
+    document.getElementById('help-modal').classList.add('active');
+}
+document.getElementById('help-btn-welcome').addEventListener('click', () => showHelp('welcome'));
+document.getElementById('help-btn-menu').addEventListener('click', () => showHelp('welcome'));
+document.querySelectorAll('.help-icon-small').forEach(b => b.addEventListener('click', () => showHelp(b.dataset.help)));
+document.getElementById('close-help').addEventListener('click', () => document.getElementById('help-modal').classList.remove('active'));
+
+// Кредиты
+let freeUsed = false, paid = 0;
+function updateCreditsBadge() {
+    document.getElementById('credit-count').textContent = freeUsed ? '0' : '1';
+    document.getElementById('paid-count').textContent = paid;
 }
 
-function showCardDay(result) {
-    showScreen('cardDay');
-    document.getElementById('card-day-image').innerHTML = `<img src="images/cards/${CARD_IMAGES[result.card]}" style="width:100px;border-radius:10px;border:2px solid var(--gold);box-shadow:0 0 20px var(--gold);">`;
-    document.getElementById('card-day-text').textContent = result.text;
-}
-
-// Быстрый ответ
-document.getElementById('get-quick-answer').addEventListener('click', async () => {
-    const q = document.getElementById('quick-question').value.trim();
-    if (!q) return alert('Задайте вопрос');
-    document.getElementById('quick-answer-text').style.display = 'block';
-    document.getElementById('quick-answer-text').innerHTML = '<span class="loading-dots">Маг думает</span><span class="dots-anim">...</span>';
-    const answer = await callMage(BASE_MAGE_PROMPT + ' Дай краткий мудрый ответ на вопрос.', q);
-    document.getElementById('quick-answer-text').textContent = answer || 'Ответ скрыт за завесой.';
-});
-
-// Гороскоп
-document.getElementById('zodiac-select').addEventListener('change', async function() {
-    const sign = this.value;
-    if (!sign) return;
-    document.getElementById('horoscope-text').style.display = 'block';
-    document.getElementById('horoscope-text').innerHTML = '<span class="loading-dots">Маг читает звёзды</span><span class="dots-anim">...</span>';
-    const answer = await callMage(BASE_MAGE_PROMPT + ' Составь гороскоп на сегодня.', `Гороскоп для знака "${sign}" на сегодня.`);
-    document.getElementById('horoscope-text').textContent = answer || 'Звёзды сегодня молчат.';
-});
-
-// Лунный календарь
-document.getElementById('go-moon').addEventListener('click', async () => {
-    showScreen('moon');
-    const phases = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘'];
-    document.getElementById('moon-phase').textContent = phases[Math.floor(Math.random() * phases.length)];
-    const answer = await callMage(BASE_MAGE_PROMPT + ' Расскажи о сегодняшнем лунном дне.', 'Какой сегодня лунный день и что он несёт?');
-    document.getElementById('moon-text').textContent = answer || 'Луна сегодня загадочна.';
-});
-
-// Значения карт
-document.getElementById('go-tarot-meanings').addEventListener('click', () => {
-    showScreen('tarotMeanings');
-    const grid = document.getElementById('meanings-grid');
-    grid.innerHTML = deckNames.map(name => `
-        <div class="meaning-card" style="background-image:url('images/cards/${CARD_IMAGES[name]}')" onclick="alert('${name}: значение загружается...')">
-            <div class="card-label">${name}</div>
-        </div>
-    `).join('');
-});
-
-// Профиль
-document.getElementById('go-profile').addEventListener('click', () => {
-    showScreen('profile');
-    updateProfile();
-});
-
-function updateProfile() {
-    const history = JSON.parse(localStorage.getItem('nastardamus-history') || '[]');
-    document.getElementById('stat-readings').textContent = history.filter(h => h.type === 'tarot').length;
-    document.getElementById('stat-natal').textContent = history.filter(h => h.type === 'natal').length;
-    document.getElementById('stat-compat').textContent = history.filter(h => h.type === 'compat').length;
-    
-    // Достижения
-    const achievements = [
-        { id: 'first', name: 'Первый шаг', desc: 'Первый расклад', earned: history.length >= 1 },
-        { id: 'tarot5', name: 'Таролог', desc: '5 раскладов', earned: history.filter(h => h.type === 'tarot').length >= 5 },
-        { id: 'natal3', name: 'Астролог', desc: '3 гороскопа', earned: history.filter(h => h.type === 'natal').length >= 3 },
-        { id: 'compat3', name: 'Сваха', desc: '3 совместимости', earned: history.filter(h => h.type === 'compat').length >= 3 },
-        { id: 'all', name: 'Магистр', desc: 'Все достижения', earned: false }
-    ];
-    
-    const list = document.getElementById('achievements-list');
-    list.innerHTML = achievements.map(a => `
-        <div class="achievement ${a.earned ? 'earned' : ''}">${a.earned ? '✅' : '🔒'} ${a.name}<br><small>${a.desc}</small></div>
-    `).join('');
-    
-    // История
-    const histList = document.getElementById('history-list');
-    histList.innerHTML = history.slice(-10).reverse().map(h => `
-        <div class="history-item">${h.date} — ${h.preview}</div>
-    `).join('') || '<p>Пока пусто</p>';
-}
-
-function saveToHistory(type, preview) {
-    const history = JSON.parse(localStorage.getItem('nastardamus-history') || '[]');
-    history.push({ type, preview: preview.substring(0, 50), date: new Date().toLocaleDateString() });
-    localStorage.setItem('nastardamus-history', JSON.stringify(history));
-}
-
-// Сохранение результата
-document.getElementById('save-result').addEventListener('click', () => {
-    const text = document.getElementById('prediction-text').textContent;
-    saveToHistory('tarot', text);
-    alert('Предсказание сохранено в историю!');
-});
-
-// Очистка истории
-document.getElementById('clear-history').addEventListener('click', () => {
-    if (confirm('Очистить всю историю?')) {
-        localStorage.removeItem('nastardamus-history');
-        updateProfile();
-    }
-});
-
-// Переключение темы
-document.getElementById('toggle-theme').addEventListener('click', () => {
-    document.body.classList.toggle('light-theme');
-    localStorage.setItem('theme', document.body.classList.contains('light-theme') ? 'light' : 'dark');
-});
-
-// Переключение звука
-let soundEnabled = true;
-document.getElementById('toggle-sound').addEventListener('click', function() {
-    soundEnabled = !soundEnabled;
-    this.textContent = soundEnabled ? '🔊' : '🔇';
-    localStorage.setItem('sound', soundEnabled ? 'on' : 'off');
-});
-
-// Восстановление настроек
-(function restoreSettings() {
-    if (localStorage.getItem('theme') === 'light') document.body.classList.add('light-theme');
-    soundEnabled = localStorage.getItem('sound') !== 'off';
-    document.getElementById('toggle-sound').textContent = soundEnabled ? '🔊' : '🔇';
-})();
+// Видео
+let videoPlayed = false;
+function playMageVideo() {
+    showScreen('video');
+    const v = document.getElementById('mage-video');
+    const l = document.getElementById('video-loader');
+    const s = document.getElementById('skip-video-btn');
+    v.classList.remove('ready'); l.classList.remove('hidden'); s.classList.remove('visible');
+    v.currentTime = 0; videoPlayed = false;
+    setTimeout(() => s.classList.add('visible'), 2000);
+    const t = setTimeout(() => { if(!videoPlayed){videoPlayed=true;showScreen('tarotInput');} }, 5000);
+    v.onloadeddata = () => { l.classList.add('hidden'); v.classList.add('ready'); v.play().catch(() => s.classList.add('visible')); };
+    v.onended = () => { if(!videoPlayed){videoPlayed=true;clearTimeout(t);showScreen('tarotInput');} };
+    v.onerror = () => { if(!videoPlayed){videoPlayed=true
