@@ -8,180 +8,153 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-    <canvas id="particles-canvas"></canvas>
-
-    <!-- Приветственный экран -->
-    <div id="welcome-screen" class="screen active">
+    <!-- Приветственный экран (без размытия) -->
+    <div id="welcome-screen" class="screen active" style="background: url('images/background.png') center/cover no-repeat;">
         <div class="welcome-overlay">
             <div class="welcome-content">
-                <h1 id="title-animated" class="title-glow">Nastardamus</h1>
+                <h1 class="title-glow">Nastardamus</h1>
                 <p class="mage-name">Вас приветствует Маг Эзотериум</p>
                 <p class="mage-desc">Ясновидящий, астролог, повелитель Таро</p>
                 <button id="continue-btn" class="magic-btn">Войти в мир тайн</button>
-                <button id="help-btn-welcome" class="help-link">Как это работает?</button>
             </div>
         </div>
     </div>
 
     <!-- Главное меню -->
     <div id="menu-screen" class="screen">
+        <div class="screen-bg"></div>
         <div class="menu-content">
-            <h1 class="title"> Nastardamus </h1>
+            <h1 class="title">Nastardamus</h1>
             <p class="mage-tag">Маг Эзотериум</p>
-            <div class="credits-badge">
-                <span id="credit-count">1</span> бесплатный · <span id="paid-count">0</span> оплаченных
-            </div>
             <div class="menu-buttons">
-                <button id="go-tarot" class="menu-btn"> Расклад Таро <span class="btn-hint">1, 3 или 5 карт</span></button>
-                <button id="go-natal" class="menu-btn"> Натальная карта <span class="btn-hint">по дате рождения</span></button>
-                <button id="go-compat" class="menu-btn"> Совместимость <span class="btn-hint">двух людей</span></button>
-                <button id="go-wallet" class="menu-btn"> Кошелёк <span class="btn-hint">баланс, покупка, обмен</span></button>
+                <button id="go-tarot" class="menu-btn">🔮 Расклад Таро</button>
+                <button id="go-natal" class="menu-btn">🌌 Натальная карта</button>
+                <button id="go-compat" class="menu-btn">💞 Совместимость</button>
+                <button id="go-wallet" class="menu-btn">💰 Кошелёк</button>
             </div>
-            <button id="help-btn-menu" class="help-icon">?</button>
         </div>
     </div>
 
-    <!-- Экран Таро (вопрос) -->
-    <div id="tarot-input-screen" class="screen">
+    <!-- Видео (исправлено) -->
+    <div id="video-screen" class="screen" style="background:#000;">
+        <video id="mage-video" playsinline muted style="width:100%;height:100%;object-fit:cover;"></video>
+        <button id="skip-video-btn" style="position:absolute;bottom:30px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);color:#fff;padding:10px 30px;border-radius:30px;font-size:16px;z-index:10;">Пропустить</button>
+        <button class="back-btn" data-target="menu-screen" style="position:absolute;top:15px;left:15px;z-index:10;">← Назад</button>
+    </div>
+
+    <!-- Таро: вопрос -->
+    <div id="tarot-input-screen" class="screen"><div class="screen-bg"></div>
         <div class="panel">
-            <div class="header-row"><h2 class="mystical-text">Поведайте свою тайну</h2><button class="help-icon-small" data-help="tarot-question">?</button></div>
+            <h2 class="mystical-text">Поведайте свою тайну</h2>
             <textarea id="tarot-question" placeholder="Что тревожит вашу душу?"></textarea>
-            <div class="spread-selector">
-                <button class="spread-option active" data-cards="1">1 карта</button>
-                <button class="spread-option" data-cards="3">3 карты</button>
-                <button class="spread-option" data-cards="5">5 карт</button>
-            </div>
             <button id="start-tarot" class="magic-btn">Разбудить колоду</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
     </div>
 
-    <!-- Экран тасовки -->
-    <div id="tarot-cards-screen" class="screen">
+    <!-- Тасовка -->
+    <div id="tarot-cards-screen" class="screen"><div class="screen-bg"></div>
         <div class="panel full-height">
-            <div class="header-row"><h2 id="shuffle-instruction" class="mystical-text">Сдвиньте верхнюю карту</h2><button class="help-icon-small" data-help="tarot-shuffle">?</button></div>
+            <h2 id="shuffle-instruction" class="mystical-text">Сдвиньте верхнюю карту</h2>
             <div id="deck-area">
                 <div id="deck-stack" class="deck-stack"><div class="stack-card" style="z-index:3"></div><div class="stack-card" style="z-index:2"></div><div class="stack-card" style="z-index:1"></div></div>
                 <div id="spread-area"></div>
             </div>
-            <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
             <p id="cards-left" class="mystical-text">Выбрано: 0 из 3</p>
             <div id="selected-cards-preview"></div>
             <button class="back-btn" data-target="menu-screen">← Выйти</button>
         </div>
     </div>
 
-    <!-- Результат Таро -->
-    <div id="tarot-result-screen" class="screen">
+    <!-- Результат -->
+    <div id="tarot-result-screen" class="screen"><div class="screen-bg"></div>
         <div class="panel">
             <h2 class="mystical-text">Ваше предсказание</h2>
             <div id="result-cards"></div>
-            <div id="prediction-text" class="scroll-box"><span class="loading-dots">Маг советуется со звёздами</span><span class="dots-anim">...</span></div>
-            <div class="result-actions">
-                <button id="save-result" class="magic-btn small"> Сохранить</button>
-                <button id="share-btn" class="magic-btn small"> Поделиться</button>
-                <button class="back-btn" data-target="menu-screen">← В меню</button>
-            </div>
+            <div id="prediction-text" class="scroll-box">Маг советуется со звёздами...</div>
+            <button class="back-btn" data-target="menu-screen">← В меню</button>
         </div>
     </div>
 
-    <!-- Натальная карта -->
-    <div id="natal-input-screen" class="screen">
+    <!-- Натальная -->
+    <div id="natal-input-screen" class="screen"><div class="screen-bg"></div>
         <div class="panel">
-            <div class="header-row"><h2 class="mystical-text">Звёзды ждут</h2><button class="help-icon-small" data-help="natal">?</button></div>
+            <h2 class="mystical-text">Звёзды ждут</h2>
             <input type="date" id="natal-date"><input type="time" id="natal-time" value="12:00">
             <button id="get-natal" class="magic-btn">Открыть гороскоп</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
     </div>
-    <div id="natal-result-screen" class="screen">
-        <div class="panel"><h2 class="mystical-text">Натальная карта</h2><div id="natal-text" class="scroll-box"><span class="loading-dots">Рассчитываем</span><span class="dots-anim">...</span></div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
+    <div id="natal-result-screen" class="screen"><div class="screen-bg"></div>
+        <div class="panel"><h2 class="mystical-text">Натальная карта</h2><div id="natal-text" class="scroll-box">Рассчитываем...</div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
     </div>
 
     <!-- Совместимость -->
-    <div id="compat-input-screen" class="screen">
+    <div id="compat-input-screen" class="screen"><div class="screen-bg"></div>
         <div class="panel">
-            <div class="header-row"><h2 class="mystical-text">Союз сердец</h2><button class="help-icon-small" data-help="compat">?</button></div>
+            <h2 class="mystical-text">Союз сердец</h2>
             <input type="text" id="person1-name" placeholder="Имя"><input type="date" id="person1-date">
             <input type="text" id="person2-name" placeholder="Имя"><input type="date" id="person2-date">
             <button id="get-compat" class="magic-btn">Проверить</button>
             <button class="back-btn" data-target="menu-screen">← Назад</button>
         </div>
     </div>
-    <div id="compat-result-screen" class="screen">
-        <div class="panel"><h2 class="mystical-text">Совместимость</h2><div id="compat-text" class="scroll-box"><span class="loading-dots">Анализируем</span><span class="dots-anim">...</span></div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
+    <div id="compat-result-screen" class="screen"><div class="screen-bg"></div>
+        <div class="panel"><h2 class="mystical-text">Совместимость</h2><div id="compat-text" class="scroll-box">Анализируем...</div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
     </div>
 
-    <!-- КОШЕЛЁК -->
-    <div id="wallet-screen" class="screen">
+    <!-- Кошелёк -->
+    <div id="wallet-screen" class="screen"><div class="screen-bg"></div>
         <div class="panel">
-            <h2 class="mystical-text"> Мой кошелёк</h2>
+            <h2 class="mystical-text">💰 Мой кошелёк</h2>
             <div class="wallet-balance"><div class="balance-amount"><span id="wallet-balance">0</span> SILARUM</div></div>
             <div class="wallet-actions">
-                <button id="go-buy-silarum" class="magic-btn"> Купить силарумы</button>
-                <button id="go-exchange-btn" class="magic-btn"> Обменять на крипту</button>
+                <button id="go-buy-silarum" class="magic-btn">💳 Купить силарумы</button>
+                <button id="go-exchange-btn" class="magic-btn">🔄 Обменять на крипту</button>
             </div>
             <button class="back-btn" data-target="menu-screen">← В меню</button>
         </div>
     </div>
 
-    <!-- ПОКУПКА СИЛАРУМОВ -->
-    <div id="buy-silarum-screen" class="screen">
+    <!-- Покупка -->
+    <div id="buy-silarum-screen" class="screen"><div class="screen-bg"></div>
         <div class="panel">
-            <h2 class="mystical-text"> Купить силарумы</h2>
-            <label class="input-label">Количество силарумов:</label>
+            <h2 class="mystical-text">💳 Купить силарумы</h2>
+            <label>Количество:</label>
             <input type="number" id="buy-amount" value="1" min="1" max="100">
-            <div class="info-box"><p> К оплате: <b><span id="buy-rub-amount">100</span> </b></p><p> 1 SILARUM = 100 </p></div>
-            <label class="input-label">Способ оплаты:</label>
-            <select id="payment-method"><option value="sbp"> СБП (по номеру телефона)</option><option value="card"> Перевод на карту</option></select>
+            <div class="info-box"><p>💰 К оплате: <b><span id="buy-rub-amount">100</span> ₽</b></p><p>📌 1 SILARUM = 100 ₽</p></div>
             <button id="create-payment" class="magic-btn">Перейти к оплате</button>
             <button class="back-btn" data-target="wallet-screen">← Назад</button>
         </div>
     </div>
 
-    <!-- ИНСТРУКЦИЯ ПО ОПЛАТЕ -->
-    <div id="payment-instruction-screen" class="screen">
+    <!-- Инструкция -->
+    <div id="payment-instruction-screen" class="screen"><div class="screen-bg"></div>
         <div class="panel">
-            <h2 class="mystical-text"> Инструкция по оплате</h2>
+            <h2 class="mystical-text">📋 Инструкция</h2>
             <div id="payment-details" class="scroll-box"></div>
-            <div class="info-box"><p> <b>Важно!</b> В сообщении к переводу укажите код платежа.</p></div>
-            <button id="payment-done" class="magic-btn"> Я оплатил</button>
+            <button id="payment-done" class="magic-btn">✅ Я оплатил</button>
             <button class="back-btn" data-target="buy-silarum-screen">← Назад</button>
         </div>
     </div>
 
-    <!-- ОБМЕН СИЛАРУМОВ -->
-    <div id="exchange-screen" class="screen">
+    <!-- Обмен -->
+    <div id="exchange-screen" class="screen"><div class="screen-bg"></div>
         <div class="panel">
-            <h2 class="mystical-text"> Обмен силарумов</h2>
-            <label class="input-label">Сумма силарумов:</label>
+            <h2 class="mystical-text">🔄 Обмен силарумов</h2>
+            <label>Сумма:</label>
             <input type="number" id="exchange-amount" value="50" min="50" max="1000">
-            <label class="input-label">Получить валюту:</label>
+            <label>Валюта:</label>
             <select id="exchange-currency">
-                <option value="BTC"> Bitcoin (BTC)</option>
-                <option value="LTC"> Litecoin (LTC)</option>
-                <option value="TON"> Toncoin (TON)</option>
-                <option value="USDT"> Tether (USDT TRC-20)</option>
+                <option value="BTC">₿ Bitcoin</option>
+                <option value="LTC">Ł Litecoin</option>
+                <option value="TON">💎 Toncoin</option>
+                <option value="USDT">💵 USDT TRC-20</option>
             </select>
             <button id="calculate-exchange" class="magic-btn">Рассчитать</button>
             <div id="exchange-result" class="scroll-box" style="display:none;"></div>
             <button class="back-btn" data-target="wallet-screen">← Назад</button>
         </div>
-    </div>
-
-    <!-- Видео-приветствие -->
-    <div id="video-screen" class="screen">
-        <div class="video-container">
-            <div id="video-loader" class="video-loader"><div class="loader-spin"></div><p>Маг готовится...</p></div>
-            <video id="mage-video" playsinline preload="auto" muted><source src="video/welcome.mp4" type="video/mp4"></video>
-            <div id="video-overlay"><p class="mage-video-text">Маг Эзотериум приветствует вас</p><button id="skip-video-btn" class="skip-btn">Пропустить →</button></div>
-            <button class="back-btn video-back" data-target="menu-screen">← Назад</button>
-        </div>
-    </div>
-
-    <!-- Модальное окно помощи -->
-    <div id="help-modal" class="modal">
-        <div class="modal-content"><h3 id="help-title">Справка</h3><p id="help-text"></p><button id="close-help" class="magic-btn small">Понятно</button></div>
     </div>
 
     <script src="app.js"></script>
