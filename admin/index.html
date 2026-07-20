@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#090713">
+  <title>Nastardamus Admin</title>
+  <link rel="stylesheet" href="/admin/admin.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div class="stars" aria-hidden="true"></div>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Nastardamus Control</p>
+        <h1>Админ-панель</h1>
+        <p id="admin-subtitle">Проверяем защищённый доступ…</p>
+      </div>
+      <div class="sigil" aria-hidden="true">✦</div>
+    </header>
+
+    <section id="access-card" class="card access-card">
+      <div class="loader" aria-hidden="true"></div>
+      <div>
+        <strong id="access-title">Подключение</strong>
+        <p id="access-copy">Откройте панель из Telegram-бота администратора.</p>
+      </div>
+    </section>
+
+    <div id="dashboard" hidden>
+      <section class="status-grid" aria-label="Состояние системы">
+        <article class="card stat"><span>Бот</span><strong id="status-bot">—</strong></article>
+        <article class="card stat"><span>AI</span><strong id="status-ai">—</strong></article>
+        <article class="card stat"><span>Приложение</span><strong id="status-app">—</strong></article>
+        <article class="card stat"><span>Доступ</span><strong id="status-access">—</strong></article>
+      </section>
+
+      <form id="settings-form">
+        <section class="card panel">
+          <div class="panel-head"><div><p class="eyebrow">Экономика</p><h2>SILARUM</h2></div><span class="badge">1 SILARUM = 1 USDT</span></div>
+          <label>Комиссия вывода, %<input name="withdrawalFee" type="number" min="0" max="100" step="1" value="25"></label>
+          <label>Минимальный вывод<input name="minimumWithdrawal" type="number" min="0" step="1" value="25"></label>
+          <label class="switch-row"><span><strong>Разрешить вывод</strong><small>Общий аварийный переключатель</small></span><input name="withdrawalsEnabled" type="checkbox"></label>
+        </section>
+
+        <section class="card panel">
+          <div class="panel-head"><div><p class="eyebrow">Удержание</p><h2>Колесо Фортуны</h2></div><span class="badge violet">0,5 SILARUM</span></div>
+          <label class="switch-row"><span><strong>Колесо включено</strong><small>Бесплатное вращение после покупки услуги</small></span><input name="wheelEnabled" type="checkbox" checked></label>
+          <label>Доля призового фонда, %<input name="wheelPrizeShare" type="number" min="0" max="100" step="1" value="50"></label>
+          <label>Максимальный приз<input name="wheelMaxPrize" type="number" min="1" step="1" value="1000"></label>
+        </section>
+
+        <section class="card panel">
+          <div class="panel-head"><div><p class="eyebrow">Рост</p><h2>Реферальная программа</h2></div><span class="badge rose">50% / 13%</span></div>
+          <label class="switch-row"><span><strong>Рефералы включены</strong><small>Начисления только с подтверждённых покупок</small></span><input name="referralsEnabled" type="checkbox" checked></label>
+          <div class="two-cols">
+            <label>Первая покупка, %<input name="firstReferralRate" type="number" min="0" max="100" value="50"></label>
+            <label>Повторные, %<input name="repeatReferralRate" type="number" min="0" max="100" value="13"></label>
+          </div>
+        </section>
+
+        <section class="card panel">
+          <div class="panel-head"><div><p class="eyebrow">Социальный контур</p><h2>PalmLink и ритуалы вдвоём</h2></div></div>
+          <label class="switch-row"><span><strong>PalmLink</strong><small>Поиск любви, дружбы и делового партнёра по добровольному профилю ладони</small></span><input name="palmLinkEnabled" type="checkbox"></label>
+          <label class="switch-row"><span><strong>Совместные расклады</strong><small>Каждый участник вводит свои данные по защищённой ссылке</small></span><input name="jointReadingsEnabled" type="checkbox" checked></label>
+          <label class="switch-row"><span><strong>Оплата партнёром</strong><small>Подарок, полная оплата или разделение стоимости</small></span><input name="partnerPaymentEnabled" type="checkbox" checked></label>
+        </section>
+
+        <section class="card panel">
+          <div class="panel-head"><div><p class="eyebrow">Безопасность</p><h2>Модерация</h2></div></div>
+          <label class="switch-row"><span><strong>Ручная проверка фото</strong><small>До запуска автоматической модерации</small></span><input name="manualPhotoReview" type="checkbox" checked></label>
+          <label class="switch-row"><span><strong>Режим 18+</strong><small>Для PalmLink и случайных знакомств</small></span><input name="adultOnly" type="checkbox" checked></label>
+        </section>
+
+        <div class="save-bar">
+          <div><strong id="save-state">Изменений нет</strong><small>Серверные настройки будут подключены к реестру конфигурации.</small></div>
+          <button type="submit">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/admin/admin.js"></script>
+</body>
+</html>
