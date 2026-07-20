@@ -1,5 +1,8 @@
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 
+const ADMIN_STORE_URL = process.env.ADMIN_STORE_URL
+  || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-admin-store';
+
 const DEFAULT_SETTINGS = Object.freeze({
   withdrawalFee: 25,
   minimumWithdrawal: 25,
@@ -61,10 +64,9 @@ function getSupabaseConfig() {
   return url && key ? { url: url.replace(/\/$/, ''), key } : null;
 }
 
-async function supabaseRequest(path, options = {}) {
+async function directSupabaseRequest(path, options = {}) {
   const config = getSupabaseConfig();
   if (!config) return null;
-
   const response = await fetch(`${config.url}/rest/v1/${path}`, {
     ...options,
     headers: {
@@ -74,25 +76,38 @@ async function supabaseRequest(path, options = {}) {
     },
     signal: AbortSignal.timeout(8_000)
   });
-
-  if (!response.ok) {
-    throw new Error(`supabase_${response.status}`);
-  }
+  if (!response.ok) throw new Error(`supabase_${response.status}`);
   return response;
 }
 
-async function readSettings() {
-  const response = await supabaseRequest('nastardamus_settings?key=eq.global&select=settings&limit=1');
-  if (!response) return { settings: DEFAULT_SETTINGS, persisted: false };
-  const rows = await response.json();
-  return {
-    settings: sanitizeSettings(rows?.[0]?.settings || DEFAULT_SETTINGS),
-    persisted: true
-  };
+async function edgeStore(botToken, action, payload = {}) {
+  if (!botToken) throw new Error('admin_bot_token_missing');
+  const response = await fetch(ADMIN_STORE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Admin-Bot-Token': botToken
+    },
+    body: JSON.stringify({ action, ...payload }),
+    signal: AbortSignal.timeout(12_000)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok) throw new Error(data.error || `admin_store_${response.status}`);
+  return data;
 }
 
-async function writeSettings(settings) {
-  const response = await supabaseRequest('nastardamus_settings?on_conflict=key', {
+async function readSettings(botToken) {
+  const direct = await directSupabaseRequest('nastardamus_settings?key=eq.global&select=settings&limit=1');
+  if (direct) {
+    const rows = await direct.json();
+    return { settings: sanitizeSettings(rows?.[0]?.settings || DEFAULT_SETTINGS), persisted: true };
+  }
+  const data = await edgeStore(botToken, 'read_settings');
+  return { settings: sanitizeSettings(data.settings || DEFAULT_SETTINGS), persisted: true };
+}
+
+async function writeSettings(settings, botToken) {
+  const direct = await directSupabaseRequest('nastardamus_settings?on_conflict=key', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -100,30 +115,51 @@ async function writeSettings(settings) {
     },
     body: JSON.stringify({ key: 'global', settings, updated_at: new Date().toISOString() })
   });
-  return Boolean(response);
+  if (direct) return true;
+  await edgeStore(botToken, 'write_settings', { settings });
+  return true;
 }
 
-async function getDatabaseRole(userId) {
-  const response = await supabaseRequest(
+async function getDatabaseRole(userId, botToken) {
+  const direct = await directSupabaseRequest(
     `nastardamus_admins?telegram_id=eq.${encodeURIComponent(userId)}&select=role&limit=1`
   );
-  if (!response) return null;
-  const rows = await response.json();
-  return typeof rows?.[0]?.role === 'string' ? rows[0].role : null;
+  if (direct) {
+    const rows = await direct.json();
+    return typeof rows?.[0]?.role === 'string' ? rows[0].role : null;
+  }
+  const data = await edgeStore(botToken, 'get_admin_role', { telegramId: userId });
+  return typeof data.role === 'string' ? data.role : null;
 }
 
-async function writeAudit(userId, action, payload = {}) {
-  const response = await supabaseRequest('nastardamus_admin_audit', {
+async function writeAudit(userId, action, payload, botToken) {
+  const direct = await directSupabaseRequest('nastardamus_admin_audit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
     body: JSON.stringify({ telegram_id: userId, action, payload })
   });
-  return Boolean(response);
+  if (direct) return true;
+  await edgeStore(botToken, 'write_audit', {
+    telegramId: userId,
+    auditAction: action,
+    payload
+  });
+  return true;
 }
 
-async function resolveAdminRole(userId) {
+async function resolveAdminRole(userId, botToken) {
   if (parseAdminIds(process.env.ADMIN_TELEGRAM_IDS).has(userId)) return 'owner';
-  return getDatabaseRole(userId);
+  return getDatabaseRole(userId, botToken);
+}
+
+async function checkPersistence(botToken) {
+  if (getSupabaseConfig()) return true;
+  try {
+    await edgeStore(botToken, 'read_settings');
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export default async function handler(req, res) {
@@ -132,20 +168,21 @@ export default async function handler(req, res) {
     return sendJson(res, 405, { error: 'method_not_allowed' });
   }
 
+  const botToken = process.env.ADMIN_BOT_TOKEN || process.env.BOT_TOKEN;
+
   if (req.method === 'GET' && req.query?.health === '1') {
     return sendJson(res, 200, {
       ok: true,
       services: {
-        adminBot: Boolean(process.env.ADMIN_BOT_TOKEN || process.env.BOT_TOKEN),
+        adminBot: Boolean(botToken),
         telegramSecret: Boolean(process.env.TELEGRAM_WEBHOOK_SECRET),
         readings: Boolean(process.env.OPENROUTER_API_KEY),
         webAppUrl: Boolean(process.env.WEB_APP_URL),
-        persistence: Boolean(getSupabaseConfig())
+        persistence: await checkPersistence(botToken)
       }
     });
   }
 
-  const botToken = process.env.ADMIN_BOT_TOKEN || process.env.BOT_TOKEN;
   const initData = getRequestHeader(req, 'x-telegram-init-data');
   const validation = validateTelegramInitData(initData, botToken, { maxAgeSeconds: 60 * 60 * 12 });
   if (!validation.ok) {
@@ -156,7 +193,7 @@ export default async function handler(req, res) {
   }
 
   const userId = Number(validation.user.id);
-  const role = await resolveAdminRole(userId);
+  const role = await resolveAdminRole(userId, botToken);
   if (!role) {
     console.info('Nastardamus admin access requested', {
       telegramId: userId,
@@ -172,8 +209,8 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const current = await readSettings();
-      await writeAudit(userId, 'admin_opened', { role });
+      const current = await readSettings(botToken);
+      await writeAudit(userId, 'admin_opened', { role }, botToken);
       return sendJson(res, 200, {
         ok: true,
         user: validation.user,
@@ -181,7 +218,7 @@ export default async function handler(req, res) {
         accessConfigured: true,
         persistenceConfigured: current.persisted,
         services: {
-          bot: Boolean(process.env.ADMIN_BOT_TOKEN || process.env.BOT_TOKEN),
+          bot: Boolean(botToken),
           readings: Boolean(process.env.OPENROUTER_API_KEY),
           webAppUrl: Boolean(process.env.WEB_APP_URL)
         },
@@ -190,8 +227,8 @@ export default async function handler(req, res) {
     }
 
     const settings = sanitizeSettings(req.body?.settings);
-    const persisted = await writeSettings(settings);
-    await writeAudit(userId, 'settings_updated', settings);
+    const persisted = await writeSettings(settings, botToken);
+    await writeAudit(userId, 'settings_updated', settings, botToken);
     return sendJson(res, 200, { ok: true, persisted, settings });
   } catch (error) {
     console.error('Admin API failed:', error);
