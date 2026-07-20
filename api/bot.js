@@ -5,6 +5,11 @@ function sendJson(res, status, body) {
     res.setHeader('Cache-Control', 'no-store');
     return res.status(status).json(body);
 }
+
+function parseAdminIds(value) {
+    return String(value || '').split(/[\s,;]+/).map(Number).filter(Number.isSafeInteger);
+}
+
 async function callTelegram(botToken, method, payload) {
     const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
         method: 'POST',
@@ -47,6 +52,20 @@ export default async function handler(req, res) {
             }
         }
 
+        if (req.query?.inspect === 'identity') {
+            if (!botToken) return sendJson(res, 503, { error: 'bot_not_configured' });
+            try {
+                const identity = await callTelegram(botToken, 'getMe', {});
+                return sendJson(res, 200, {
+                    status: 'ok',
+                    bot: { id: identity.id, username: identity.username, first_name: identity.first_name }
+                });
+            } catch (error) {
+                console.error('Telegram identity check failed:', error);
+                return sendJson(res, 502, { error: 'identity_check_failed' });
+            }
+        }
+
         return sendJson(res, 200, {
             status: 'ok',
             services: {
@@ -55,6 +74,7 @@ export default async function handler(req, res) {
                 readings: Boolean(process.env.OPENROUTER_API_KEY),
                 openRouterModel: Boolean(process.env.OPENROUTER_MODEL),
                 webAppUrl: Boolean(process.env.WEB_APP_URL),
+                adminIds: parseAdminIds(process.env.ADMIN_TELEGRAM_IDS).length > 0,
                 authenticatedPreviewOnly: process.env.ALLOW_UNAUTHENTICATED_PREVIEW === 'false'
             }
         });
@@ -88,7 +108,8 @@ export default async function handler(req, res) {
 
         const reply = buildBotReply(
             req.body,
-            process.env.WEB_APP_URL || 'https://nastardamus.vercel.app'
+            process.env.WEB_APP_URL || 'https://nastardamus.vercel.app',
+            { adminIds: parseAdminIds(process.env.ADMIN_TELEGRAM_IDS) }
         );
         if (reply) {
             await callTelegram(botToken, reply.method, reply.payload);
