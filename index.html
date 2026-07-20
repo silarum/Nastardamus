@@ -1,162 +1,322 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Nastardamus</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="description" content="Nastardamus — персональные расклады Таро, карта дня и символические астрологические толкования в Telegram.">
+    <meta name="theme-color" content="#090713">
+    <meta name="color-scheme" content="dark">
+    <title>Nastardamus — откройте знаки</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-    <!-- Приветственный экран (без размытия) -->
-    <div id="welcome-screen" class="screen active" style="background: url('images/background.png') center/cover no-repeat;">
-        <div class="welcome-overlay">
+    <div class="ambient" aria-hidden="true">
+        <div class="ambient-orb ambient-orb--one"></div>
+        <div class="ambient-orb ambient-orb--two"></div>
+        <div class="star-field"></div>
+    </div>
+
+    <main id="app" class="app-shell">
+        <section id="welcome-screen" class="screen welcome-screen active" aria-labelledby="welcome-title">
+            <div class="splash-art" aria-hidden="true"></div>
+            <div class="splash-scrim" aria-hidden="true"></div>
             <div class="welcome-content">
-                <h1 class="title-glow">Nastardamus</h1>
-                <p class="mage-name">Вас приветствует Маг Эзотериум</p>
-                <p class="mage-desc">Ясновидящий, астролог, повелитель Таро</p>
-                <button id="continue-btn" class="magic-btn">Войти в мир тайн</button>
+                <div class="brand-mark" aria-hidden="true"><span>N</span></div>
+                <p class="eyebrow">Ваш персональный проводник</p>
+                <h1 id="welcome-title" class="display-title">Nastardamus</h1>
+                <p class="welcome-copy">Заметьте знак. Задайте вопрос. Сохраните то, что откликнулось.</p>
+                <div class="welcome-signature" aria-hidden="true"><span>22 аркана</span><i>✦</i><span>личное пространство</span></div>
+                <button id="continue-btn" class="primary-btn primary-btn--glow" type="button">
+                    <span>Открыть пространство</span><span aria-hidden="true">→</span>
+                </button>
+                <p class="fine-print">Таро помогает взглянуть на ситуацию иначе и не заменяет профессиональный совет.</p>
             </div>
-        </div>
-    </div>
+        </section>
 
-    <!-- Главное меню -->
-    <div id="menu-screen" class="screen">
-        <div class="screen-bg"></div>
-        <div class="menu-content">
-            <h1 class="title">Nastardamus</h1>
-            <p class="mage-tag">Маг Эзотериум</p>
-            <div class="menu-buttons">
-                <button id="go-tarot" class="menu-btn">🔮 Расклад Таро</button>
-                <button id="go-natal" class="menu-btn">🌌 Натальная карта</button>
-                <button id="go-compat" class="menu-btn">💞 Совместимость</button>
-                <button id="go-wallet" class="menu-btn">💰 Кошелёк</button>
+        <section id="menu-screen" class="screen app-screen" aria-labelledby="home-title">
+            <div class="screen-content home-content">
+                <header class="home-header">
+                    <div>
+                        <p id="greeting" class="eyebrow">Добрый вечер</p>
+                        <h1 id="home-title" class="screen-title"><span id="user-name">Искатель</span>, звёзды рядом</h1>
+                    </div>
+                    <button id="profile-btn" class="avatar-btn" type="button" aria-label="Открыть профиль">✦</button>
+                </header>
+
+                <button id="go-daily" class="daily-hero glass-card" type="button">
+                    <div class="daily-hero-copy">
+                        <span class="daily-meta"><span class="card-label">Карта дня</span><span id="home-daily-date"></span></span>
+                        <strong id="home-daily-title">Ваш знак уже выбран</strong>
+                        <span id="home-daily-caption">Откройте послание на сегодня</span>
+                    </div>
+                    <div id="home-mini-card" class="mini-card" aria-hidden="true">
+                        <img id="home-daily-image" alt="">
+                        <span class="mini-card-symbol">✦</span>
+                    </div>
+                    <span class="daily-arrow" aria-hidden="true">↗</span>
+                </button>
+
+                <div class="streak-row glass-card" aria-label="Серия посещений">
+                    <div class="streak-icon" aria-hidden="true">✦</div>
+                    <div>
+                        <strong><span data-streak>1</span> день со знаками</strong>
+                        <p>Возвращайтесь завтра за новой картой</p>
+                    </div>
+                </div>
+
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Исследуйте</p>
+                        <h2>Что волнует вас сейчас?</h2>
+                    </div>
+                </div>
+
+                <div class="feature-grid">
+                    <button id="go-tarot" class="feature-card feature-card--wide feature-card--tarot" type="button">
+                        <span class="feature-icon feature-icon--violet" aria-hidden="true">◈</span>
+                        <span><strong>Расклад Таро</strong><small>Три карты для вашего вопроса</small></span>
+                        <span class="feature-arrow" aria-hidden="true">→</span>
+                    </button>
+                    <button id="go-natal" class="feature-card feature-card--natal" type="button">
+                        <span class="feature-icon feature-icon--blue" aria-hidden="true">☼</span>
+                        <span><strong>Натальная подсказка</strong><small>Ваши сильные стороны</small></span>
+                    </button>
+                    <button id="go-compat" class="feature-card feature-card--compat" type="button">
+                        <span class="feature-icon feature-icon--rose" aria-hidden="true">∞</span>
+                        <span><strong>Совместимость</strong><small>Динамика двух людей</small></span>
+                    </button>
+                </div>
+
+                <button id="watch-intro" class="quiet-banner" type="button">
+                    <span aria-hidden="true">▶</span>
+                    <span><strong>Послание Эзотериума</strong><small>Короткое вступление перед ритуалом</small></span>
+                    <span aria-hidden="true">→</span>
+                </button>
             </div>
-        </div>
-    </div>
+        </section>
 
-    <!-- Видео (исправлено) -->
-    <div id="video-screen" class="screen" style="background:#000;">
-        <video id="mage-video" playsinline muted style="width:100%;height:100%;object-fit:cover;"></video>
-        <button id="skip-video-btn" style="position:absolute;bottom:30px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);color:#fff;padding:10px 30px;border-radius:30px;font-size:16px;z-index:10;">Пропустить</button>
-        <button class="back-btn" data-target="menu-screen" style="position:absolute;top:15px;left:15px;z-index:10;">← Назад</button>
-    </div>
+        <section id="daily-screen" class="screen app-screen" aria-labelledby="daily-title">
+            <div class="screen-content">
+                <header class="topbar">
+                    <button class="icon-btn back-btn" data-target="menu-screen" type="button" aria-label="Назад">←</button>
+                    <div><p class="eyebrow">Ваш ориентир</p><h1 id="daily-title" class="screen-title">Карта дня</h1></div>
+                    <span class="topbar-spacer"></span>
+                </header>
 
-    <!-- Таро: вопрос -->
-    <div id="tarot-input-screen" class="screen"><div class="screen-bg"></div>
-        <div class="panel">
-            <h2 class="mystical-text">Поведайте свою тайну</h2>
-            <textarea id="tarot-question" placeholder="Что тревожит вашу душу?"></textarea>
-            <button id="start-tarot" class="magic-btn">Разбудить колоду</button>
-            <button class="back-btn" data-target="menu-screen">← Назад</button>
-        </div>
-    </div>
+                <div class="daily-stage">
+                    <div class="orbit orbit--one" aria-hidden="true"></div>
+                    <div class="orbit orbit--two" aria-hidden="true"></div>
+                    <button id="daily-card-reveal" class="daily-card" type="button" aria-label="Открыть карту дня">
+                        <span class="daily-card-inner">
+                            <span class="daily-card-face daily-card-back"><span>✦</span></span>
+                            <span class="daily-card-face daily-card-front"><img id="daily-card-image" alt=""></span>
+                        </span>
+                    </button>
+                </div>
 
-    <!-- Тасовка -->
-    <div id="tarot-cards-screen" class="screen"><div class="screen-bg"></div>
-        <div class="panel full-height">
-            <h2 id="shuffle-instruction" class="mystical-text">Сдвиньте верхнюю карту</h2>
-            <div id="deck-area">
-                <div id="deck-stack" class="deck-stack"><div class="stack-card" style="z-index:3"></div><div class="stack-card" style="z-index:2"></div><div class="stack-card" style="z-index:1"></div></div>
-                <div id="spread-area"></div>
+                <div id="daily-prompt" class="reveal-prompt">
+                    <span class="pulse-dot" aria-hidden="true"></span>
+                    Коснитесь карты, когда будете готовы
+                </div>
+
+                <article id="daily-reading" class="reading-card glass-card" hidden>
+                    <p id="daily-date" class="card-label"></p>
+                    <h2 id="daily-card-name"></h2>
+                    <p id="daily-card-meaning" class="reading-copy"></p>
+                    <div class="reflection-box">
+                        <span aria-hidden="true">✦</span>
+                        <p><strong>Вопрос дня</strong><br><span id="daily-reflection"></span></p>
+                    </div>
+                    <div class="action-row">
+                        <button id="save-daily" class="secondary-btn" type="button">＋ В дневник</button>
+                        <button id="share-daily" class="icon-action" type="button" aria-label="Поделиться картой дня">↗</button>
+                    </div>
+                </article>
             </div>
-            <p id="cards-left" class="mystical-text">Выбрано: 0 из 3</p>
-            <div id="selected-cards-preview"></div>
-            <button class="back-btn" data-target="menu-screen">← Выйти</button>
-        </div>
-    </div>
+        </section>
 
-    <!-- Результат -->
-    <div id="tarot-result-screen" class="screen"><div class="screen-bg"></div>
-        <div class="panel">
-            <h2 class="mystical-text">Ваше предсказание</h2>
-            <div id="result-cards"></div>
-            <div id="prediction-text" class="scroll-box">Маг советуется со звёздами...</div>
-            <button class="back-btn" data-target="menu-screen">← В меню</button>
-        </div>
-    </div>
+        <section id="video-screen" class="screen video-screen" aria-label="Приветствие мага">
+            <video id="mage-video" playsinline muted preload="metadata"></video>
+            <div class="video-scrim" aria-hidden="true"></div>
+            <button id="skip-video-btn" class="video-skip" type="button">Перейти к раскладу →</button>
+            <button class="icon-btn video-back back-btn" data-target="menu-screen" type="button" aria-label="Назад">←</button>
+        </section>
 
-    <!-- Натальная -->
-    <div id="natal-input-screen" class="screen"><div class="screen-bg"></div>
-        <div class="panel">
-            <h2 class="mystical-text">Звёзды ждут</h2>
-            <input type="date" id="natal-date"><input type="time" id="natal-time" value="12:00">
-            <button id="get-natal" class="magic-btn">Открыть гороскоп</button>
-            <button class="back-btn" data-target="menu-screen">← Назад</button>
-        </div>
-    </div>
-    <div id="natal-result-screen" class="screen"><div class="screen-bg"></div>
-        <div class="panel"><h2 class="mystical-text">Натальная карта</h2><div id="natal-text" class="scroll-box">Рассчитываем...</div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
-    </div>
-
-    <!-- Совместимость -->
-    <div id="compat-input-screen" class="screen"><div class="screen-bg"></div>
-        <div class="panel">
-            <h2 class="mystical-text">Союз сердец</h2>
-            <input type="text" id="person1-name" placeholder="Имя"><input type="date" id="person1-date">
-            <input type="text" id="person2-name" placeholder="Имя"><input type="date" id="person2-date">
-            <button id="get-compat" class="magic-btn">Проверить</button>
-            <button class="back-btn" data-target="menu-screen">← Назад</button>
-        </div>
-    </div>
-    <div id="compat-result-screen" class="screen"><div class="screen-bg"></div>
-        <div class="panel"><h2 class="mystical-text">Совместимость</h2><div id="compat-text" class="scroll-box">Анализируем...</div><button class="back-btn" data-target="menu-screen">← В меню</button></div>
-    </div>
-
-    <!-- Кошелёк -->
-    <div id="wallet-screen" class="screen"><div class="screen-bg"></div>
-        <div class="panel">
-            <h2 class="mystical-text">💰 Мой кошелёк</h2>
-            <div class="wallet-balance"><div class="balance-amount"><span id="wallet-balance">0</span> SILARUM</div></div>
-            <div class="wallet-actions">
-                <button id="go-buy-silarum" class="magic-btn">💳 Купить силарумы</button>
-                <button id="go-exchange-btn" class="magic-btn">🔄 Обменять на крипту</button>
+        <section id="tarot-input-screen" class="screen app-screen" aria-labelledby="tarot-input-title">
+            <div class="screen-content">
+                <header class="topbar">
+                    <button class="icon-btn back-btn" data-target="menu-screen" type="button" aria-label="Назад">←</button>
+                    <div><p class="eyebrow">Личный расклад</p><h1 id="tarot-input-title" class="screen-title">Сформулируйте вопрос</h1></div>
+                    <span class="topbar-spacer"></span>
+                </header>
+                <div class="ritual-symbol" aria-hidden="true"><span>◈</span></div>
+                <p class="helper-copy">Лучше работает открытый вопрос о том, на что вы можете повлиять.</p>
+                <label class="field-label" for="tarot-question">Ваш вопрос</label>
+                <textarea id="tarot-question" maxlength="500" placeholder="Например: что поможет мне принять решение?"></textarea>
+                <div class="suggestion-chips" aria-label="Примеры вопросов">
+                    <button type="button" data-question="На что мне стоит обратить внимание сейчас?">Фокус</button>
+                    <button type="button" data-question="Что поможет мне сделать следующий шаг?">Следующий шаг</button>
+                    <button type="button" data-question="Какой урок несёт эта ситуация?">Урок</button>
+                </div>
+                <button id="start-tarot" class="primary-btn" type="button"><span>Начать ритуал</span><span aria-hidden="true">✦</span></button>
+                <p class="fine-print fine-print--form">Не вводите адреса, пароли и другую чувствительную информацию.</p>
             </div>
-            <button class="back-btn" data-target="menu-screen">← В меню</button>
-        </div>
-    </div>
+        </section>
 
-    <!-- Покупка -->
-    <div id="buy-silarum-screen" class="screen"><div class="screen-bg"></div>
-        <div class="panel">
-            <h2 class="mystical-text">💳 Купить силарумы</h2>
-            <label>Количество:</label>
-            <input type="number" id="buy-amount" value="1" min="1" max="100">
-            <div class="info-box"><p>💰 К оплате: <b><span id="buy-rub-amount">100</span> ₽</b></p><p>📌 1 SILARUM = 100 ₽</p></div>
-            <button id="create-payment" class="magic-btn">Перейти к оплате</button>
-            <button class="back-btn" data-target="wallet-screen">← Назад</button>
-        </div>
-    </div>
+        <section id="tarot-cards-screen" class="screen app-screen tarot-cards-screen" aria-labelledby="shuffle-instruction">
+            <div class="screen-content screen-content--full">
+                <header class="topbar topbar--compact">
+                    <button class="icon-btn back-btn" data-target="tarot-input-screen" type="button" aria-label="Выйти из расклада">←</button>
+                    <div><p class="eyebrow">Расклад из трёх карт</p><h1 id="shuffle-instruction" class="screen-title">Коснитесь колоды</h1></div>
+                    <span class="counter-pill" id="cards-left">0 / 3</span>
+                </header>
+                <div id="deck-area">
+                    <button id="deck-stack" class="deck-stack" type="button" aria-label="Разложить карты">
+                        <span class="stack-card"></span><span class="stack-card"></span><span class="stack-card"></span>
+                    </button>
+                    <div id="spread-area" aria-live="polite"></div>
+                </div>
+                <div id="selected-cards-preview" aria-label="Выбранные карты"></div>
+            </div>
+        </section>
 
-    <!-- Инструкция -->
-    <div id="payment-instruction-screen" class="screen"><div class="screen-bg"></div>
-        <div class="panel">
-            <h2 class="mystical-text">📋 Инструкция</h2>
-            <div id="payment-details" class="scroll-box"></div>
-            <button id="payment-done" class="magic-btn">✅ Я оплатил</button>
-            <button class="back-btn" data-target="buy-silarum-screen">← Назад</button>
-        </div>
-    </div>
+        <section id="tarot-result-screen" class="screen app-screen" aria-labelledby="tarot-result-title">
+            <div class="screen-content">
+                <header class="topbar">
+                    <button class="icon-btn back-btn" data-target="menu-screen" type="button" aria-label="На главную">←</button>
+                    <div><p class="eyebrow">Ваш расклад</p><h1 id="tarot-result-title" class="screen-title">Три голоса колоды</h1></div>
+                    <span class="topbar-spacer"></span>
+                </header>
+                <div id="result-cards" class="result-cards"></div>
+                <article class="reading-card glass-card">
+                    <div id="prediction-loader" class="reading-loader" aria-hidden="true"><span></span><span></span><span></span></div>
+                    <div id="prediction-text" class="reading-copy" aria-live="polite">Маг советуется со звёздами...</div>
+                </article>
+                <div class="action-row">
+                    <button id="save-tarot" class="secondary-btn" type="button">＋ В дневник</button>
+                    <button id="share-tarot" class="icon-action" type="button" aria-label="Поделиться раскладом">↗</button>
+                </div>
+                <button class="text-btn back-btn" data-target="tarot-input-screen" type="button">Задать другой вопрос</button>
+            </div>
+        </section>
 
-    <!-- Обмен -->
-    <div id="exchange-screen" class="screen"><div class="screen-bg"></div>
-        <div class="panel">
-            <h2 class="mystical-text">🔄 Обмен силарумов</h2>
-            <label>Сумма:</label>
-            <input type="number" id="exchange-amount" value="50" min="50" max="1000">
-            <label>Валюта:</label>
-            <select id="exchange-currency">
-                <option value="BTC">₿ Bitcoin</option>
-                <option value="LTC">Ł Litecoin</option>
-                <option value="TON">💎 Toncoin</option>
-                <option value="USDT">💵 USDT TRC-20</option>
-            </select>
-            <button id="calculate-exchange" class="magic-btn">Рассчитать</button>
-            <div id="exchange-result" class="scroll-box" style="display:none;"></div>
-            <button class="back-btn" data-target="wallet-screen">← Назад</button>
-        </div>
-    </div>
+        <section id="natal-input-screen" class="screen app-screen" aria-labelledby="natal-input-title">
+            <div class="screen-content">
+                <header class="topbar">
+                    <button class="icon-btn back-btn" data-target="menu-screen" type="button" aria-label="Назад">←</button>
+                    <div><p class="eyebrow">Ваш космический отпечаток</p><h1 id="natal-input-title" class="screen-title">Натальная подсказка</h1></div>
+                    <span class="topbar-spacer"></span>
+                </header>
+                <div class="ritual-symbol ritual-symbol--sun" aria-hidden="true"><span>☼</span></div>
+                <p class="helper-copy">Укажите дату и, если знаете, время рождения. Результат носит символический характер.</p>
+                <label class="field-label" for="natal-date">Дата рождения</label>
+                <input type="date" id="natal-date">
+                <label class="field-label" for="natal-time">Время рождения</label>
+                <input type="time" id="natal-time" value="12:00">
+                <button id="get-natal" class="primary-btn" type="button">Открыть подсказку</button>
+            </div>
+        </section>
 
+        <section id="natal-result-screen" class="screen app-screen" aria-labelledby="natal-result-title">
+            <div class="screen-content">
+                <header class="topbar">
+                    <button class="icon-btn back-btn" data-target="natal-input-screen" type="button" aria-label="Назад">←</button>
+                    <div><p class="eyebrow">Ваши ориентиры</p><h1 id="natal-result-title" class="screen-title">Натальная подсказка</h1></div>
+                    <span class="topbar-spacer"></span>
+                </header>
+                <article class="reading-card glass-card"><div id="natal-text" class="reading-copy" aria-live="polite">Рассчитываем...</div></article>
+                <div class="action-row"><button id="save-natal" class="secondary-btn" type="button">＋ В дневник</button><button id="share-natal" class="icon-action" type="button" aria-label="Поделиться подсказкой">↗</button></div>
+            </div>
+        </section>
+
+        <section id="compat-input-screen" class="screen app-screen" aria-labelledby="compat-input-title">
+            <div class="screen-content">
+                <header class="topbar">
+                    <button class="icon-btn back-btn" data-target="menu-screen" type="button" aria-label="Назад">←</button>
+                    <div><p class="eyebrow">Динамика отношений</p><h1 id="compat-input-title" class="screen-title">Совместимость</h1></div>
+                    <span class="topbar-spacer"></span>
+                </header>
+                <div class="ritual-symbol ritual-symbol--rose" aria-hidden="true"><span>∞</span></div>
+                <div class="form-pair glass-card">
+                    <p class="card-label">Первый человек</p>
+                    <label class="sr-only" for="person1-name">Имя первого человека</label><input type="text" id="person1-name" maxlength="50" placeholder="Имя">
+                    <label class="sr-only" for="person1-date">Дата рождения первого человека</label><input type="date" id="person1-date">
+                </div>
+                <div class="form-pair glass-card">
+                    <p class="card-label">Второй человек</p>
+                    <label class="sr-only" for="person2-name">Имя второго человека</label><input type="text" id="person2-name" maxlength="50" placeholder="Имя">
+                    <label class="sr-only" for="person2-date">Дата рождения второго человека</label><input type="date" id="person2-date">
+                </div>
+                <button id="get-compat" class="primary-btn" type="button">Увидеть динамику</button>
+            </div>
+        </section>
+
+        <section id="compat-result-screen" class="screen app-screen" aria-labelledby="compat-result-title">
+            <div class="screen-content">
+                <header class="topbar">
+                    <button class="icon-btn back-btn" data-target="compat-input-screen" type="button" aria-label="Назад">←</button>
+                    <div><p class="eyebrow">Союз двух историй</p><h1 id="compat-result-title" class="screen-title">Совместимость</h1></div>
+                    <span class="topbar-spacer"></span>
+                </header>
+                <article class="reading-card glass-card"><div id="compat-text" class="reading-copy" aria-live="polite">Анализируем...</div></article>
+                <div class="action-row"><button id="save-compat" class="secondary-btn" type="button">＋ В дневник</button><button id="share-compat" class="icon-action" type="button" aria-label="Поделиться результатом">↗</button></div>
+            </div>
+        </section>
+
+        <section id="journal-screen" class="screen app-screen" aria-labelledby="journal-title">
+            <div class="screen-content">
+                <header class="home-header">
+                    <div><p class="eyebrow">Личное пространство</p><h1 id="journal-title" class="screen-title">Дневник знаков</h1></div>
+                    <button id="clear-journal" class="icon-btn" type="button" aria-label="Очистить дневник">⌫</button>
+                </header>
+                <div class="segmented-control" role="tablist" aria-label="Фильтр дневника">
+                    <button class="active" type="button" role="tab" aria-selected="true" data-journal-filter="all">Все</button>
+                    <button type="button" role="tab" aria-selected="false" data-journal-filter="favorite">Избранное</button>
+                </div>
+                <div id="journal-list" class="journal-list"></div>
+                <div id="journal-empty" class="empty-state">
+                    <div class="empty-symbol" aria-hidden="true">✦</div>
+                    <h2>Здесь появятся ваши знаки</h2>
+                    <p>Сохраняйте карту дня и личные расклады, чтобы замечать повторяющиеся темы.</p>
+                    <button class="secondary-btn" data-target="daily-screen" type="button">Открыть карту дня</button>
+                </div>
+            </div>
+        </section>
+
+        <section id="wallet-screen" class="screen app-screen" aria-labelledby="profile-title">
+            <div class="screen-content">
+                <header class="topbar">
+                    <button class="icon-btn back-btn" data-target="menu-screen" type="button" aria-label="Назад">←</button>
+                    <div><p class="eyebrow">Ваше пространство</p><h1 id="profile-title" class="screen-title">Профиль</h1></div>
+                    <span class="topbar-spacer"></span>
+                </header>
+                <div class="profile-hero glass-card">
+                    <div class="profile-avatar" aria-hidden="true">✦</div>
+                    <h2 id="profile-name">Искатель</h2>
+                    <p>Вы замечаете знаки уже <strong><span data-streak>1</span> день</strong></p>
+                    <div class="profile-stats">
+                        <div><strong id="reading-count">0</strong><span>записей</span></div>
+                        <div><strong id="favorite-count">0</strong><span>избранных</span></div>
+                    </div>
+                </div>
+                <div class="settings-list glass-card">
+                    <div><span aria-hidden="true">◇</span><p><strong>Ваши записи остаются на устройстве</strong><small>Nastardamus хранит дневник локально в этом браузере.</small></p></div>
+                    <div><span aria-hidden="true">♢</span><p><strong>Silarum Club — скоро</strong><small>Расширенные расклады появятся после безопасного запуска оплаты.</small></p></div>
+                </div>
+                <p class="fine-print fine-print--profile">Интерпретации созданы для размышления и развлечения. Не принимайте медицинские, юридические или финансовые решения только на их основе.</p>
+            </div>
+        </section>
+    </main>
+
+    <nav id="tab-bar" class="tab-bar" aria-label="Основная навигация" hidden>
+        <button type="button" data-nav-target="menu-screen"><span aria-hidden="true">⌂</span><small>Главная</small></button>
+        <button type="button" data-nav-target="daily-screen"><span aria-hidden="true">✦</span><small>Сегодня</small></button>
+        <button type="button" data-nav-target="tarot-input-screen" class="tab-bar-main"><span aria-hidden="true">◈</span><small>Расклад</small></button>
+        <button type="button" data-nav-target="journal-screen"><span aria-hidden="true">▤</span><small>Дневник</small></button>
+    </nav>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="app.js"></script>
 </body>
 </html>
