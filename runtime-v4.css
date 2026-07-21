@@ -1,3 +1,7 @@
+.experience-v4 .tab-bar {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .withdrawal-dialog {
   width: min(calc(100% - 24px), 520px);
   max-height: calc(100dvh - 24px);
