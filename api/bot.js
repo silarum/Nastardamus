@@ -162,8 +162,11 @@ export default async function handler(req, res) {
             services: {
                 bot: Boolean(botToken),
                 webhookSecret: Boolean(webhookSecret),
-                readings: Boolean(process.env.OPENROUTER_API_KEY),
-                aiSupport: Boolean(process.env.OPENROUTER_API_KEY || botToken),
+                readings: Boolean(process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY),
+                aiSupport: Boolean(process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY),
+                openAi: Boolean(process.env.OPENAI_API_KEY),
+                openAiModel: Boolean(process.env.OPENAI_MODEL),
+                openRouterFallback: Boolean(process.env.OPENROUTER_API_KEY),
                 openRouterModel: Boolean(process.env.OPENROUTER_MODEL),
                 webAppUrl: Boolean(process.env.WEB_APP_URL),
                 authenticatedPreviewOnly: process.env.ALLOW_UNAUTHENTICATED_PREVIEW === 'false'

@@ -31,12 +31,14 @@ npm test
 
 - `BOT_TOKEN` — токен Telegram-бота;
 - `TELEGRAM_WEBHOOK_SECRET` — секрет заголовка Telegram webhook;
-- `OPENROUTER_API_KEY` — серверный ключ OpenRouter;
-- `OPENROUTER_MODEL` — модель OpenRouter;
+- `OPENAI_API_KEY` — основной серверный ключ OpenAI;
+- `OPENAI_MODEL` — основная модель OpenAI (по умолчанию `gpt-5-mini`);
+- `OPENROUTER_API_KEY` — необязательный резервный ключ OpenRouter;
+- `OPENROUTER_MODEL` и `OPENROUTER_VISION_MODEL` — резервные текстовая и vision-модели;
 - `WEB_APP_URL` — публичный HTTPS-адрес Mini App;
 - `ALLOW_UNAUTHENTICATED_PREVIEW` — только для локального предпросмотра; в production оставьте `false`.
 
-При регистрации webhook передайте тот же `secret_token`, который сохранён в `TELEGRAM_WEBHOOK_SECRET`. AI-маршрут по умолчанию принимает только подписанный `Telegram.WebApp.initData`.
+При регистрации webhook передайте тот же `secret_token`, который сохранён в `TELEGRAM_WEBHOOK_SECRET`. Маршруты ответов по умолчанию принимают только подписанный `Telegram.WebApp.initData`. Ключи провайдеров используются только в серверных функциях и не передаются в браузер.
 
 ## Текущие ограничения
 
