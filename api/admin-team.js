@@ -18,7 +18,9 @@ const PERMISSIONS = new Set([
   'support.view',
   'support.reply',
   'support.manage',
-  'audit.view'
+  'audit.view',
+  'ai.view',
+  'ai.manage'
 ]);
 
 const ROLE_DEFAULTS = Object.freeze({
@@ -34,7 +36,9 @@ const ROLE_DEFAULTS = Object.freeze({
     'support.view': true,
     'support.reply': true,
     'support.manage': true,
-    'audit.view': true
+    'audit.view': true,
+    'ai.view': true,
+    'ai.manage': true
   },
   manager: {
     'services.manage': true,
@@ -43,23 +47,27 @@ const ROLE_DEFAULTS = Object.freeze({
     'content.manage': true,
     'palmlink.moderate': true,
     'support.view': true,
-    'support.reply': true
+    'support.reply': true,
+    'ai.view': true
   },
   support: {
     'users.view': true,
     'support.view': true,
-    'support.reply': true
+    'support.reply': true,
+    'ai.view': true
   },
   moderator: {
     'users.view': true,
     'content.manage': true,
     'palmlink.moderate': true,
-    'support.view': true
+    'support.view': true,
+    'ai.view': true
   },
   analyst: {
     'users.view': true,
     'finance.view': true,
-    'audit.view': true
+    'audit.view': true,
+    'ai.view': true
   }
 });
 
@@ -187,7 +195,9 @@ export default async function handler(req, res) {
       manageAdmins: hasPermission(profile, 'admins.manage'),
       viewSupport: hasPermission(profile, 'support.view') || hasPermission(profile, 'support.manage'),
       manageSupport: hasPermission(profile, 'support.manage'),
-      manageSettings: hasPermission(profile, 'settings.manage')
+      manageSettings: hasPermission(profile, 'settings.manage'),
+      viewAi: hasPermission(profile, 'ai.view') || hasPermission(profile, 'ai.manage'),
+      manageAi: hasPermission(profile, 'ai.manage')
     };
 
     if (req.method === 'GET') {
