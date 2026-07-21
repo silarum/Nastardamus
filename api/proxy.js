@@ -2,6 +2,7 @@ import { buildReadingMessages, isVisionFeature } from '../lib/readings.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 
 const DEFAULT_MODEL = 'deepseek/deepseek-v4-flash:free';
+const DEFAULT_VISION_MODEL = 'openrouter/free';
 
 function sendJson(res, status, body) {
     res.setHeader('Cache-Control', 'no-store');
@@ -39,7 +40,7 @@ export default async function handler(req, res) {
 
     const vision = isVisionFeature(feature);
     const model = vision
-        ? process.env.OPENROUTER_VISION_MODEL || process.env.OPENROUTER_MODEL || DEFAULT_MODEL
+        ? process.env.OPENROUTER_VISION_MODEL || DEFAULT_VISION_MODEL
         : process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
 
     try {
