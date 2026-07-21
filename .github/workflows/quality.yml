@@ -32,8 +32,10 @@ jobs:
           node --check app.js
           node --check experience-v4.js
           node --check ritual-v4.js
+          node --check runtime-v4.js
           node --check api/proxy.js
           node --check api/assistant.js
+          node --check api/wallet.js
           node --check lib/readings.js
 
       - name: Run tests
