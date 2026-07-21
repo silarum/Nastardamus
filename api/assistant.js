@@ -53,16 +53,14 @@ export default async function handler(req, res) {
       ok: true,
       answer,
       handoff,
-      agent: result.agent,
-      provider: result.provider,
-      model: result.model
+      agent: result.agent
     });
   } catch (error) {
     console.error('Assistant request failed:', error, error?.causes || null);
     return sendJson(res, 502, {
       error: 'assistant_unavailable',
       handoff: true,
-      answer: 'Сейчас AI-помощник недоступен. Передаю вопрос оператору поддержки.'
+      answer: 'Сейчас Эзотериум не может ответить. Вопрос отмечен для оператора поддержки.'
     });
   }
 }

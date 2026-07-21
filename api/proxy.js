@@ -1,4 +1,4 @@
-import { buildReadingMessages } from '../lib/readings.js';
+import { buildReadingMessages, isVisionFeature } from '../lib/readings.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 
 const DEFAULT_MODEL = 'deepseek/deepseek-v4-flash:free';
@@ -8,6 +8,7 @@ function sendJson(res, status, body) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     return res.status(status).json(body);
 }
+
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -28,12 +29,18 @@ export default async function handler(req, res) {
         return sendJson(res, 401, { error: 'telegram_auth_required' });
     }
 
+    const feature = String(req.body?.feature || '');
     let messages;
     try {
-        messages = buildReadingMessages(req.body?.feature, req.body?.payload);
+        messages = buildReadingMessages(feature, req.body?.payload);
     } catch (error) {
         return sendJson(res, 400, { error: error.message });
     }
+
+    const vision = isVisionFeature(feature);
+    const model = vision
+        ? process.env.OPENROUTER_VISION_MODEL || process.env.OPENROUTER_MODEL || DEFAULT_MODEL
+        : process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
 
     try {
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -45,18 +52,20 @@ export default async function handler(req, res) {
                 'X-Title': 'Nastardamus'
             },
             body: JSON.stringify({
-                model: process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
+                model,
                 messages,
-                temperature: 0.8,
-                max_tokens: 500
+                temperature: vision ? 0.55 : 0.76,
+                max_tokens: vision ? 900 : 850
             }),
-            signal: AbortSignal.timeout(25_000)
+            signal: AbortSignal.timeout(vision ? 45_000 : 30_000)
         });
         const data = await response.json().catch(() => null);
 
         if (!response.ok) {
             console.error('OpenRouter request failed:', response.status, data?.error?.message || 'unknown');
-            return sendJson(res, 502, { error: 'reading_provider_failed' });
+            return sendJson(res, 502, {
+                error: vision ? 'vision_provider_failed' : 'reading_provider_failed'
+            });
         }
 
         const answer = data?.choices?.[0]?.message?.content;
@@ -67,6 +76,8 @@ export default async function handler(req, res) {
         return sendJson(res, 200, { answer: answer.trim() });
     } catch (error) {
         console.error('OpenRouter proxy failed:', error);
-        return sendJson(res, 502, { error: 'reading_provider_unavailable' });
+        return sendJson(res, 502, {
+            error: vision ? 'vision_provider_unavailable' : 'reading_provider_unavailable'
+        });
     }
 }
