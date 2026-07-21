@@ -6,6 +6,11 @@
     ritualStyle.href = 'ritual-v4.css';
     document.head.appendChild(ritualStyle);
 
+    const runtimeScript = document.createElement('script');
+    runtimeScript.src = 'runtime-v4.js';
+    runtimeScript.defer = true;
+    document.body.appendChild(runtimeScript);
+
     const tg = window.Telegram?.WebApp;
     const CARD_IMAGES = {
         'Шут': 'fool.webp',
