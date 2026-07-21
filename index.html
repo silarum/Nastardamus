@@ -16,6 +16,7 @@
         <div class="ambient-orb ambient-orb--two"></div>
         <div class="star-field"></div>
     </div>
+    <div id="magic-layer" class="magic-layer" aria-hidden="true"></div>
 
     <main id="app" class="app-shell">
         <section id="welcome-screen" class="screen welcome-screen active" aria-labelledby="welcome-title">
@@ -75,7 +76,7 @@
                 <div class="feature-grid">
                     <button id="go-tarot" class="feature-card feature-card--wide feature-card--tarot" type="button">
                         <span class="feature-icon feature-icon--violet" aria-hidden="true">◈</span>
-                        <span><strong>Расклад Таро</strong><small>Три карты для вашего вопроса</small></span>
+                        <span><strong>Расклад Таро</strong><small>Шесть схем — от одной до семи карт</small></span>
                         <span class="feature-arrow" aria-hidden="true">→</span>
                     </button>
                     <button id="go-natal" class="feature-card feature-card--natal" type="button">
@@ -84,7 +85,12 @@
                     </button>
                     <button id="go-compat" class="feature-card feature-card--compat" type="button">
                         <span class="feature-icon feature-icon--rose" aria-hidden="true">∞</span>
-                        <span><strong>Совместимость</strong><small>Динамика двух людей</small></span>
+                        <span><strong>Совместимость</strong><small>Даты, контекст и два фото</small></span>
+                    </button>
+                    <button id="go-energy-photo" class="feature-card feature-card--wide feature-card--energy" type="button">
+                        <span class="feature-icon feature-icon--gold" aria-hidden="true">✺</span>
+                        <span><strong>Энергетический оберег</strong><small>Фото, описание тревоги и безопасный символический ритуал</small></span>
+                        <span class="feature-arrow" aria-hidden="true">→</span>
                     </button>
                 </div>
 
@@ -137,9 +143,16 @@
         </section>
 
         <section id="video-screen" class="screen video-screen" aria-label="Приветствие мага">
-            <video id="mage-video" playsinline muted preload="metadata"></video>
+            <video id="mage-video" src="video/welcome-v2.mp4" poster="images/splash-v2.webp" playsinline muted preload="auto"></video>
             <div class="video-scrim" aria-hidden="true"></div>
-            <button id="skip-video-btn" class="video-skip" type="button">Перейти к раскладу →</button>
+            <div class="video-message">
+                <span class="video-sigil" aria-hidden="true">✦</span>
+                <p>Послание Эзотериума</p>
+                <h2>Добро пожаловать</h2>
+                <small id="video-status">Коснитесь, чтобы начать</small>
+            </div>
+            <button id="play-video-btn" class="video-play" type="button" aria-label="Воспроизвести приветствие"><span>▶</span></button>
+            <button id="skip-video-btn" class="video-skip" type="button">Перейти дальше →</button>
             <button class="icon-btn video-back back-btn" data-target="menu-screen" type="button" aria-label="Назад">←</button>
         </section>
 
@@ -152,6 +165,17 @@
                 </header>
                 <div class="ritual-symbol" aria-hidden="true"><span>◈</span></div>
                 <p class="helper-copy">Лучше работает открытый вопрос о том, на что вы можете повлиять.</p>
+                <div class="section-heading section-heading--compact">
+                    <div><p class="eyebrow">Выберите схему</p><h2>Как глубоко смотреть?</h2></div>
+                </div>
+                <div id="spread-picker" class="spread-picker" role="radiogroup" aria-label="Схема расклада">
+                    <button class="spread-option active" type="button" role="radio" aria-checked="true" data-spread-id="classic"><span>3</span><strong>Три голоса</strong><small>ситуация · препятствие · совет</small></button>
+                    <button class="spread-option" type="button" role="radio" aria-checked="false" data-spread-id="sign"><span>1</span><strong>Чёткий знак</strong><small>одна карта — один фокус</small></button>
+                    <button class="spread-option" type="button" role="radio" aria-checked="false" data-spread-id="timeline"><span>3</span><strong>Линия времени</strong><small>исток · сейчас · вектор</small></button>
+                    <button class="spread-option" type="button" role="radio" aria-checked="false" data-spread-id="choice"><span>3</span><strong>Выбор</strong><small>путь A · путь B · ориентир</small></button>
+                    <button class="spread-option" type="button" role="radio" aria-checked="false" data-spread-id="heart"><span>5</span><strong>Сердце союза</strong><small>чувства и точки роста</small></button>
+                    <button class="spread-option" type="button" role="radio" aria-checked="false" data-spread-id="path"><span>7</span><strong>Путь перемен</strong><small>глубокая карта движения</small></button>
+                </div>
                 <label class="field-label" for="tarot-question">Ваш вопрос</label>
                 <textarea id="tarot-question" maxlength="500" placeholder="Например: что поможет мне принять решение?"></textarea>
                 <div class="suggestion-chips" aria-label="Примеры вопросов">
@@ -168,7 +192,7 @@
             <div class="screen-content screen-content--full">
                 <header class="topbar topbar--compact">
                     <button class="icon-btn back-btn" data-target="tarot-input-screen" type="button" aria-label="Выйти из расклада">←</button>
-                    <div><p class="eyebrow">Расклад из трёх карт</p><h1 id="shuffle-instruction" class="screen-title">Коснитесь колоды</h1></div>
+                    <div><p id="spread-progress-title" class="eyebrow">Расклад «Три голоса»</p><h1 id="shuffle-instruction" class="screen-title">Коснитесь колоды</h1></div>
                     <span class="counter-pill" id="cards-left">0 / 3</span>
                 </header>
                 <div id="deck-area">
@@ -185,7 +209,7 @@
             <div class="screen-content">
                 <header class="topbar">
                     <button class="icon-btn back-btn" data-target="menu-screen" type="button" aria-label="На главную">←</button>
-                    <div><p class="eyebrow">Ваш расклад</p><h1 id="tarot-result-title" class="screen-title">Три голоса колоды</h1></div>
+                    <div><p class="eyebrow">Ваш расклад</p><h1 id="tarot-result-title" class="screen-title">Три голоса</h1></div>
                     <span class="topbar-spacer"></span>
                 </header>
                 <div id="result-cards" class="result-cards"></div>
@@ -242,12 +266,17 @@
                     <p class="card-label">Первый человек</p>
                     <label class="sr-only" for="person1-name">Имя первого человека</label><input type="text" id="person1-name" maxlength="50" placeholder="Имя">
                     <label class="sr-only" for="person1-date">Дата рождения первого человека</label><input type="date" id="person1-date">
+                    <label class="photo-upload" for="person1-photo"><input id="person1-photo" type="file" accept="image/jpeg,image/png,image/webp"><span id="person1-photo-preview" class="photo-preview"><i>＋</i><b>Добавить фото</b><small>JPG, PNG или WebP</small></span></label>
                 </div>
                 <div class="form-pair glass-card">
                     <p class="card-label">Второй человек</p>
                     <label class="sr-only" for="person2-name">Имя второго человека</label><input type="text" id="person2-name" maxlength="50" placeholder="Имя">
                     <label class="sr-only" for="person2-date">Дата рождения второго человека</label><input type="date" id="person2-date">
+                    <label class="photo-upload" for="person2-photo"><input id="person2-photo" type="file" accept="image/jpeg,image/png,image/webp"><span id="person2-photo-preview" class="photo-preview"><i>＋</i><b>Добавить фото</b><small>JPG, PNG или WebP</small></span></label>
                 </div>
+                <label class="field-label" for="compat-context">Что хотите понять?</label>
+                <textarea id="compat-context" maxlength="500" placeholder="Например: почему мы отдалились и как лучше поговорить?"></textarea>
+                <p class="privacy-note"><span aria-hidden="true">◇</span> Фото уменьшаются на устройстве, отправляются только для текущего ответа и не сохраняются в дневнике. По внешности нельзя достоверно определить характер или будущее отношений.</p>
                 <button id="get-compat" class="primary-btn" type="button">Увидеть динамику</button>
             </div>
         </section>
@@ -261,6 +290,37 @@
                 </header>
                 <article class="reading-card glass-card"><div id="compat-text" class="reading-copy" aria-live="polite">Анализируем...</div></article>
                 <div class="action-row"><button id="save-compat" class="secondary-btn" type="button">＋ В дневник</button><button id="share-compat" class="icon-action" type="button" aria-label="Поделиться результатом">↗</button></div>
+            </div>
+        </section>
+
+        <section id="energy-input-screen" class="screen app-screen" aria-labelledby="energy-input-title">
+            <div class="screen-content">
+                <header class="topbar">
+                    <button class="icon-btn back-btn" data-target="menu-screen" type="button" aria-label="Назад">←</button>
+                    <div><p class="eyebrow">Символическая защита</p><h1 id="energy-input-title" class="screen-title">Энергетический оберег</h1></div>
+                    <span class="topbar-spacer"></span>
+                </header>
+                <div class="ritual-symbol ritual-symbol--gold" aria-hidden="true"><span>✺</span></div>
+                <p class="helper-copy">Фото не может подтвердить «порчу». Этот сценарий помогает спокойно описать тревогу, получить символический ритуал и безопасный план действий.</p>
+                <label class="photo-upload photo-upload--large glass-card" for="energy-photo"><input id="energy-photo" type="file" accept="image/jpeg,image/png,image/webp"><span id="energy-photo-preview" class="photo-preview"><i>✦</i><b>Загрузить фото</b><small>Оно не будет сохранено в приложении</small></span></label>
+                <label class="field-label" for="energy-concern">Что вас беспокоит и что происходит в жизни?</label>
+                <textarea id="energy-concern" maxlength="500" placeholder="Опишите изменения, чувства, повторяющиеся ситуации и то, чего вы опасаетесь."></textarea>
+                <label class="consent-row"><input id="energy-consent" type="checkbox"><span>Я понимаю, что это развлекательная символическая практика, а не диагностика сверхъестественного, здоровья или психического состояния.</span></label>
+                <button id="get-energy-reading" class="primary-btn" type="button"><span>Создать оберег</span><span aria-hidden="true">✦</span></button>
+                <p class="fine-print fine-print--form">Не загружайте чужие фото без разрешения. При угрозе здоровью или безопасности обратитесь к квалифицированному специалисту.</p>
+            </div>
+        </section>
+
+        <section id="energy-result-screen" class="screen app-screen" aria-labelledby="energy-result-title">
+            <div class="screen-content">
+                <header class="topbar">
+                    <button class="icon-btn back-btn" data-target="energy-input-screen" type="button" aria-label="Назад">←</button>
+                    <div><p class="eyebrow">Ваш безопасный ритуал</p><h1 id="energy-result-title" class="screen-title">Оберег и ориентиры</h1></div>
+                    <span class="topbar-spacer"></span>
+                </header>
+                <div class="ritual-symbol ritual-symbol--gold" aria-hidden="true"><span>✦</span><i class="protection-orbit"></i></div>
+                <article class="reading-card glass-card"><div id="energy-text" class="reading-copy" aria-live="polite">Создаём символический круг защиты...</div></article>
+                <div class="action-row"><button id="save-energy" class="secondary-btn" type="button">＋ В дневник</button><button id="share-energy" class="icon-action" type="button" aria-label="Поделиться оберегом">↗</button></div>
             </div>
         </section>
 
@@ -288,9 +348,20 @@
             <div class="screen-content">
                 <header class="topbar">
                     <button class="icon-btn back-btn" data-target="menu-screen" type="button" aria-label="Назад">←</button>
-                    <div><p class="eyebrow">Ваше пространство</p><h1 id="profile-title" class="screen-title">Профиль</h1></div>
+                    <div><p class="eyebrow">Ваше пространство</p><h1 id="profile-title" class="screen-title">Silarum и профиль</h1></div>
                     <span class="topbar-spacer"></span>
                 </header>
+                <article class="silarum-account glass-card">
+                    <div class="account-head"><div><p class="card-label">Лицевой счёт Silarum</p><span class="account-status">Backend не подключён</span></div><span class="silarum-mark" aria-hidden="true">S</span></div>
+                    <div class="account-balance"><strong>—</strong><span>SILARUM</span></div>
+                    <p>Баланс появится только после защищённой серверной авторизации и журнала операций.</p>
+                    <div class="account-actions">
+                        <button type="button" data-finance-action="deposit"><span>＋</span><small>Пополнить</small></button>
+                        <button type="button" data-finance-action="exchange"><span>⇄</span><small>Обменять</small></button>
+                        <button type="button" data-finance-action="history"><span>≡</span><small>История</small></button>
+                    </div>
+                    <div class="exchange-preview"><span>SILARUM ⇄ TON / USDT</span><b>Запуск после аудита backend</b></div>
+                </article>
                 <div class="profile-hero glass-card">
                     <div class="profile-avatar" aria-hidden="true">✦</div>
                     <h2 id="profile-name">Искатель</h2>
@@ -302,7 +373,7 @@
                 </div>
                 <div class="settings-list glass-card">
                     <div><span aria-hidden="true">◇</span><p><strong>Ваши записи остаются на устройстве</strong><small>Nastardamus хранит дневник локально в этом браузере.</small></p></div>
-                    <div><span aria-hidden="true">♢</span><p><strong>Silarum Club — скоро</strong><small>Расширенные расклады появятся после безопасного запуска оплаты.</small></p></div>
+                    <div><span aria-hidden="true">♢</span><p><strong>Финансовые операции защищены</strong><small>Кнопки обмена не создают фиктивный баланс и не отправляют деньги без backend.</small></p></div>
                 </div>
                 <p class="fine-print fine-print--profile">Интерпретации созданы для размышления и развлечения. Не принимайте медицинские, юридические или финансовые решения только на их основе.</p>
             </div>
@@ -314,6 +385,7 @@
         <button type="button" data-nav-target="daily-screen"><span aria-hidden="true">✦</span><small>Сегодня</small></button>
         <button type="button" data-nav-target="tarot-input-screen" class="tab-bar-main"><span aria-hidden="true">◈</span><small>Расклад</small></button>
         <button type="button" data-nav-target="journal-screen"><span aria-hidden="true">▤</span><small>Дневник</small></button>
+        <button type="button" data-nav-target="wallet-screen"><span aria-hidden="true">◎</span><small>Счёт</small></button>
     </nav>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>

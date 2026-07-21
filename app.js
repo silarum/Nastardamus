@@ -32,6 +32,18 @@ const CARD_IMAGES = {
     'Мир': 'world.webp'
 };
 
+const SPREADS = {
+    classic: { id: 'classic', title: 'Три голоса', positions: ['Ситуация', 'Препятствие', 'Совет'] },
+    sign: { id: 'sign', title: 'Чёткий знак', positions: ['Главный ориентир'] },
+    timeline: { id: 'timeline', title: 'Линия времени', positions: ['Исток', 'Настоящее', 'Вектор'] },
+    choice: { id: 'choice', title: 'Выбор', positions: ['Путь A', 'Путь B', 'Ориентир'] },
+    heart: { id: 'heart', title: 'Сердце союза', positions: ['Вы', 'Другой человек', 'Связь', 'Точка роста', 'Бережный шаг'] },
+    path: { id: 'path', title: 'Путь перемен', positions: ['Отправная точка', 'Что уходит', 'Что приходит', 'Скрытый ресурс', 'Испытание', 'Действие', 'Новый горизонт'] }
+};
+
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+const PHOTO_MAX_EDGE = 900;
+
 const DAILY_GUIDES = [
     { name: 'Шут', meaning: 'Сегодня полезно позволить себе первый шаг без требования знать весь маршрут.', reflection: 'Где любопытство может оказаться мудрее привычной осторожности?' },
     { name: 'Маг', meaning: 'У вас уже есть главный ресурс для движения. День просит не ждать идеальных условий, а применить то, что доступно.', reflection: 'Какой навык стоит использовать прямо сегодня?' },
@@ -59,6 +71,7 @@ const DAILY_GUIDES = [
 
 const STORAGE = {
     onboarded: 'nastardamus-onboarded-v2',
+    introSeen: 'nastardamus-intro-seen-v3',
     streak: 'nastardamus-streak-v2',
     dailyReveal: 'nastardamus-daily-reveal-v2',
     journal: 'nastardamus-journal-v2'
@@ -76,13 +89,18 @@ const deckNames = Object.keys(CARD_IMAGES);
 let toastTimer;
 let videoFinished = false;
 let videoTimer;
+let videoReturnScreen = 'menu-screen';
 let selectedCards = [];
 let availableCards = [];
 let cardsToSelect = 3;
+let selectedSpread = SPREADS.classic;
 let journalFilter = 'all';
 let currentTarotReading = null;
 let currentNatalReading = null;
 let currentCompatReading = null;
+let currentEnergyReading = null;
+let compatPhotos = { first: null, second: null };
+let energyPhoto = null;
 let currentScreenId = 'welcome-screen';
 
 const BACK_TARGETS = {
@@ -95,6 +113,8 @@ const BACK_TARGETS = {
     'natal-result-screen': 'natal-input-screen',
     'compat-input-screen': 'menu-screen',
     'compat-result-screen': 'compat-input-screen',
+    'energy-input-screen': 'menu-screen',
+    'energy-result-screen': 'energy-input-screen',
     'journal-screen': 'menu-screen',
     'wallet-screen': 'menu-screen'
 };
@@ -148,7 +168,8 @@ function updateActiveTab(screenId) {
         'tarot-input-screen': 'tarot-input-screen',
         'tarot-cards-screen': 'tarot-input-screen',
         'tarot-result-screen': 'tarot-input-screen',
-        'journal-screen': 'journal-screen'
+        'journal-screen': 'journal-screen',
+        'wallet-screen': 'wallet-screen'
     };
     const activeTarget = sectionByScreen[screenId];
 
@@ -172,6 +193,32 @@ function haptic(type = 'light') {
     if (!telegram) navigator.vibrate?.(type === 'medium' ? 35 : 18);
 }
 
+function createMagicBurst(x, y, count = 12) {
+    const layer = document.getElementById('magic-layer');
+    if (!layer || window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
+
+    for (let index = 0; index < count; index += 1) {
+        const spark = document.createElement('span');
+        const angle = (Math.PI * 2 * index) / count + Math.random() * 0.45;
+        const distance = 34 + Math.random() * 76;
+        spark.className = index % 4 === 0 ? 'magic-spark magic-spark--star' : 'magic-spark';
+        spark.style.left = `${x}px`;
+        spark.style.top = `${y}px`;
+        spark.style.setProperty('--spark-dx', `${Math.cos(angle) * distance}px`);
+        spark.style.setProperty('--spark-dy', `${Math.sin(angle) * distance}px`);
+        spark.style.setProperty('--spark-size', `${3 + Math.random() * 4}px`);
+        spark.style.setProperty('--spark-color', index % 3 === 0 ? '#e6c779' : '#b899ff');
+        spark.style.setProperty('--spark-delay', `${Math.random() * 80}ms`);
+        layer.appendChild(spark);
+        spark.addEventListener('animationend', () => spark.remove(), { once: true });
+    }
+}
+
+document.addEventListener('pointerdown', (event) => {
+    if (!event.target.closest('button, .photo-upload')) return;
+    createMagicBurst(event.clientX, event.clientY, 7);
+});
+
 document.querySelectorAll('[data-target]').forEach((button) => {
     button.addEventListener('click', () => showScreen(button.dataset.target));
 });
@@ -186,14 +233,15 @@ document.querySelectorAll('[data-nav-target]').forEach((button) => {
 bindClick('continue-btn', () => {
     localStorage.setItem(STORAGE.onboarded, 'true');
     haptic('medium');
-    showScreen('menu-screen');
+    playMageVideo('menu-screen');
 });
 bindClick('go-daily', () => { haptic(); showScreen('daily-screen'); });
 bindClick('go-tarot', () => { haptic(); showScreen('tarot-input-screen'); });
 bindClick('go-natal', () => { haptic(); showScreen('natal-input-screen'); });
 bindClick('go-compat', () => { haptic(); showScreen('compat-input-screen'); });
+bindClick('go-energy-photo', () => { haptic('medium'); showScreen('energy-input-screen'); });
 bindClick('profile-btn', () => { haptic(); showScreen('wallet-screen'); });
-bindClick('watch-intro', playMageVideo);
+bindClick('watch-intro', () => playMageVideo('menu-screen'));
 
 function localDateKey(date = new Date()) {
     const year = date.getFullYear();
@@ -284,6 +332,8 @@ bindClick('daily-card-reveal', () => {
     if (isDailyRevealed()) return;
     localStorage.setItem(STORAGE.dailyReveal, localDateKey());
     haptic('medium');
+    const bounds = document.getElementById('daily-card-reveal').getBoundingClientRect();
+    createMagicBurst(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, 22);
     renderDailyCard();
 });
 
@@ -303,28 +353,56 @@ function dailyReadingRecord() {
 bindClick('save-daily', () => saveReading(dailyReadingRecord()));
 bindClick('share-daily', () => shareReading(dailyReadingRecord()));
 
-function playMageVideo() {
+function playMageVideo(returnScreen = 'menu-screen') {
     const video = document.getElementById('mage-video');
+    const playButton = document.getElementById('play-video-btn');
+    const status = document.getElementById('video-status');
     videoFinished = false;
+    videoReturnScreen = returnScreen;
+    document.getElementById('video-screen').classList.remove('is-playing');
+    localStorage.setItem(STORAGE.introSeen, 'true');
     clearTimeout(videoTimer);
-    video.src = 'video/welcome-v2.mp4';
+    if (!video.src) video.src = 'video/welcome-v2.mp4';
     video.currentTime = 0;
     video.onended = finishVideo;
-    video.onerror = finishVideo;
-    video.onclick = finishVideo;
+    video.onerror = () => {
+        playButton.hidden = false;
+        status.textContent = 'Видео не загрузилось — можно перейти дальше';
+    };
+    video.onplay = () => {
+        playButton.hidden = true;
+        status.textContent = 'Послание началось';
+        document.getElementById('video-screen').classList.add('is-playing');
+    };
+    video.onpause = () => {
+        if (!videoFinished && !video.ended) playButton.hidden = false;
+    };
     showScreen('video-screen');
-    video.play().catch(() => {});
-    videoTimer = setTimeout(finishVideo, 10_000);
+    playButton.hidden = false;
+    status.textContent = 'Коснитесь, чтобы начать';
+    video.play().catch(() => {
+        playButton.hidden = false;
+        status.textContent = 'Нажмите ▶ для воспроизведения';
+    });
+    videoTimer = setTimeout(() => {
+        if (!videoFinished && video.paused) status.textContent = 'Нажмите ▶ или перейдите дальше';
+    }, 4_000);
 }
 
 function finishVideo() {
     if (videoFinished) return;
     videoFinished = true;
     clearTimeout(videoTimer);
-    document.getElementById('mage-video').pause();
-    showScreen('tarot-input-screen');
+    const video = document.getElementById('mage-video');
+    video.pause();
+    document.getElementById('video-screen').classList.remove('is-playing');
+    showScreen(videoReturnScreen);
 }
 
+bindClick('play-video-btn', () => {
+    const video = document.getElementById('mage-video');
+    video.play().catch(() => showToast('Не удалось запустить видео'));
+});
 bindClick('skip-video-btn', finishVideo);
 
 document.querySelectorAll('[data-question]').forEach((button) => {
@@ -336,18 +414,34 @@ document.querySelectorAll('[data-question]').forEach((button) => {
     });
 });
 
+document.querySelectorAll('[data-spread-id]').forEach((button) => {
+    button.addEventListener('click', () => {
+        const spread = SPREADS[button.dataset.spreadId];
+        if (!spread) return;
+        selectedSpread = spread;
+        document.querySelectorAll('[data-spread-id]').forEach((candidate) => {
+            const active = candidate === button;
+            candidate.classList.toggle('active', active);
+            candidate.setAttribute('aria-checked', String(active));
+        });
+        haptic();
+    });
+});
+
 bindClick('start-tarot', startRitual);
 bindClick('deck-stack', spreadCards);
 
 function startRitual() {
     selectedCards = [];
     availableCards = [...deckNames];
-    cardsToSelect = 3;
+    cardsToSelect = selectedSpread.positions.length;
     currentTarotReading = null;
     document.getElementById('selected-cards-preview').replaceChildren();
     document.getElementById('spread-area').replaceChildren();
     document.getElementById('cards-left').textContent = `0 / ${cardsToSelect}`;
     document.getElementById('shuffle-instruction').textContent = 'Коснитесь колоды';
+    document.getElementById('spread-progress-title').textContent = `Расклад «${selectedSpread.title}»`;
+    document.getElementById('tarot-result-title').textContent = selectedSpread.title;
     document.getElementById('deck-stack').hidden = false;
     haptic('medium');
     showScreen('tarot-cards-screen');
@@ -398,11 +492,15 @@ function selectCard(card, name) {
     availableCards = availableCards.filter((cardName) => cardName !== name);
     selectedCards.push(name);
     card.classList.add('fly-out');
+    const bounds = card.getBoundingClientRect();
+    createMagicBurst(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, 16);
 
     const preview = document.createElement('div');
     preview.className = 'selected-card-preview';
     preview.style.backgroundImage = `url('images/cards/${CARD_IMAGES[name]}')`;
-    preview.setAttribute('aria-label', name);
+    const position = selectedSpread.positions[selectedCards.length - 1];
+    preview.setAttribute('aria-label', `${position}: ${name}`);
+    preview.title = `${position}: ${name}`;
     document.getElementById('selected-cards-preview').appendChild(preview);
     document.getElementById('cards-left').textContent = `${selectedCards.length} / ${cardsToSelect}`;
     setTimeout(() => collectCards(selectedCards.length >= cardsToSelect), 430);
@@ -470,7 +568,7 @@ async function getTarotPrediction() {
         const caption = document.createElement('figcaption');
         image.src = `images/cards/${CARD_IMAGES[name]}`;
         image.alt = name;
-        caption.textContent = name;
+        caption.textContent = `${selectedSpread.positions[index]} · ${name}`;
         figure.append(image, caption);
         return figure;
     }));
@@ -478,13 +576,21 @@ async function getTarotPrediction() {
     setReadingLoading('prediction-text', 'prediction-loader', true);
     showScreen('tarot-result-screen');
 
-    const answer = await requestReading('tarot', { question, cards: selectedCards });
+    const answer = await requestReading('tarot', {
+        question,
+        cards: selectedCards,
+        spread: {
+            id: selectedSpread.id,
+            title: selectedSpread.title,
+            positions: selectedSpread.positions
+        }
+    });
     const body = answer || 'Связь со звёздами прервалась. Попробуйте получить толкование немного позже.';
     prediction.textContent = body;
     setReadingLoading('prediction-text', 'prediction-loader', false);
     currentTarotReading = {
         id: uniqueId('tarot'),
-        type: 'Расклад Таро',
+        type: `Таро · ${selectedSpread.title}`,
         title: question,
         body,
         cards: [...selectedCards],
@@ -524,12 +630,91 @@ bindClick('get-natal', async () => {
 bindClick('save-natal', () => currentNatalReading ? saveReading(currentNatalReading) : showToast('Дождитесь подсказки'));
 bindClick('share-natal', () => currentNatalReading ? shareReading(currentNatalReading) : showToast('Дождитесь подсказки'));
 
+function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Не удалось прочитать фото'));
+        reader.readAsDataURL(file);
+    });
+}
+
+function loadImage(dataUrl) {
+    return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error('Неподдерживаемое изображение'));
+        image.src = dataUrl;
+    });
+}
+
+async function compressPhoto(file) {
+    if (!file || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+        throw new Error('Выберите JPG, PNG или WebP');
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+        throw new Error('Фото должно быть меньше 8 МБ');
+    }
+
+    const source = await readFileAsDataURL(file);
+    const image = await loadImage(source);
+    const ratio = Math.min(1, PHOTO_MAX_EDGE / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Не удалось подготовить фото');
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.76);
+}
+
+function renderPhotoPreview(previewId, dataUrl) {
+    const preview = document.getElementById(previewId);
+    const image = document.createElement('img');
+    image.src = dataUrl;
+    image.alt = 'Выбранное фото';
+    preview.replaceChildren(image);
+    preview.classList.add('has-photo');
+}
+
+function bindPhotoInput(inputId, previewId, onReady) {
+    const input = document.getElementById(inputId);
+    input.addEventListener('change', async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        const preview = document.getElementById(previewId);
+        preview.classList.add('is-loading');
+        try {
+            const dataUrl = await compressPhoto(file);
+            onReady(dataUrl);
+            renderPhotoPreview(previewId, dataUrl);
+            haptic('medium');
+            showToast('Фото подготовлено');
+        } catch (error) {
+            input.value = '';
+            showToast(error.message || 'Не удалось обработать фото');
+        } finally {
+            preview.classList.remove('is-loading');
+        }
+    });
+}
+
+bindPhotoInput('person1-photo', 'person1-photo-preview', (dataUrl) => { compatPhotos.first = dataUrl; });
+bindPhotoInput('person2-photo', 'person2-photo-preview', (dataUrl) => { compatPhotos.second = dataUrl; });
+bindPhotoInput('energy-photo', 'energy-photo-preview', (dataUrl) => { energyPhoto = dataUrl; });
+
 bindClick('get-compat', async () => {
     const first = { name: cleanName(document.getElementById('person1-name').value) || 'Первый человек', date: document.getElementById('person1-date').value };
     const second = { name: cleanName(document.getElementById('person2-name').value) || 'Второй человек', date: document.getElementById('person2-date').value };
+    const context = document.getElementById('compat-context').value.trim();
+    const hasBothPhotos = Boolean(compatPhotos.first && compatPhotos.second);
 
-    if (!first.date || !second.date) {
-        showToast('Укажите обе даты рождения');
+    if (Boolean(compatPhotos.first) !== Boolean(compatPhotos.second)) {
+        showToast('Добавьте оба фото или удалите выбранное');
+        return;
+    }
+    if (!hasBothPhotos && (!first.date || !second.date)) {
+        showToast('Укажите обе даты или добавьте два фото');
         (!first.date ? document.getElementById('person1-date') : document.getElementById('person2-date')).focus();
         return;
     }
@@ -538,15 +723,55 @@ bindClick('get-compat', async () => {
     result.textContent = 'Ищем точки притяжения и роста...';
     result.classList.add('is-loading');
     showScreen('compat-result-screen');
-    const answer = await requestReading('compatibility', { first, second });
+    const answer = await requestReading(hasBothPhotos ? 'photo-compatibility' : 'compatibility', {
+        first: { ...first, photo: compatPhotos.first },
+        second: { ...second, photo: compatPhotos.second },
+        context
+    });
     const body = answer || 'Не удалось получить результат. Попробуйте немного позже.';
     result.textContent = body;
     result.classList.remove('is-loading');
-    currentCompatReading = { id: uniqueId('compat'), type: 'Совместимость', title: `${first.name} и ${second.name}`, body, cards: [], createdAt: new Date().toISOString(), favorite: false };
+    currentCompatReading = { id: uniqueId('compat'), type: hasBothPhotos ? 'Фото-совместимость' : 'Совместимость', title: `${first.name} и ${second.name}`, body, cards: [], createdAt: new Date().toISOString(), favorite: false };
 });
 
 bindClick('save-compat', () => currentCompatReading ? saveReading(currentCompatReading) : showToast('Дождитесь результата'));
 bindClick('share-compat', () => currentCompatReading ? shareReading(currentCompatReading) : showToast('Дождитесь результата'));
+
+bindClick('get-energy-reading', async () => {
+    const concern = document.getElementById('energy-concern').value.trim();
+    if (!energyPhoto) {
+        showToast('Сначала добавьте фото');
+        document.getElementById('energy-photo').focus();
+        return;
+    }
+    if (concern.length < 10) {
+        showToast('Опишите подробнее, что вас беспокоит');
+        document.getElementById('energy-concern').focus();
+        return;
+    }
+    if (!document.getElementById('energy-consent').checked) {
+        showToast('Подтвердите понимание символического формата');
+        document.getElementById('energy-consent').focus();
+        return;
+    }
+
+    const result = document.getElementById('energy-text');
+    result.textContent = 'Создаём символический круг защиты...';
+    result.classList.add('is-loading');
+    showScreen('energy-result-screen');
+    const orbit = document.querySelector('.protection-orbit');
+    const bounds = orbit.getBoundingClientRect();
+    createMagicBurst(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, 24);
+
+    const answer = await requestReading('energy-check', { concern, photo: energyPhoto });
+    const body = answer || 'По фотографии нельзя определить сверхъестественное воздействие. Сделайте паузу, назовите три проверяемых факта о ситуации и обратитесь за поддержкой к человеку, которому доверяете. Безопасный ритуал: умойтесь прохладной водой, проветрите комнату и запишите один небольшой шаг, который вернёт ощущение контроля.';
+    result.textContent = body;
+    result.classList.remove('is-loading');
+    currentEnergyReading = { id: uniqueId('energy'), type: 'Энергетический оберег', title: 'Безопасный ритуал и ориентиры', body, cards: [], createdAt: new Date().toISOString(), favorite: false };
+});
+
+bindClick('save-energy', () => currentEnergyReading ? saveReading(currentEnergyReading) : showToast('Дождитесь ответа'));
+bindClick('share-energy', () => currentEnergyReading ? shareReading(currentEnergyReading) : showToast('Дождитесь ответа'));
 
 function formatDate(value) {
     const date = new Date(`${value}T12:00:00`);
@@ -689,6 +914,13 @@ function updateProfile() {
     document.getElementById('favorite-count').textContent = String(entries.filter((entry) => entry.favorite).length);
 }
 
+document.querySelectorAll('[data-finance-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+        haptic();
+        showToast('Нужен защищённый backend лицевого счёта Silarum');
+    });
+});
+
 function updateIdentity() {
     document.getElementById('user-name').textContent = firstName;
     document.getElementById('profile-name').textContent = firstName;
@@ -700,4 +932,10 @@ updateIdentity();
 updateStreak();
 renderDailyCard();
 updateProfile();
-showScreen(localStorage.getItem(STORAGE.onboarded) ? 'menu-screen' : 'welcome-screen');
+if (!localStorage.getItem(STORAGE.onboarded)) {
+    showScreen('welcome-screen');
+} else if (!localStorage.getItem(STORAGE.introSeen)) {
+    playMageVideo('menu-screen');
+} else {
+    showScreen('menu-screen');
+}
