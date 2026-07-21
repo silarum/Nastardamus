@@ -1,6 +1,11 @@
 (() => {
     'use strict';
 
+    const ritualStyle = document.createElement('link');
+    ritualStyle.rel = 'stylesheet';
+    ritualStyle.href = 'ritual-v4.css';
+    document.head.appendChild(ritualStyle);
+
     const tg = window.Telegram?.WebApp;
     const CARD_IMAGES = {
         'Шут': 'fool.webp',
