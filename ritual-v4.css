@@ -1,0 +1,143 @@
+.spread-card--v4 {
+    overflow: visible;
+}
+
+.card-magic-burst {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 1px;
+    height: 1px;
+    pointer-events: none;
+}
+
+.card-magic-burst::before {
+    position: absolute;
+    top: -42px;
+    left: -42px;
+    width: 84px;
+    height: 84px;
+    border: 1px solid rgba(244, 213, 138, 0.7);
+    border-radius: 50%;
+    box-shadow: 0 0 24px rgba(188, 139, 255, 0.72), inset 0 0 28px rgba(244, 213, 138, 0.22);
+    content: "";
+    animation: magic-ring 620ms ease-out both;
+}
+
+.card-magic-burst i {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #fff1b7;
+    box-shadow: 0 0 9px #d4aaff;
+    transform: rotate(var(--spark-angle)) translateX(8px);
+    animation: magic-spark 680ms ease-out both;
+}
+
+@keyframes magic-ring {
+    from { opacity: 1; transform: scale(0.25); }
+    to { opacity: 0; transform: scale(1.75); }
+}
+
+@keyframes magic-spark {
+    from { opacity: 1; transform: rotate(var(--spark-angle)) translateX(5px) scale(1.4); }
+    to { opacity: 0; transform: rotate(var(--spark-angle)) translateX(78px) scale(0.2); }
+}
+
+.selected-card-preview--v4 {
+    position: relative;
+    overflow: visible;
+}
+
+.selected-card-preview--v4 figcaption {
+    position: absolute;
+    right: -7px;
+    bottom: -10px;
+    left: -7px;
+    overflow: hidden;
+    padding: 4px 5px;
+    border: 1px solid rgba(236, 212, 255, 0.16);
+    border-radius: 8px;
+    background: rgba(7, 4, 15, 0.9);
+    color: rgba(240, 230, 250, 0.78);
+    font-size: 7px;
+    line-height: 1.15;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.result-cards figure figcaption {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.result-cards figure figcaption small {
+    display: block;
+    color: #bca5df;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.result-cards figure figcaption strong {
+    display: block;
+    color: #f8f1ff;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.result-cards--many {
+    display: flex !important;
+    margin-right: -16px;
+    margin-left: -16px;
+    padding: 8px 16px 18px;
+    overflow-x: auto;
+    gap: 10px !important;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+}
+
+.result-cards--many::-webkit-scrollbar {
+    display: none;
+}
+
+.result-cards--many figure {
+    width: 102px;
+    min-width: 102px;
+    scroll-snap-align: center;
+}
+
+.result-cards--many figure img {
+    width: 102px;
+    height: 170px;
+    object-fit: cover;
+}
+
+.tarot-cards-screen .counter-pill {
+    min-width: 58px;
+    text-align: center;
+}
+
+@media (max-width: 380px) {
+    .result-cards--many figure,
+    .result-cards--many figure img {
+        width: 90px;
+        min-width: 90px;
+    }
+
+    .result-cards--many figure img {
+        height: 150px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .card-magic-burst::before,
+    .card-magic-burst i {
+        animation: none;
+        display: none;
+    }
+}
