@@ -58,6 +58,12 @@ function sanitizeSettings(input = {}) {
   };
 }
 
+function hasPermission(profile, permission) {
+  if (!profile?.is_active) return false;
+  if (profile.role === 'owner') return true;
+  return profile.permissions?.['*'] === true || profile.permissions?.[permission] === true;
+}
+
 function getSupabaseConfig() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -120,16 +126,26 @@ async function writeSettings(settings, botToken) {
   return true;
 }
 
-async function getDatabaseRole(userId, botToken) {
+async function getAdminProfile(userId, botToken, telegramUser) {
+  if (parseAdminIds(process.env.ADMIN_TELEGRAM_IDS).has(userId)) {
+    return {
+      telegram_id: userId,
+      role: 'owner',
+      display_name: telegramUser?.first_name || null,
+      username: telegramUser?.username || null,
+      permissions: { '*': true },
+      is_active: true
+    };
+  }
+
   const direct = await directSupabaseRequest(
-    `nastardamus_admins?telegram_id=eq.${encodeURIComponent(userId)}&select=role&limit=1`
+    `nastardamus_admins?telegram_id=eq.${encodeURIComponent(userId)}&select=telegram_id,role,display_name,username,permissions,is_active&limit=1`
   );
   if (direct) {
     const rows = await direct.json();
-    return typeof rows?.[0]?.role === 'string' ? rows[0].role : null;
+    return rows?.[0] || null;
   }
-  const data = await edgeStore(botToken, 'get_admin_role', { telegramId: userId });
-  return typeof data.role === 'string' ? data.role : null;
+  return (await edgeStore(botToken, 'get_admin_profile', { telegramId: userId })).profile || null;
 }
 
 async function writeAudit(userId, action, payload, botToken) {
@@ -145,11 +161,6 @@ async function writeAudit(userId, action, payload, botToken) {
     payload
   });
   return true;
-}
-
-async function resolveAdminRole(userId, botToken) {
-  if (parseAdminIds(process.env.ADMIN_TELEGRAM_IDS).has(userId)) return 'owner';
-  return getDatabaseRole(userId, botToken);
 }
 
 async function checkPersistence(botToken) {
@@ -193,8 +204,8 @@ export default async function handler(req, res) {
   }
 
   const userId = Number(validation.user.id);
-  const role = await resolveAdminRole(userId, botToken);
-  if (!role) {
+  const profile = await getAdminProfile(userId, botToken, validation.user);
+  if (!profile?.is_active) {
     console.info('Nastardamus admin access requested', {
       telegramId: userId,
       username: validation.user.username || null,
@@ -210,13 +221,18 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       const current = await readSettings(botToken);
-      await writeAudit(userId, 'admin_opened', { role }, botToken);
+      await Promise.all([
+        writeAudit(userId, 'admin_opened', { role: profile.role }, botToken),
+        edgeStore(botToken, 'touch_admin', { telegramId: userId }).catch(() => null)
+      ]);
       return sendJson(res, 200, {
         ok: true,
         user: validation.user,
-        role,
+        role: profile.role,
+        permissions: profile.permissions || {},
         accessConfigured: true,
         persistenceConfigured: current.persisted,
+        canManageSettings: hasPermission(profile, 'settings.manage'),
         services: {
           bot: Boolean(botToken),
           readings: Boolean(process.env.OPENROUTER_API_KEY),
@@ -224,6 +240,10 @@ export default async function handler(req, res) {
         },
         settings: current.settings
       });
+    }
+
+    if (!hasPermission(profile, 'settings.manage')) {
+      return sendJson(res, 403, { error: 'permission_denied' });
     }
 
     const settings = sanitizeSettings(req.body?.settings);

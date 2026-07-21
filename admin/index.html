@@ -32,54 +32,265 @@
 
     <div id="dashboard" hidden>
       <section class="status-grid" aria-label="Состояние системы">
-        <article class="card stat"><span>Админ-бот</span><strong id="status-bot">—</strong></article>
-        <article class="card stat"><span>AI</span><strong id="status-ai">—</strong></article>
+        <article class="card stat"><span>Бот</span><strong id="status-bot">—</strong></article>
+        <article class="card stat"><span>AI-центр</span><strong id="status-ai">—</strong></article>
         <article class="card stat"><span>Приложение</span><strong id="status-app">—</strong></article>
-        <article class="card stat"><span>Доступ</span><strong id="status-access">—</strong></article>
+        <article class="card stat"><span>Ваша роль</span><strong id="status-access">—</strong></article>
       </section>
 
-      <form id="settings-form">
-        <section class="card panel">
-          <div class="panel-head"><div><p class="eyebrow">Экономика</p><h2>SILARUM</h2></div><span class="badge">1 SILARUM = 1 USDT</span></div>
-          <label>Комиссия вывода, %<input name="withdrawalFee" type="number" min="0" max="100" step="1" value="25"></label>
-          <label>Минимальный вывод<input name="minimumWithdrawal" type="number" min="0" step="1" value="25"></label>
-          <label class="switch-row"><span><strong>Разрешить вывод</strong><small>Общий аварийный переключатель</small></span><input name="withdrawalsEnabled" type="checkbox"></label>
-        </section>
+      <nav class="admin-tabs" aria-label="Разделы админ-панели">
+        <button type="button" class="active" data-tab="overview">Настройки</button>
+        <button type="button" data-tab="team">Команда</button>
+        <button type="button" data-tab="support">Поддержка</button>
+        <button type="button" data-tab="ai">AI-центр</button>
+      </nav>
 
-        <section class="card panel">
-          <div class="panel-head"><div><p class="eyebrow">Удержание</p><h2>Колесо Фортуны</h2></div><span class="badge violet">0,5 SILARUM</span></div>
-          <label class="switch-row"><span><strong>Колесо включено</strong><small>Бесплатное вращение после покупки услуги</small></span><input name="wheelEnabled" type="checkbox" checked></label>
-          <label>Доля призового фонда, %<input name="wheelPrizeShare" type="number" min="0" max="100" step="1" value="50"></label>
-          <label>Максимальный приз<input name="wheelMaxPrize" type="number" min="1" step="1" value="1000"></label>
-        </section>
+      <section class="tab-panel active" data-panel="overview">
+        <form id="settings-form">
+          <section class="card panel">
+            <div class="panel-head"><div><p class="eyebrow">Экономика</p><h2>SILARUM</h2></div><span class="badge">1 SILARUM = 1 USDT</span></div>
+            <label>Комиссия вывода, %<input name="withdrawalFee" type="number" min="0" max="100" step="1" value="25"></label>
+            <label>Минимальный вывод<input name="minimumWithdrawal" type="number" min="0" step="1" value="25"></label>
+            <label class="switch-row"><span><strong>Разрешить вывод</strong><small>Общий аварийный переключатель</small></span><input name="withdrawalsEnabled" type="checkbox"></label>
+          </section>
 
-        <section class="card panel">
-          <div class="panel-head"><div><p class="eyebrow">Рост</p><h2>Реферальная программа</h2></div><span class="badge rose">50% / 13%</span></div>
-          <label class="switch-row"><span><strong>Рефералы включены</strong><small>Начисления только с подтверждённых покупок</small></span><input name="referralsEnabled" type="checkbox" checked></label>
-          <div class="two-cols">
-            <label>Первая покупка, %<input name="firstReferralRate" type="number" min="0" max="100" value="50"></label>
-            <label>Повторные, %<input name="repeatReferralRate" type="number" min="0" max="100" value="13"></label>
+          <section class="card panel">
+            <div class="panel-head"><div><p class="eyebrow">Удержание</p><h2>Колесо Фортуны</h2></div><span class="badge violet">0,5 SILARUM</span></div>
+            <label class="switch-row"><span><strong>Колесо включено</strong><small>Бесплатное вращение после покупки услуги</small></span><input name="wheelEnabled" type="checkbox" checked></label>
+            <label>Доля призового фонда, %<input name="wheelPrizeShare" type="number" min="0" max="100" step="1" value="50"></label>
+            <label>Максимальный приз<input name="wheelMaxPrize" type="number" min="1" step="1" value="1000"></label>
+          </section>
+
+          <section class="card panel">
+            <div class="panel-head"><div><p class="eyebrow">Рост</p><h2>Реферальная программа</h2></div><span class="badge rose">50% / 13%</span></div>
+            <label class="switch-row"><span><strong>Рефералы включены</strong><small>Начисления только с подтверждённых покупок</small></span><input name="referralsEnabled" type="checkbox" checked></label>
+            <div class="two-cols">
+              <label>Первая покупка, %<input name="firstReferralRate" type="number" min="0" max="100" value="50"></label>
+              <label>Повторные, %<input name="repeatReferralRate" type="number" min="0" max="100" value="13"></label>
+            </div>
+          </section>
+
+          <section class="card panel">
+            <div class="panel-head"><div><p class="eyebrow">Социальный контур</p><h2>PalmLink и ритуалы вдвоём</h2></div></div>
+            <label class="switch-row"><span><strong>PalmLink</strong><small>Поиск любви, дружбы и делового партнёра</small></span><input name="palmLinkEnabled" type="checkbox"></label>
+            <label class="switch-row"><span><strong>Совместные расклады</strong><small>Каждый участник вводит данные по защищённой ссылке</small></span><input name="jointReadingsEnabled" type="checkbox" checked></label>
+            <label class="switch-row"><span><strong>Оплата партнёром</strong><small>Подарок, полная оплата или разделение стоимости</small></span><input name="partnerPaymentEnabled" type="checkbox" checked></label>
+          </section>
+
+          <section class="card panel">
+            <div class="panel-head"><div><p class="eyebrow">Безопасность</p><h2>Модерация</h2></div></div>
+            <label class="switch-row"><span><strong>Ручная проверка фото</strong><small>Подозрительные материалы отправляются модератору</small></span><input name="manualPhotoReview" type="checkbox" checked></label>
+            <label class="switch-row"><span><strong>Режим 18+</strong><small>Для PalmLink и случайных знакомств</small></span><input name="adultOnly" type="checkbox" checked></label>
+          </section>
+
+          <div class="save-bar">
+            <div><strong id="save-state">Изменений нет</strong><small>Настройки сохраняются в защищённом серверном реестре.</small></div>
+            <button type="submit">Сохранить</button>
           </div>
+        </form>
+      </section>
+
+      <section class="tab-panel" data-panel="team" hidden>
+        <section class="card panel intro-panel">
+          <p class="eyebrow">Доступ и ответственность</p>
+          <h2>Команда проекта</h2>
+          <p>Назначайте администраторов по Telegram ID. Каждый получает только выбранные права. API-ключи и секреты никому не показываются.</p>
+        </section>
+
+        <section class="card panel" id="team-section">
+          <div class="panel-head"><div><p class="eyebrow">Участники</p><h2>Администраторы</h2></div><button type="button" class="mini-button" id="new-admin-button">Добавить</button></div>
+          <div id="admins-list" class="entity-list"><p class="empty-state">Загрузка команды…</p></div>
+        </section>
+
+        <form id="admin-form" class="card panel editor" hidden>
+          <input type="hidden" name="editingTelegramId">
+          <div class="panel-head"><div><p class="eyebrow">Права доступа</p><h2 id="admin-form-title">Новый администратор</h2></div><button type="button" class="icon-button" data-close-editor="admin">×</button></div>
+          <div class="two-cols">
+            <label>Telegram ID<input name="telegramId" inputmode="numeric" required placeholder="7018304698"></label>
+            <label>Роль<select name="role" required>
+              <option value="admin">Администратор</option>
+              <option value="manager">Менеджер</option>
+              <option value="support">Поддержка</option>
+              <option value="moderator">Модератор</option>
+              <option value="analyst">Аналитик</option>
+              <option value="owner">Владелец</option>
+            </select></label>
+          </div>
+          <div class="two-cols">
+            <label>Имя<input name="displayName" maxlength="80" placeholder="Имя сотрудника"></label>
+            <label>Username<input name="username" maxlength="64" placeholder="@username"></label>
+          </div>
+          <label class="switch-row"><span><strong>Доступ активен</strong><small>Можно временно выключить без удаления</small></span><input name="isActive" type="checkbox" checked></label>
+          <fieldset class="permission-grid">
+            <legend>Индивидуальные права</legend>
+            <label><input type="checkbox" name="permission" value="admins.manage"> Управление администраторами</label>
+            <label><input type="checkbox" name="permission" value="settings.manage"> Общие настройки</label>
+            <label><input type="checkbox" name="permission" value="finance.view"> Просмотр финансов</label>
+            <label><input type="checkbox" name="permission" value="finance.manage"> Управление финансами</label>
+            <label><input type="checkbox" name="permission" value="services.manage"> Услуги и цены</label>
+            <label><input type="checkbox" name="permission" value="users.view"> Просмотр пользователей</label>
+            <label><input type="checkbox" name="permission" value="users.manage"> Управление пользователями</label>
+            <label><input type="checkbox" name="permission" value="content.manage"> Контент и расклады</label>
+            <label><input type="checkbox" name="permission" value="palmlink.moderate"> Модерация PalmLink</label>
+            <label><input type="checkbox" name="permission" value="support.view"> Просмотр поддержки</label>
+            <label><input type="checkbox" name="permission" value="support.reply"> Ответы пользователям</label>
+            <label><input type="checkbox" name="permission" value="support.manage"> Настройки поддержки</label>
+            <label><input type="checkbox" name="permission" value="ai.view"> Просмотр AI-центра</label>
+            <label><input type="checkbox" name="permission" value="ai.manage"> Управление AI и ключами</label>
+            <label><input type="checkbox" name="permission" value="audit.view"> Журнал действий</label>
+          </fieldset>
+          <div class="form-actions"><button type="button" class="secondary-button" data-close-editor="admin">Отмена</button><button type="submit">Сохранить администратора</button></div>
+        </form>
+      </section>
+
+      <section class="tab-panel" data-panel="support" hidden>
+        <form id="support-form" class="card panel">
+          <div class="panel-head"><div><p class="eyebrow">Сервис</p><h2>Поддержка пользователей</h2></div><span class="badge violet">бот + операторы</span></div>
+          <label class="switch-row"><span><strong>Поддержка включена</strong><small>Показывать пользователям кнопку обращения</small></span><input name="enabled" type="checkbox" checked></label>
+          <div class="two-cols">
+            <label>Telegram поддержки<input name="supportUsername" placeholder="@support_bot"></label>
+            <label>ID группы или чата<input name="supportChatId" inputmode="numeric" placeholder="-100..."></label>
+          </div>
+          <label>Приветственное сообщение<textarea name="welcomeMessage" rows="4" placeholder="Опишите вопрос…"></textarea></label>
+          <label>Сообщение вне рабочего времени<textarea name="offlineMessage" rows="4"></textarea></label>
+          <div class="three-cols">
+            <label>Часовой пояс<input name="timezone" value="Europe/Berlin"></label>
+            <label>С<input name="workFrom" type="time" value="09:00"></label>
+            <label>До<input name="workTo" type="time" value="18:00"></label>
+          </div>
+          <fieldset class="days-grid"><legend>Рабочие дни</legend>
+            <label><input type="checkbox" name="workDay" value="1" checked> Пн</label>
+            <label><input type="checkbox" name="workDay" value="2" checked> Вт</label>
+            <label><input type="checkbox" name="workDay" value="3" checked> Ср</label>
+            <label><input type="checkbox" name="workDay" value="4" checked> Чт</label>
+            <label><input type="checkbox" name="workDay" value="5" checked> Пт</label>
+            <label><input type="checkbox" name="workDay" value="6"> Сб</label>
+            <label><input type="checkbox" name="workDay" value="0"> Вс</label>
+          </fieldset>
+          <label>Ожидаемое время ответа, минут<input name="responseSlaMinutes" type="number" min="5" max="10080" value="240"></label>
+          <label class="switch-row"><span><strong>Разрешить вложения</strong><small>Фото и файлы в обращениях</small></span><input name="allowAttachments" type="checkbox" checked></label>
+          <label class="switch-row"><span><strong>Автораспределение</strong><small>Назначать обращения свободным операторам</small></span><input name="autoAssign" type="checkbox" checked></label>
+          <div class="form-actions"><button type="submit">Сохранить поддержку</button></div>
+        </form>
+      </section>
+
+      <section class="tab-panel" data-panel="ai" hidden>
+        <section class="card panel intro-panel">
+          <p class="eyebrow">Оркестратор нейросетей</p>
+          <h2>AI-центр</h2>
+          <p>Подключайте несколько API и распределяйте их между помощниками. Ключи шифруются, обратно показывается только маска. Для каждого помощника можно задать резервную нейросеть.</p>
         </section>
 
         <section class="card panel">
-          <div class="panel-head"><div><p class="eyebrow">Социальный контур</p><h2>PalmLink и ритуалы вдвоём</h2></div></div>
-          <label class="switch-row"><span><strong>PalmLink</strong><small>Поиск любви, дружбы и делового партнёра по добровольному профилю ладони</small></span><input name="palmLinkEnabled" type="checkbox"></label>
-          <label class="switch-row"><span><strong>Совместные расклады</strong><small>Каждый участник вводит свои данные по защищённой ссылке</small></span><input name="jointReadingsEnabled" type="checkbox" checked></label>
-          <label class="switch-row"><span><strong>Оплата партнёром</strong><small>Подарок, полная оплата или разделение стоимости</small></span><input name="partnerPaymentEnabled" type="checkbox" checked></label>
+          <div class="panel-head"><div><p class="eyebrow">Подключения</p><h2>Нейросети</h2></div><button type="button" class="mini-button" id="new-provider-button">Добавить API</button></div>
+          <div id="providers-list" class="entity-list"><p class="empty-state">Загрузка провайдеров…</p></div>
         </section>
+
+        <form id="provider-form" class="card panel editor" hidden>
+          <input type="hidden" name="id">
+          <div class="panel-head"><div><p class="eyebrow">Безопасное подключение</p><h2 id="provider-form-title">Новая нейросеть</h2></div><button type="button" class="icon-button" data-close-editor="provider">×</button></div>
+          <div class="two-cols">
+            <label>Название<input name="name" required placeholder="Основная нейросеть"></label>
+            <label>Тип<select name="providerType">
+              <option value="openai_compatible">OpenAI-совместимый API</option>
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="google">Google</option>
+              <option value="custom">Другой API</option>
+            </select></label>
+          </div>
+          <label>Адрес API<input name="baseUrl" type="url" placeholder="https://.../v1"></label>
+          <label>API-ключ<input name="apiKey" type="password" autocomplete="new-password" placeholder="Оставьте пустым, чтобы сохранить текущий ключ"><small class="field-help">После сохранения ключ нельзя просмотреть — только заменить.</small></label>
+          <div class="two-cols">
+            <label>Текстовая модель<input name="textModel" placeholder="название модели"></label>
+            <label>Модель для изображений<input name="visionModel" placeholder="название vision-модели"></label>
+          </div>
+          <label>Приоритет<input name="priority" type="number" min="1" max="10000" value="100"></label>
+          <fieldset class="permission-grid"><legend>Возможности API</legend>
+            <label><input type="checkbox" name="providerCapability" value="text" checked> Текст</label>
+            <label><input type="checkbox" name="providerCapability" value="vision"> Изображения</label>
+            <label><input type="checkbox" name="providerCapability" value="moderation"> Модерация</label>
+            <label><input type="checkbox" name="providerCapability" value="embeddings"> Поиск по знаниям</label>
+            <label><input type="checkbox" name="providerCapability" value="audio"> Голос</label>
+          </fieldset>
+          <label class="switch-row"><span><strong>Подключение активно</strong><small>Выключение не удаляет ключ и настройки</small></span><input name="enabled" type="checkbox" checked></label>
+          <div class="form-actions"><button type="button" class="secondary-button" data-close-editor="provider">Отмена</button><button type="submit">Сохранить API</button></div>
+        </form>
 
         <section class="card panel">
-          <div class="panel-head"><div><p class="eyebrow">Безопасность</p><h2>Модерация</h2></div></div>
-          <label class="switch-row"><span><strong>Ручная проверка фото</strong><small>До запуска автоматической модерации</small></span><input name="manualPhotoReview" type="checkbox" checked></label>
-          <label class="switch-row"><span><strong>Режим 18+</strong><small>Для PalmLink и случайных знакомств</small></span><input name="adultOnly" type="checkbox" checked></label>
+          <div class="panel-head"><div><p class="eyebrow">Специализация</p><h2>AI-помощники</h2></div><button type="button" class="mini-button" id="new-agent-button">Новый помощник</button></div>
+          <div id="agents-list" class="entity-list"><p class="empty-state">Загрузка помощников…</p></div>
         </section>
 
-        <div class="save-bar">
-          <div><strong id="save-state">Изменений нет</strong><small>Настройки сохраняются в защищённом серверном реестре.</small></div>
-          <button type="submit">Сохранить</button>
-        </div>
-      </form>
+        <form id="agent-form" class="card panel editor" hidden>
+          <input type="hidden" name="id">
+          <div class="panel-head"><div><p class="eyebrow">Роль и поведение</p><h2 id="agent-form-title">Новый помощник</h2></div><button type="button" class="icon-button" data-close-editor="agent">×</button></div>
+          <div class="two-cols">
+            <label>Название<input name="name" required placeholder="Помощник поддержки"></label>
+            <label>Системное имя<input name="slug" required pattern="[a-z0-9_-]+" placeholder="support-guide"></label>
+          </div>
+          <label>Направление<select name="purpose">
+            <option value="support">Поддержка и ответы в чате</option>
+            <option value="onboarding">Обучение работе с приложением</option>
+            <option value="tarot">Таро</option>
+            <option value="astrology">Астрология</option>
+            <option value="compatibility">Совместимость</option>
+            <option value="photo_moderation">Модерация фото</option>
+            <option value="palmlink_moderation">Модерация PalmLink</option>
+            <option value="custom">Другое направление</option>
+          </select></label>
+          <div class="two-cols">
+            <label>Основная нейросеть<select name="providerId"><option value="">Не назначена</option></select></label>
+            <label>Резервная нейросеть<select name="fallbackProviderId"><option value="">Нет</option></select></label>
+          </div>
+          <label>Отдельная модель<input name="modelOverride" placeholder="необязательно"></label>
+          <label>Инструкция помощнику<textarea name="instructions" rows="8" maxlength="12000" placeholder="Опишите роль, ограничения и стиль ответов"></textarea></label>
+          <div class="two-cols">
+            <label>Творчество 0–2<input name="temperature" type="number" min="0" max="2" step="0.05" value="0.4"></label>
+            <label>Максимум токенов<input name="maxOutputTokens" type="number" min="100" max="20000" value="1200"></label>
+          </div>
+          <fieldset class="permission-grid"><legend>Где отвечает</legend>
+            <label><input type="checkbox" name="agentChannel" value="app" checked> В приложении</label>
+            <label><input type="checkbox" name="agentChannel" value="telegram"> В Telegram-чате</label>
+            <label><input type="checkbox" name="agentChannel" value="admin"> В админке</label>
+          </fieldset>
+          <label class="switch-row"><span><strong>Помощник активен</strong><small>Можно временно отключить</small></span><input name="enabled" type="checkbox" checked></label>
+          <div class="form-actions"><button type="button" class="secondary-button" data-close-editor="agent">Отмена</button><button type="submit">Сохранить помощника</button></div>
+        </form>
+
+        <form id="moderation-form" class="card panel">
+          <div class="panel-head"><div><p class="eyebrow">Безопасность изображений</p><h2>Фото-модерация</h2></div><span class="badge rose">AI + человек</span></div>
+          <label class="switch-row"><span><strong>Автоматическая проверка включена</strong><small>Высокий риск блокируется, средний уходит модератору</small></span><input name="enabled" type="checkbox" checked></label>
+          <fieldset class="permission-grid moderation-rules"><legend>Что проверять</legend>
+            <label><input type="checkbox" name="moderationRule" value="nudity" checked> Нагота</label>
+            <label><input type="checkbox" name="moderationRule" value="sexual_content" checked> Сексуальный контент</label>
+            <label><input type="checkbox" name="moderationRule" value="minors" checked> Несовершеннолетние</label>
+            <label><input type="checkbox" name="moderationRule" value="violence" checked> Насилие и кровь</label>
+            <label><input type="checkbox" name="moderationRule" value="self_harm" checked> Самоповреждение</label>
+            <label><input type="checkbox" name="moderationRule" value="hate_extremism" checked> Ненависть и экстремизм</label>
+            <label><input type="checkbox" name="moderationRule" value="illegal_goods" checked> Запрещённые товары</label>
+            <label><input type="checkbox" name="moderationRule" value="personal_data" checked> Документы и личные данные</label>
+            <label><input type="checkbox" name="moderationRule" value="spam_duplicates" checked> Спам и дубликаты</label>
+            <label><input type="checkbox" name="moderationRule" value="low_quality" checked> Плохое качество</label>
+            <label><input type="checkbox" name="moderationRule" value="face_count" checked> Количество людей</label>
+            <label><input type="checkbox" name="moderationRule" value="consent_required" checked> Согласие на обработку</label>
+            <label><input type="checkbox" name="moderationRule" value="palmlink_profile_safety" checked> Безопасность PalmLink</label>
+          </fieldset>
+          <div class="two-cols">
+            <label>Порог блокировки 0–1<input name="blockThreshold" type="number" min="0" max="1" step="0.01" value="0.85"></label>
+            <label>Порог ручной проверки<input name="reviewThreshold" type="number" min="0" max="1" step="0.01" value="0.55"></label>
+            <label>Минимальное качество<input name="qualityThreshold" type="number" min="0" max="1" step="0.01" value="0.45"></label>
+            <label>Максимум лиц<input name="maximumFaces" type="number" min="1" max="20" value="2"></label>
+          </div>
+          <div class="two-cols">
+            <label>Высокий риск<select name="highRiskAction"><option value="block">Блокировать</option><option value="review">На проверку</option><option value="allow">Разрешить</option></select></label>
+            <label>Средний риск<select name="mediumRiskAction"><option value="review">На проверку</option><option value="block">Блокировать</option><option value="allow">Разрешить</option></select></label>
+          </div>
+          <label>Хранить отмеченные материалы, дней<input name="retainFlaggedDays" type="number" min="0" max="365" value="30"></label>
+          <label class="switch-row"><span><strong>Уведомлять администратора</strong><small>При блокировке или ручной проверке</small></span><input name="notifyAdmin" type="checkbox" checked></label>
+          <div class="form-actions"><button type="submit">Сохранить модерацию</button></div>
+        </form>
+      </section>
     </div>
   </main>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
