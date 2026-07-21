@@ -1,6 +1,11 @@
 (() => {
   'use strict';
 
+  const runtimeStyle = document.createElement('link');
+  runtimeStyle.rel = 'stylesheet';
+  runtimeStyle.href = 'runtime-v4.css';
+  document.head.appendChild(runtimeStyle);
+
   const tg = window.Telegram?.WebApp;
   let walletData = null;
   let walletLoading = false;
