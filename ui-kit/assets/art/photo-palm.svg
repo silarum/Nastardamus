@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+<defs>
+<linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFE7A3"/><stop offset=".45" stop-color="#D4AF37"/><stop offset="1" stop-color="#8C6420"/></linearGradient>
+<linearGradient id="violet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#D59BFF"/><stop offset=".45" stop-color="#8A3DDB"/><stop offset="1" stop-color="#3A165B"/></linearGradient>
+<filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+
+</defs>
+
+<rect x="7" y="7" width="114" height="114" rx="18" fill="#160c28" stroke="url(#violet)" stroke-width="2"/>
+<path d="M43 105V64c0-7 9-7 9 0V40c0-7 9-7 9 0v21-31c0-7 9-7 9 0v31-27c0-7 9-7 9 0v31-19c0-7 9-7 9 0v35c0 20-12 31-30 31-8 0-14-2-21-7Z" fill="#33144e" stroke="#d27aff" stroke-width="2.3" stroke-linejoin="round"/>
+<path d="M51 82c11-5 23-3 32 6M57 67l10 9 11-12" stroke="#f0bc70" stroke-width="1.6" stroke-linecap="round"/>
+
+</svg>
