@@ -25,19 +25,33 @@ for (const page of ['index.html', 'admin/index.html']) {
 }
 
 const html = readFileSync(join(root, 'index.html'), 'utf8');
-const app = readFileSync(join(root, 'app.js'), 'utf8');
-const css = readFileSync(join(root, 'style.css'), 'utf8');
+const app = readFileSync(join(root, 'ui-kit/app.js'), 'utf8');
+const css = readFileSync(join(root, 'ui-kit/app.css'), 'utf8');
 const ids = new Set([...html.matchAll(/\bid=["']([^"']+)["']/g)].map((match) => match[1]));
 const referencedIds = new Set(
     [...app.matchAll(/getElementById\(["']([^"']+)["']\)/g)].map((match) => match[1])
 );
 const missingIds = [...referencedIds].filter((id) => !ids.has(id));
 if (missingIds.length > 0) {
-    throw new Error(`app.js references missing HTML ids: ${missingIds.join(', ')}`);
+    throw new Error(`ui-kit/app.js references missing HTML ids: ${missingIds.join(', ')}`);
 }
 
 if (/^\s*(?:(?:const|let|var)\s+[A-Za-z_$]|function\s+[A-Za-z_$]|document\.)/m.test(css)) {
-    throw new Error('style.css appears to contain JavaScript');
+    throw new Error('ui-kit/app.css appears to contain JavaScript');
+}
+
+for (const required of ['/ui-kit/tokens.css', '/ui-kit/components.css', '/ui-kit/app.css', '/ui-kit/app.js']) {
+    if (!html.includes(required)) throw new Error(`Main page does not load ${required}`);
+}
+
+for (const legacyScript of ['app.js', 'experience-v4.js', 'ritual-v4.js', 'runtime-v4.js']) {
+    if (new RegExp(`<script[^>]+src=["']/?${legacyScript.replace('.', '\\.')}`).test(html)) {
+        throw new Error(`Legacy client script is still active: ${legacyScript}`);
+    }
+}
+
+if (app.includes('stopImmediatePropagation')) {
+    throw new Error('Premium application must not block other click handlers');
 }
 
 const assetSources = files
