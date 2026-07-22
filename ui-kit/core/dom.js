@@ -15,12 +15,18 @@ export function h(tag, options = {}, ...children) {
   if (html !== undefined) node.innerHTML = html;
   Object.entries(attrs).forEach(([key, value]) => {
     if (value === false || value === null || value === undefined) return;
-    if (value === true) node.setAttribute(key, "");
+    if (value === true) node.setAttribute(key, '');
     else node.setAttribute(key, String(value));
   });
   Object.entries(dataset).forEach(([key, value]) => { node.dataset[key] = String(value); });
-  Object.entries(on).forEach(([event, handler]) => node.addEventListener(event, handler));
-  Object.assign(node.style, style);
+  Object.entries(on).forEach(([event, handler]) => {
+    if (typeof handler === 'function') node.addEventListener(event, handler);
+  });
+  Object.entries(style).forEach(([property, value]) => {
+    if (value === null || value === undefined) return;
+    if (property.startsWith('--')) node.style.setProperty(property, String(value));
+    else node.style[property] = value;
+  });
   children.forEach((child) => append(node, child));
   return node;
 }
