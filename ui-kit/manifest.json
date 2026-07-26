@@ -1,7 +1,11 @@
 {
   "componentCount": 54,
   "screenCount": 4,
-  "assetCount": 35,
+  "assetCount": 58,
+  "artworkCount": 31,
+  "transparentArtworkCount": 30,
+  "backgroundCount": 1,
+  "iconCount": 27,
   "components": [
     "AppShell",
     "ScreenContainer",
@@ -63,5 +67,40 @@
     "PalmLinkScreen",
     "RitualScreen",
     "CompatibilityResultScreen"
+  ],
+  "transparentArtwork": [
+    "astrology-forecast.png",
+    "avatar-seeker.png",
+    "brand-sun.png",
+    "connection-heart.png",
+    "cosmic-card.png",
+    "cosmic-footer-divider.png",
+    "energy-hands.png",
+    "fortune-wheel.png",
+    "greeting-compass.png",
+    "laurel-left.png",
+    "laurel-right.png",
+    "metric-heart-seal.png",
+    "metric-palm-seal.png",
+    "metric-tarot-seal.png",
+    "nav-magic-sun.png",
+    "palm-left.png",
+    "palm-right.png",
+    "partner-invite-emblem.png",
+    "photo-energy-imprint.png",
+    "photo-palm.png",
+    "portrait-man.png",
+    "portrait-woman.png",
+    "result-magic-seal.png",
+    "ritual-tarot-spread.png",
+    "silarum-coin.png",
+    "shortcut-astro-orbit.png",
+    "shortcut-destiny-hearts.png",
+    "shortcut-fortune-compass.png",
+    "tarot-deck.png",
+    "two-photo-compatibility.png"
+  ],
+  "backgrounds": [
+    "cosmic-background.png"
   ]
 }

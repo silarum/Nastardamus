@@ -3,7 +3,7 @@ import {
   FortuneWheelCard, SectionTitle, QuickAccessGrid, BottomNavigation, UploadCard,
   GoalSelector, EnergyHandsScene, InfoBanner, MysticButton, PriceLine,
   DataStatusCard, ActionGroup, CompatibilityHero, Tabs, MysticCard, ServiceCard,
-  StatusBadge, GlowDivider
+  StatusBadge, GlowDivider, MetricsList, ForecastGrid, FinalScoreCard
 } from './components/index.js';
 import { h } from './core/dom.js';
 import { Icon } from './core/icon.js';
@@ -62,10 +62,23 @@ const state = {
   photoNameOne: '',
   photoNameTwo: '',
   photoConcern: '',
+  photoConsentOwn: false,
+  photoConsentPartner: false,
+  photoAdultConfirmed: false,
   palmOne: '',
   palmTwo: '',
   palmGoal: 'love',
   partnerName: '',
+  palmConsentOwn: false,
+  palmConsentPartner: false,
+  palmAdultConfirmed: false,
+  publicConfig: {
+    wheelEnabled: false,
+    palmLinkEnabled: false,
+    jointReadingsEnabled: true,
+    manualPhotoReview: true,
+    adultOnly: true
+  },
   support: readJSON(SUPPORT_KEY, []),
   supportDraft: ''
 };
@@ -147,6 +160,20 @@ function field(label, control, hint = '') {
   return h('label', { className: 'premium-field' }, h('span', { text: label }), control, hint ? h('small', { text: hint }) : null);
 }
 
+function consentRow(text, checked, onChange) {
+  const input = h('input', {
+    attrs: { type: 'checkbox', checked },
+    on: { change: (event) => onChange(event.target.checked) }
+  });
+  input.checked = checked;
+  return h('label', { className: 'premium-consent' }, input, h('span', { text }));
+}
+
+function openEnabledFeature(enabled, screen, message) {
+  if (!enabled) return notify(message);
+  navigate(screen);
+}
+
 function textInput({ value = '', placeholder = '', type = 'text', onInput, attrs = {} } = {}) {
   return h('input', { attrs: { type, value, placeholder, ...attrs }, on: { input: (event) => onInput?.(event.target.value) } });
 }
@@ -217,9 +244,10 @@ function homeScreen() {
   balance.append(h('div', { className: `premium-wallet-state premium-wallet-state--${state.walletStatus}`, text: walletStatusText() }));
 
   const wheel = FortuneWheelCard({ caption: `Доступно вращений: ${Number(wallet.freeSpins || 0)}` });
+  const wheelEnabled = state.publicConfig.wheelEnabled === true;
   const wheelWrap = h('div', { className: 'premium-wheel-wrap' }, wheel,
-    h('button', { className: 'premium-wheel-action', attrs: { type: 'button', 'aria-label': 'Открыть Колесо Фортуны' }, on: { click: () => navigate('wheel') } }),
-    h('div', { className: 'premium-wheel-result', text: 'Коснитесь, чтобы открыть' })
+    h('button', { className: 'premium-wheel-action', attrs: { type: 'button', 'aria-label': 'Открыть Колесо Фортуны' }, on: { click: () => openEnabledFeature(wheelEnabled, 'wheel', 'Колесо отключено администратором') } }),
+    h('div', { className: 'premium-wheel-result', text: wheelEnabled ? 'Коснитесь, чтобы открыть' : 'Временно отключено' })
   );
 
   return shell([
@@ -229,17 +257,11 @@ function homeScreen() {
     wheelWrap,
     SectionTitle({ text: 'Быстрый доступ' }),
     QuickAccessGrid({ items: [
-      { icon: 'heart', title: 'Путь двух судеб', onClick: () => navigate('palm') },
-      { icon: 'tarot', title: 'Таро расклад', onClick: () => navigate('tarot') },
-      { icon: 'orbit', title: 'Астро прогноз', onClick: () => navigate('natal') },
-      { icon: 'wheel', title: 'Колесо Фортуны', badge: wallet.freeSpins ? `+${wallet.freeSpins}` : '', onClick: () => navigate('wheel') }
-    ] }),
-    h('div', { className: 'premium-secondary-grid' },
-      serviceTile('sparkle', 'Энергетический след', 'Символическое чтение по фотографии', () => navigate('photo-energy')),
-      serviceTile('users', 'Совместимость по фото', 'Бережный анализ двух образов', () => navigate('photo-compat')),
-      serviceTile('services', 'Все услуги', 'Расклады, фото и поддержка', () => navigate('services')),
-      serviceTile('orbit', 'Послание мага', 'Рабочее приветственное видео', () => navigate('video'))
-    )
+      { art: 'shortcut-destiny-hearts', title: 'Путь двух судеб', onClick: () => openEnabledFeature(state.publicConfig.palmLinkEnabled, 'palm', 'PalmLink временно отключён') },
+      { art: 'tarot-deck', title: 'Таро расклад', onClick: () => navigate('tarot') },
+      { art: 'shortcut-astro-orbit', title: 'Астро прогноз', onClick: () => navigate('natal') },
+      { art: 'shortcut-fortune-compass', title: 'Колесо Фортуны', badge: wallet.freeSpins ? `+${wallet.freeSpins}` : '', onClick: () => openEnabledFeature(wheelEnabled, 'wheel', 'Колесо отключено администратором') }
+    ] })
   ], { active: 'home' });
 }
 
@@ -256,8 +278,8 @@ function servicesScreen() {
       serviceTile('tarot', 'Семь раскладов Таро', 'От одной карты до Кельтского креста', () => navigate('tarot'), 'AI'),
       serviceTile('orbit', 'Натальная подсказка', 'Сильные стороны и текущий ориентир', () => navigate('natal'), 'AI'),
       serviceTile('sparkle', 'Энергетический след', 'Одно фото и безопасное символическое чтение', () => navigate('photo-energy'), 'AI'),
-      serviceTile('users', 'Совместимость по фото', 'Два образа, диалог и точки опоры', () => navigate('photo-compat'), 'AI'),
-      serviceTile('hand', 'Путь двух судеб', 'Ладони и совместный ритуал', () => navigate('palm')),
+      serviceTile('users', 'Совместимость по фото', 'Два образа, диалог и точки опоры', () => openEnabledFeature(state.publicConfig.jointReadingsEnabled, 'photo-compat', 'Совместные чтения временно отключены'), 'AI'),
+      serviceTile('hand', 'Путь двух судеб', 'Ладони и совместный ритуал', () => openEnabledFeature(state.publicConfig.palmLinkEnabled, 'palm', 'PalmLink временно отключён')),
       serviceTile('info', 'Спросить Эзотериума', 'Помощник по функциям приложения', () => navigate('support'))
     ),
     InfoBanner({ text: 'Фото-чтения и прогнозы являются символическими и не заменяют профессиональную помощь.' })
@@ -265,6 +287,12 @@ function servicesScreen() {
 }
 
 function wheelScreen() {
+  if (state.publicConfig.wheelEnabled !== true) {
+    return shell([
+      screenHeader('Колесо Фортуны', 'Функция временно отключена', 'home'),
+      InfoBanner({ text: 'Администратор временно отключил Колесо Фортуны.' })
+    ], { active: 'home' });
+  }
   const wrap = h('div', { className: 'premium-wheel-wrap premium-wheel-screen' }, FortuneWheelCard({ caption: 'Демо-вращение не меняет баланс' }),
     h('div', { className: 'premium-wheel-result', text: 'Нажмите кнопку, чтобы увидеть анимацию' })
   );
@@ -404,6 +432,21 @@ function photoScreen(mode) {
       field('Имя второго человека', textInput({ value: state.photoNameTwo, placeholder: 'Имя', onInput: (value) => { state.photoNameTwo = value; } }))
     ] }) : null,
     field('Что важно понять?', textarea({ value: state.photoConcern, placeholder: isPair ? 'Что важно проговорить в этих отношениях?' : 'Что сейчас беспокоит и где найти опору?', onInput: (value) => { state.photoConcern = value; }, maxLength: 600 })),
+    consentRow(
+      'Я согласен на обработку своей фотографии внешним AI‑провайдером для этого чтения.',
+      state.photoConsentOwn,
+      (checked) => { state.photoConsentOwn = checked; }
+    ),
+    isPair ? consentRow(
+      'Второй человек дал согласие на использование своей фотографии для этого чтения.',
+      state.photoConsentPartner,
+      (checked) => { state.photoConsentPartner = checked; }
+    ) : null,
+    isPair && state.publicConfig.adultOnly !== false ? consentRow(
+      'Оба участника совершеннолетние.',
+      state.photoAdultConfirmed,
+      (checked) => { state.photoAdultConfirmed = checked; }
+    ) : null,
     MysticButton({ text: state.busy ? 'Читаем образ…' : 'Получить символическое чтение', icon: 'sparkle', variant: 'primary', disabled: state.busy, onClick: () => submitPhoto(isPair) }),
     state.busy ? loadingCard('Изучаем свет, композицию и настроение…') : null,
     InfoBanner({ text: 'Nastardamus не определяет здоровье, характер, верность, магическое воздействие или будущее по фотографии.' })
@@ -463,13 +506,31 @@ function loadImage(src) {
 
 async function submitPhoto(pair) {
   if (!state.photoOne || (pair && !state.photoTwo)) return notify(pair ? 'Загрузите оба фото' : 'Загрузите фотографию');
+  if (!state.photoConsentOwn) return notify('Подтвердите согласие на обработку своей фотографии');
+  if (pair && !state.photoConsentPartner) return notify('Подтвердите согласие второго человека');
+  if (pair && state.publicConfig.adultOnly !== false && !state.photoAdultConfirmed) {
+    return notify('Подтвердите совершеннолетие обоих участников');
+  }
   if (state.busy) return;
   state.busy = true; render();
   try {
     const feature = pair ? 'photo_compatibility' : 'photo_energy';
     const payload = pair
-      ? { concern: state.photoConcern || 'Что важно понять о динамике этих отношений?', firstName: state.photoNameOne || 'Первый человек', secondName: state.photoNameTwo || 'Второй человек', firstImage: state.photoOne, secondImage: state.photoTwo }
-      : { concern: state.photoConcern || 'Что сейчас важно понять и где вернуть опору?', image: state.photoOne };
+      ? {
+          concern: state.photoConcern || 'Что важно понять о динамике этих отношений?',
+          firstName: state.photoNameOne || 'Первый человек',
+          secondName: state.photoNameTwo || 'Второй человек',
+          firstImage: state.photoOne,
+          secondImage: state.photoTwo,
+          consentOwn: true,
+          consentPartner: true,
+          adultConfirmed: state.photoAdultConfirmed
+        }
+      : {
+          concern: state.photoConcern || 'Что сейчас важно понять и где вернуть опору?',
+          image: state.photoOne,
+          consentOwn: true
+        };
     const answer = await requestReading(feature, payload);
     state.result = { id: uniqueId(feature), type: pair ? 'Совместимость по фото' : 'Энергетический след', title: state.photoConcern || 'Символическое фото-чтение', body: answer, cards: [], createdAt: new Date().toISOString(), favorite: false };
     navigate('photo-result');
@@ -482,6 +543,12 @@ function photoResultScreen() {
 }
 
 function palmScreen() {
+  if (state.publicConfig.palmLinkEnabled !== true) {
+    return shell([
+      screenHeader('Путь двух судеб', 'Функция временно отключена', 'services'),
+      InfoBanner({ text: 'PalmLink временно отключён администратором.' })
+    ]);
+  }
   const upload = imageUpload({ title: 'Загрузите фото своей ладони', image: state.palmOne, onImage: (image) => { state.palmOne = image; render(); } });
   const selector = GoalSelector({ value: state.palmGoal, onChange: (goal) => { state.palmGoal = goal; render(); } });
   return shell([
@@ -507,6 +574,23 @@ function ritualScreen() {
     DataStatusCard({ title: 'Ваши данные', status: state.palmOne ? 'ready' : 'waiting', description: state.palmOne ? 'Ваша ладонь загружена' : 'Фото отсутствует', meta: state.palmOne ? 'Готово к чтению' : 'Вернитесь на шаг назад', empty: !state.palmOne }),
     SectionTitle({ text: 'Данные партнёра' }), partnerUpload,
     field('Имя партнёра', textInput({ value: state.partnerName, placeholder: 'Имя', onInput: (value) => { state.partnerName = value; } })),
+    consentRow(
+      'Я согласен на обработку изображения своей ладони внешним AI‑провайдером.',
+      state.palmConsentOwn,
+      (checked) => { state.palmConsentOwn = checked; }
+    ),
+    consentRow(
+      'Партнёр дал согласие на использование изображения своей ладони.',
+      state.palmConsentPartner,
+      (checked) => { state.palmConsentPartner = checked; }
+    ),
+    state.publicConfig.adultOnly !== false ? consentRow(
+      'Оба участника совершеннолетние.',
+      state.palmAdultConfirmed,
+      (checked) => { state.palmAdultConfirmed = checked; }
+    ) : null,
+    InfoBanner({ art: 'partner-invite-emblem', text: 'Партнёр сможет добавить свою ладонь по приглашению. Оплата и списание SILARUM пока отключены.' }),
+    SectionTitle({ text: 'Что дальше?' }),
     actions,
     MysticButton({ text: state.busy ? 'Соединяем образы…' : 'Получить совместное чтение', icon: 'sparkle', variant: 'primary', disabled: state.busy, onClick: submitPalmCompatibility }),
     state.busy ? loadingCard() : null,
@@ -525,13 +609,22 @@ async function shareInvite() {
 
 async function submitPalmCompatibility() {
   if (!state.palmOne || !state.palmTwo) return notify('Добавьте обе ладони');
+  if (!state.palmConsentOwn) return notify('Подтвердите согласие на обработку своей ладони');
+  if (!state.palmConsentPartner) return notify('Подтвердите согласие партнёра');
+  if (state.publicConfig.adultOnly !== false && !state.palmAdultConfirmed) {
+    return notify('Подтвердите совершеннолетие обоих участников');
+  }
   if (state.busy) return;
   state.busy = true; render();
   try {
     const answer = await requestReading('photo_compatibility', {
       concern: `Что важно понять о связи с целью «${goalLabel(state.palmGoal)}»?`,
       firstName: firstName(), secondName: state.partnerName || 'Партнёр',
-      firstImage: state.palmOne, secondImage: state.palmTwo
+      firstImage: state.palmOne, secondImage: state.palmTwo,
+      consentOwn: true,
+      consentPartner: true,
+      adultConfirmed: state.palmAdultConfirmed,
+      source: 'palmlink'
     });
     state.result = { id: uniqueId('palm'), type: 'Путь двух судеб', title: `${firstName()} и ${state.partnerName || 'Партнёр'}`, body: answer, cards: [], createdAt: new Date().toISOString(), favorite: false };
     navigate('compatibility-result');
@@ -540,7 +633,7 @@ async function submitPalmCompatibility() {
 }
 
 function goalLabel(value) {
-  return ({ love: 'любовь', friendship: 'дружба', communication: 'общение', business: 'деловой союз' })[value] || 'общение';
+  return ({ love: 'любовь', friendship: 'дружба', business: 'деловой союз', creative: 'творческий союз' })[value] || 'общение';
 }
 
 function compatibilityResultScreen() {
@@ -562,6 +655,11 @@ function compatibilityResultScreen() {
     screenHeader('Путь двух судеб', 'Совместное символическое чтение', 'ritual'),
     CompatibilityHero({ left: { name: firstName(), birthDate: 'Ваша ладонь', gender: 'female' }, right: { name: state.partnerName || 'Партнёр', birthDate: 'Вторая ладонь', gender: 'male' } }),
     tabs, ...panels,
+    SectionTitle({ text: 'Символические аспекты' }),
+    MetricsList(),
+    SectionTitle({ text: 'Прогноз по сферам' }),
+    ForecastGrid(),
+    FinalScoreCard({ score: null, message: 'Вывод раскрыт в тексте чтения' }),
     h('div', { className: 'n-share-actions' },
       MysticButton({ text: 'Сохранить', icon: 'save', variant: 'primary', onClick: () => saveResult(state.result) }),
       MysticButton({ text: 'Поделиться', icon: 'share', variant: 'gold', onClick: () => shareResult(state.result) })
@@ -615,8 +713,16 @@ function historyScreen() {
       h('h3', { text: entry.title || 'Без названия' }),
       h('p', { text: String(entry.body || '').slice(0, 240) }),
       MysticButton({ text: 'Поделиться', icon: 'share', variant: 'outline', onClick: () => shareResult(entry) })
-    ] }))) : MysticCard({ className: 'premium-empty-state', children: [Icon('history', { size: 44 }), h('h2', { text: 'История пока пуста' }), h('p', { text: 'Сохраните расклад или фото-чтение — оно появится здесь.' }), MysticButton({ text: 'Выбрать услугу', icon: 'services', variant: 'primary', onClick: () => navigate('services') })] })
+    ] }))) : MysticCard({ className: 'premium-empty-state', children: [Icon('history', { size: 44 }), h('h2', { text: 'История пока пуста' }), h('p', { text: 'Сохраните расклад или фото-чтение — оно появится здесь.' }), MysticButton({ text: 'Выбрать услугу', icon: 'services', variant: 'primary', onClick: () => navigate('services') })] }),
+    entries.length ? MysticButton({ text: 'Удалить всю историю', icon: 'history', variant: 'outline', onClick: clearHistory }) : null
   ], { active: 'history' });
+}
+
+function clearHistory() {
+  if (!window.confirm('Удалить все сохранённые чтения на этом устройстве?')) return;
+  localStorage.removeItem(JOURNAL_KEY);
+  notify('История удалена');
+  render();
 }
 
 function profileScreen() {
@@ -673,7 +779,16 @@ async function submitWithdrawal({ amount, destination, confirmed }) {
   if (!confirmed) return notify('Подтвердите проверку адреса');
   state.busy = true; render();
   try {
-    const data = await api('/api/wallet', { method: 'POST', body: { action: 'request_withdrawal', amount: Number(amount), destination } });
+    const idempotencyKey = uniqueId('withdrawal');
+    const data = await api('/api/wallet', {
+      method: 'POST',
+      body: {
+        action: 'request_withdrawal',
+        amount: Number(amount),
+        destination,
+        idempotencyKey
+      }
+    });
     state.wallet = data;
     state.walletStatus = 'ready';
     notify('Заявка создана');
@@ -739,6 +854,17 @@ function apiErrorMessage(error) {
     assistant_unavailable: 'Помощник временно недоступен.',
     vision_provider_unavailable: 'Фото-чтение временно недоступно.',
     reading_provider_unavailable: 'Толкование временно недоступно.',
+    photo_consent_required: 'Подтвердите согласие на обработку фотографии.',
+    partner_consent_required: 'Нужно согласие второго человека.',
+    adult_confirmation_required: 'Подтвердите совершеннолетие участников.',
+    photo_moderation_unavailable: 'Проверка безопасности фото временно недоступна.',
+    photo_blocked: 'Фото не прошло проверку безопасности.',
+    photo_requires_review: 'Фото направлено на дополнительную проверку.',
+    palmlink_disabled: 'PalmLink временно отключён.',
+    joint_readings_disabled: 'Совместные чтения временно отключены.',
+    rate_limited: 'Слишком много запросов. Попробуйте позже.',
+    rate_limit_backend_failed: 'Защита запросов временно недоступна.',
+    invalid_idempotency_key: 'Не удалось защитить заявку от повтора.',
     withdrawals_disabled: 'Обмен сейчас закрыт.', below_minimum: 'Сумма ниже минимума.',
     insufficient_funds: 'Недостаточно доступных SILARUM.', invalid_destination: 'Проверьте адрес кошелька.'
   };
@@ -746,6 +872,12 @@ function apiErrorMessage(error) {
 }
 
 async function loadWallet({ force = false } = {}) {
+  if (!tg?.initData) {
+    state.walletStatus = 'error';
+    state.walletMessage = 'Откройте приложение внутри Telegram, чтобы увидеть лицевой счёт.';
+    if (state.screen === 'home' || state.screen === 'profile') render();
+    return;
+  }
   if (state.walletStatus === 'loading' && !force && state.wallet) return;
   state.walletStatus = 'loading';
   if (state.screen === 'home' || state.screen === 'profile') render();
@@ -758,6 +890,17 @@ async function loadWallet({ force = false } = {}) {
     state.walletMessage = apiErrorMessage(error);
   }
   if (state.screen === 'home' || state.screen === 'profile') render();
+}
+
+async function loadPublicConfig() {
+  if (!tg?.initData) return;
+  try {
+    const data = await api('/api/config');
+    state.publicConfig = { ...state.publicConfig, ...(data.settings || {}) };
+  } catch {
+    // Secure defaults remain active when configuration is unavailable.
+  }
+  if (['home', 'services', 'wheel', 'palm', 'ritual'].includes(state.screen)) render();
 }
 
 function shuffle(values) {
@@ -798,6 +941,7 @@ window.addEventListener('popstate', () => {
 });
 
 render();
+loadPublicConfig();
 loadWallet();
 
 export { navigate, render, state };

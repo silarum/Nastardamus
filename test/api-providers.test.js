@@ -60,19 +60,46 @@ test('photo readings become OpenAI image inputs', async () => {
     const restore = preserveEnvironment(['BOT_TOKEN', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
     const previousFetch = global.fetch;
     let requestBody;
+    const calls = [];
     process.env.BOT_TOKEN = 'telegram-test-token';
     process.env.OPENAI_API_KEY = 'openai-test-key';
     delete process.env.OPENROUTER_API_KEY;
     process.env.ALLOW_UNAUTHENTICATED_PREVIEW = 'true';
-    global.fetch = async (_url, options) => {
-        requestBody = JSON.parse(options.body);
+    global.fetch = async (url, options) => {
+        calls.push(url);
+        const body = JSON.parse(options.body);
+        if (url === 'https://api.openai.com/v1/moderations') {
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    results: [{ flagged: false, category_scores: { violence: 0.01 } }]
+                })
+            };
+        }
+        requestBody = body;
         return { ok: true, status: 200, json: async () => ({ output_text: 'Безопасный ответ.' }) };
     };
 
     try {
         const response = createResponse();
-        await proxyHandler({ method: 'POST', headers: {}, body: { feature: 'photo_energy', payload: { concern: 'Мне тревожно.', image: 'data:image/webp;base64,AA==' } } }, response);
+        await proxyHandler({
+            method: 'POST',
+            headers: {},
+            body: {
+                feature: 'photo_energy',
+                payload: {
+                    concern: 'Мне тревожно.',
+                    image: 'data:image/webp;base64,AA==',
+                    consentOwn: true
+                }
+            }
+        }, response);
         assert.equal(response.statusCode, 200);
+        assert.deepEqual(calls, [
+            'https://api.openai.com/v1/moderations',
+            'https://api.openai.com/v1/responses'
+        ]);
         const image = requestBody.input[1].content.find((part) => part.type === 'input_image');
         assert.equal(image.image_url, 'data:image/webp;base64,AA==');
         assert.equal(image.detail, 'low');

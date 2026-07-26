@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 function findButton(document, text) {
-  return [...document.querySelectorAll('button')].find((button) => button.textContent.includes(text));
+  return [...document.querySelectorAll('button')].find((button) =>
+    button.textContent.includes(text) || button.getAttribute('aria-label')?.includes(text)
+  );
 }
 
 function click(document, text) {
@@ -36,15 +38,26 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   }
   dom.window.scrollTo = () => {};
-  globalThis.fetch = async () => ({
-    ok: false,
-    status: 401,
-    json: async () => ({ error: 'telegram_auth_required' })
-  });
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    return {
+      ok: false,
+      status: 401,
+      json: async () => ({ error: 'telegram_auth_required' })
+    };
+  };
 
   try {
-    await import(`../ui-kit/app.js?ui-test=${Date.now()}`);
+    const app = await import(`../ui-kit/app.js?ui-test=${Date.now()}`);
     await new Promise((resolve) => setTimeout(resolve, 0));
+    app.state.publicConfig = {
+      ...app.state.publicConfig,
+      wheelEnabled: true,
+      palmLinkEnabled: true,
+      jointReadingsEnabled: true
+    };
+    app.render();
 
     const mount = document.getElementById('premium-app');
     assert.equal(mount.dataset.screen, 'home');
@@ -73,6 +86,39 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(mount.dataset.screen, 'profile');
     assert.ok(document.body.textContent.includes('Откройте приложение внутри Telegram'));
+
+    click(document, 'Главная');
+    assert.equal(mount.dataset.screen, 'home');
+
+    click(document, 'Услуги');
+    click(document, 'Энергетический след');
+    assert.equal(mount.dataset.screen, 'photo-energy');
+    assert.ok(document.body.textContent.includes('Без диагнозов и утверждений о порче'));
+
+    click(document, 'Назад');
+    assert.equal(mount.dataset.screen, 'services');
+    click(document, 'Совместимость по фото');
+    assert.equal(mount.dataset.screen, 'photo-compat');
+    assert.equal(document.querySelectorAll('.n-upload-card').length, 2);
+
+    click(document, 'Назад');
+    click(document, 'Путь двух судеб');
+    assert.equal(mount.dataset.screen, 'palm');
+    click(document, 'Творческий союз');
+    assert.equal(app.state.palmGoal, 'creative');
+    click(document, 'Продолжить ритуал');
+    assert.equal(mount.dataset.screen, 'palm');
+    assert.ok(document.getElementById('premium-toast').textContent.includes('Сначала загрузите фото ладони'));
+
+    click(document, 'Услуги');
+    click(document, 'Спросить Эзотериума');
+    assert.equal(mount.dataset.screen, 'support');
+    assert.ok(document.querySelector('textarea'));
+
+    click(document, 'История');
+    assert.equal(mount.dataset.screen, 'history');
+    assert.ok(document.body.textContent.includes('История пока пуста'));
+    assert.equal(fetchCalls, 0, 'Public preview must not call Telegram-protected APIs');
   } finally {
     globalThis.fetch = previousFetch;
     dom.window.close();

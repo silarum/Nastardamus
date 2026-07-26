@@ -1,6 +1,7 @@
 import { h } from "../core/dom.js";
-import StarField from "./StarField.js";
-import NebulaGlow from "./NebulaGlow.js";
+import { premiumArtUrl } from "../core/assets.js";
 export default function CosmicBackground() {
-  return h("div", { className: "n-cosmic-background", attrs: { "aria-hidden": "true" } }, StarField(), NebulaGlow());
+  return h("div", { className: "n-cosmic-background", attrs: { "aria-hidden": "true" } },
+    h("img", { className: "n-cosmic-background__art", attrs: { src: premiumArtUrl("cosmic-background"), alt: "", draggable: "false" } })
+  );
 }

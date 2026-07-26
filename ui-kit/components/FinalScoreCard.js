@@ -1,6 +1,7 @@
 import MysticCard from "./MysticCard.js";
 import { h } from "../core/dom.js";
-import { Icon } from "../core/icon.js";
-export default function FinalScoreCard({ score=0, message="Результат появится после чтения" } = {}) {
- return MysticCard({className:"n-final-score-card",children:[Icon("laurel-left",{size:54}),h("div",{},h("h3",{text:"Итоговая совместимость"}),h("strong",{text:`${score}%`}),h("p",{text:message})),Icon("laurel-right",{size:54})]});
+import { premiumArtUrl } from "../core/assets.js";
+export default function FinalScoreCard({ score=null, message="Результат раскрыт в чтении" } = {}) {
+ const hasScore=score!==null&&score!==undefined&&Number.isFinite(Number(score));
+ return MysticCard({className:`n-final-score-card${hasScore?"":" is-pending"}`,children:[h("img",{className:"n-final-score-card__laurel",attrs:{src:premiumArtUrl("laurel-left"),alt:"",draggable:"false"}}),h("div",{},h("h3",{text:"Итоговая совместимость"}),h("strong",{text:hasScore?`${score}%`:"—"}),h("p",{text:message})),h("img",{className:"n-final-score-card__laurel",attrs:{src:premiumArtUrl("laurel-right"),alt:"",draggable:"false"}})]});
 }

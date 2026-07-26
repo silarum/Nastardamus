@@ -1,5 +1,10 @@
 import { runAgent } from '../lib/ai-runtime.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
+import {
+  enforceRateLimit,
+  setRateLimitHeaders,
+  unauthenticatedPreviewAllowed
+} from '../lib/request-security.js';
 
 const PUBLIC_AGENTS = new Set(['support-guide', 'onboarding-guide']);
 
@@ -29,7 +34,7 @@ export default async function handler(req, res) {
 
   const initData = getRequestHeader(req, 'x-telegram-init-data') || '';
   const auth = validateTelegramInitData(initData, botToken);
-  const previewAllowed = process.env.ALLOW_UNAUTHENTICATED_PREVIEW === 'true';
+  const previewAllowed = unauthenticatedPreviewAllowed();
   if (!auth.ok && !previewAllowed) {
     return sendJson(res, 401, { error: 'telegram_auth_required' });
   }
@@ -41,6 +46,17 @@ export default async function handler(req, res) {
   if (!message) return sendJson(res, 400, { error: 'empty_message' });
 
   try {
+    const rateLimit = await enforceRateLimit(req, {
+      botToken,
+      telegramId: auth.ok ? Number(auth.user.id) : null,
+      scope: 'ai:assistant',
+      limit: 40,
+      windowSeconds: 60 * 60,
+      persistent: auth.ok
+    });
+    setRateLimitHeaders(res, rateLimit);
+    if (!rateLimit.allowed) return sendJson(res, 429, { error: 'rate_limited' });
+
     const result = await runAgent({
       botToken,
       slug,
@@ -57,6 +73,9 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     console.error('Assistant request failed:', error, error?.causes || null);
+    if (error?.message === 'rate_limit_backend_failed') {
+      return sendJson(res, 503, { error: 'rate_limit_backend_failed' });
+    }
     return sendJson(res, 502, {
       error: 'assistant_unavailable',
       handoff: true,

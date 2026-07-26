@@ -1,9 +1,30 @@
 import { buildReadingMessages, isVisionFeature } from '../lib/readings.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
+import {
+    enforceRateLimit,
+    setRateLimitHeaders,
+    unauthenticatedPreviewAllowed
+} from '../lib/request-security.js';
 
 const DEFAULT_OPENAI_MODEL = 'gpt-5-mini';
 const DEFAULT_OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash:free';
 const DEFAULT_OPENROUTER_VISION_MODEL = 'openrouter/free';
+const USER_STORE_URL = process.env.USER_STORE_URL
+    || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-user-store';
+const DEFAULT_PUBLIC_POLICY = Object.freeze({
+    settings: {
+        palmLinkEnabled: false,
+        jointReadingsEnabled: true,
+        manualPhotoReview: true,
+        adultOnly: true
+    },
+    moderation: {
+        enabled: true,
+        rules: { consent_required: true },
+        thresholds: { block: 0.85, manual_review: 0.55 },
+        actions: { high_risk: 'block', medium_risk: 'review' }
+    }
+});
 
 export const config = {
     api: { bodyParser: { sizeLimit: '4mb' } }
@@ -46,6 +67,93 @@ function extractOpenAIText(data) {
         .map((part) => part.text)
         .join('\n')
         .trim();
+}
+
+async function userStore(botToken, action, payload = {}) {
+    const response = await fetch(USER_STORE_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-App-Bot-Token': botToken
+        },
+        body: JSON.stringify({ action, ...payload }),
+        signal: AbortSignal.timeout(10_000)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) throw new Error(data.error || `user_store_${response.status}`);
+    return data;
+}
+
+function imageInputs(feature, payload) {
+    if (feature === 'photo_energy') return [payload?.image];
+    if (feature === 'photo_compatibility') return [payload?.firstImage, payload?.secondImage];
+    return [];
+}
+
+function validateVisionConsent(feature, payload, policy) {
+    if (!isVisionFeature(feature)) return;
+    if (payload?.consentOwn !== true) throw new Error('photo_consent_required');
+    if (feature === 'photo_compatibility' && payload?.consentPartner !== true) {
+        throw new Error('partner_consent_required');
+    }
+    if (
+        feature === 'photo_compatibility'
+        && policy.settings?.adultOnly !== false
+        && payload?.adultConfirmed !== true
+    ) {
+        throw new Error('adult_confirmation_required');
+    }
+    if (feature === 'photo_compatibility' && policy.settings?.jointReadingsEnabled === false) {
+        throw new Error('joint_readings_disabled');
+    }
+    if (payload?.source === 'palmlink' && policy.settings?.palmLinkEnabled !== true) {
+        throw new Error('palmlink_disabled');
+    }
+}
+
+async function moderateVisionInput(feature, payload, policy) {
+    if (!isVisionFeature(feature) || policy.moderation?.enabled === false) return;
+    if (!process.env.OPENAI_API_KEY) throw new Error('photo_moderation_unavailable');
+
+    const input = [
+        {
+            type: 'text',
+            text: 'Проверьте изображения пользователя до символического фото-чтения.'
+        },
+        ...imageInputs(feature, payload).map((image) => ({
+            type: 'image_url',
+            image_url: { url: image }
+        }))
+    ];
+    const response = await fetch('https://api.openai.com/v1/moderations', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+        },
+        body: JSON.stringify({ model: 'omni-moderation-latest', input }),
+        signal: AbortSignal.timeout(30_000)
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error('photo_moderation_unavailable');
+
+    const result = data?.results?.[0];
+    if (!result) throw new Error('photo_moderation_unavailable');
+    const scores = Object.values(result.category_scores || {})
+        .map(Number)
+        .filter(Number.isFinite);
+    const highestScore = scores.length ? Math.max(...scores) : 0;
+    const blockThreshold = Number(policy.moderation?.thresholds?.block ?? 0.85);
+    const reviewThreshold = Number(policy.moderation?.thresholds?.manual_review ?? 0.55);
+    if (result.flagged === true || highestScore >= blockThreshold) {
+        throw new Error('photo_blocked');
+    }
+    if (
+        policy.settings?.manualPhotoReview !== false
+        && highestScore >= reviewThreshold
+    ) {
+        throw new Error('photo_requires_review');
+    }
 }
 
 async function requestOpenAI(messages, vision) {
@@ -121,20 +229,43 @@ export default async function handler(req, res) {
 
     const initData = getRequestHeader(req, 'x-telegram-init-data') || '';
     const auth = validateTelegramInitData(initData, botToken);
-    const previewAllowed = process.env.ALLOW_UNAUTHENTICATED_PREVIEW === 'true';
+    const previewAllowed = unauthenticatedPreviewAllowed();
     if (!auth.ok && !previewAllowed) {
         return sendJson(res, 401, { error: 'telegram_auth_required' });
     }
 
     const feature = String(req.body?.feature || '');
+    const vision = isVisionFeature(feature);
     let messages;
     try {
+        const telegramId = auth.ok ? Number(auth.user.id) : null;
+        const rateLimit = await enforceRateLimit(req, {
+            botToken,
+            telegramId,
+            scope: vision ? 'ai:vision' : 'ai:text',
+            limit: vision ? 8 : 30,
+            windowSeconds: 60 * 60,
+            persistent: auth.ok
+        });
+        setRateLimitHeaders(res, rateLimit);
+        if (!rateLimit.allowed) return sendJson(res, 429, { error: 'rate_limited' });
+
+        const policy = auth.ok
+            ? await userStore(botToken, 'get_public_config', { telegramId })
+            : DEFAULT_PUBLIC_POLICY;
+        validateVisionConsent(feature, req.body?.payload, policy);
         messages = buildReadingMessages(feature, req.body?.payload);
+        await moderateVisionInput(feature, req.body?.payload, policy);
     } catch (error) {
-        return sendJson(res, 400, { error: error.message });
+        const code = error?.message || 'invalid_request';
+        if (code === 'rate_limit_backend_failed' || code === 'photo_moderation_unavailable') {
+            return sendJson(res, 503, { error: code });
+        }
+        if (code === 'photo_requires_review') return sendJson(res, 422, { error: code });
+        if (code === 'photo_blocked') return sendJson(res, 400, { error: code });
+        return sendJson(res, 400, { error: code });
     }
 
-    const vision = isVisionFeature(feature);
     const failures = [];
     for (const provider of providers) {
         try {

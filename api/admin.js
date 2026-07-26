@@ -61,7 +61,7 @@ function sanitizeSettings(input = {}) {
 function hasPermission(profile, permission) {
   if (!profile?.is_active) return false;
   if (profile.role === 'owner') return true;
-  return profile.permissions?.['*'] === true || profile.permissions?.[permission] === true;
+  return profile.permissions?.[permission] === true;
 }
 
 function getSupabaseConfig() {
@@ -187,7 +187,7 @@ export default async function handler(req, res) {
       services: {
         adminBot: Boolean(botToken),
         telegramSecret: Boolean(process.env.TELEGRAM_WEBHOOK_SECRET),
-        readings: Boolean(process.env.OPENROUTER_API_KEY),
+        readings: Boolean(process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY),
         webAppUrl: Boolean(process.env.WEB_APP_URL),
         persistence: await checkPersistence(botToken)
       }
@@ -235,7 +235,7 @@ export default async function handler(req, res) {
         canManageSettings: hasPermission(profile, 'settings.manage'),
         services: {
           bot: Boolean(botToken),
-          readings: Boolean(process.env.OPENROUTER_API_KEY),
+          readings: Boolean(process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY),
           webAppUrl: Boolean(process.env.WEB_APP_URL)
         },
         settings: current.settings
