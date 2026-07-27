@@ -7,29 +7,40 @@
   <meta name="theme-color" content="#070913">
   <meta name="color-scheme" content="dark">
   <title>Nastardamus — пространство знаков</title>
+  <link rel="preload" href="/images/splash-v2.webp" as="image" fetchpriority="high">
   <link rel="stylesheet" href="/ui-kit/tokens.css">
   <link rel="stylesheet" href="/ui-kit/components.css">
   <link rel="stylesheet" href="/ui-kit/app.css">
   <style>
-    .boot-screen{position:fixed;inset:0;z-index:999;display:grid;place-items:center;background:#070913;color:#f8d98b;font:600 18px Georgia,serif;transition:opacity .25s}
-    .boot-screen span{display:grid;justify-items:center;gap:13px}
-    .boot-screen i{width:48px;height:48px;border:1px solid #b98238;border-radius:50%;box-shadow:0 0 28px #7227a8;animation:boot 1.2s linear infinite}
-    .boot-screen i::after{content:"✦";display:grid;place-items:center;height:100%;font-style:normal}
+    .boot-screen{position:fixed;inset:0;z-index:999;overflow:hidden;background:#070913;color:#f8d98b;transition:opacity .25s}
+    .boot-screen.is-hidden{opacity:0;pointer-events:none}
+    .boot-screen__art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top}
+    .boot-screen__shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,7,16,.02) 18%,rgba(5,7,16,.32) 54%,#070913 88%)}
+    .boot-screen__content{position:absolute;right:0;bottom:0;left:0;display:grid;justify-items:center;gap:8px;padding:24px 20px calc(28px + env(safe-area-inset-bottom,0));text-align:center}
+    .boot-screen__brand{display:flex;align-items:center;gap:9px;color:#f8d98b;font:600 29px/1 Georgia,serif}
+    .boot-screen__brand img{width:31px;height:31px;object-fit:contain}
+    .boot-screen__content p{margin:0;color:#d8c8df;font:700 10px/1.3 system-ui,sans-serif;letter-spacing:.18em}
+    .boot-screen__loader{width:30px;height:30px;margin-top:4px;border:1px solid #b98238;border-radius:50%;box-shadow:0 0 24px #7227a8;animation:boot 1.2s linear infinite}
+    .boot-screen__loader::after{content:"✦";display:grid;place-items:center;height:100%;font:400 14px/1 Georgia,serif}
     @keyframes boot{to{transform:rotate(360deg)}}
   </style>
-  <script defer src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script defer src="/ui-kit/app.bundle.js"></script>
+  <script async id="telegram-web-app-sdk" src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-  <div id="boot-screen" class="boot-screen"><span><i></i>Эзотериум открывает пространство…</span></div>
+  <div id="boot-screen" class="boot-screen" aria-label="Nastardamus загружается">
+    <img class="boot-screen__art" src="/images/splash-v2.webp" alt="" fetchpriority="high">
+    <div class="boot-screen__shade"></div>
+    <div class="boot-screen__content">
+      <div class="boot-screen__brand">
+        <img src="/ui-kit/assets/art-v2/brand-sun.png" alt="">
+        <span>Nastardamus</span>
+      </div>
+      <p>ПРОСТРАНСТВО ЭЗОТЕРИУМА</p>
+      <span class="boot-screen__loader" aria-hidden="true"></span>
+    </div>
+  </div>
   <div id="premium-app"></div>
   <div id="premium-toast" class="premium-toast" role="status" aria-live="polite"></div>
-  <script>
-    window.hideNastardamusBoot = function () {
-      var boot = document.getElementById('boot-screen');
-      if (boot) { boot.style.opacity = '0'; window.setTimeout(function(){ boot.remove(); }, 260); }
-    };
-    window.setTimeout(window.hideNastardamusBoot, 8000);
-  </script>
-  <script defer src="/ui-kit/app.bundle.js"></script>
 </body>
 </html>

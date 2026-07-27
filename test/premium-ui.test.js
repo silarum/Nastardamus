@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 
 function findButton(document, text) {
@@ -128,6 +129,39 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.equal(fetchCalls, 0, 'Public preview must not call Telegram-protected APIs');
   } finally {
     globalThis.fetch = previousFetch;
+    dom.window.close();
+  }
+});
+
+test('bundled startup restores the elder splash and renders a pointer-free wheel', async () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const bundle = readFileSync(new URL('../ui-kit/app.bundle.js', import.meta.url), 'utf8');
+  const dom = new JSDOM(html, {
+    url: 'https://nastardamus.example/',
+    pretendToBeVisual: true,
+    runScripts: 'outside-only'
+  });
+
+  try {
+    dom.window.localStorage.setItem('nastardamus-onboarded-v2', 'true');
+    dom.window.scrollTo = () => {};
+    dom.window.eval(bundle);
+
+    const mount = dom.window.document.getElementById('premium-app');
+    const boot = dom.window.document.getElementById('boot-screen');
+    assert.equal(mount.dataset.screen, 'welcome');
+    assert.ok(mount.querySelector('img[src="/images/splash-v2.webp"]'));
+    assert.ok(mount.textContent.includes('Nastardamus'));
+    assert.ok(boot.classList.contains('is-hidden'));
+
+    click(dom.window.document, 'Открыть пространство');
+    assert.equal(mount.dataset.screen, 'home');
+    assert.equal(dom.window.location.search, '');
+    assert.equal(mount.querySelectorAll('.n-wheel-pointer').length, 0);
+
+    await new Promise((resolve) => dom.window.setTimeout(resolve, 300));
+    assert.equal(dom.window.document.getElementById('boot-screen'), null);
+  } finally {
     dom.window.close();
   }
 });
