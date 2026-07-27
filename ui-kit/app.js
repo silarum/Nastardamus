@@ -8,15 +8,11 @@ import {
 import { h } from './core/dom.js';
 import { Icon } from './core/icon.js';
 
-const tg = window.Telegram?.WebApp;
-tg?.ready?.();
-tg?.expand?.();
-tg?.setHeaderColor?.('#070913');
-tg?.setBackgroundColor?.('#070913');
+let tg = null;
+let telegramConfigured = false;
 
 const mount = document.getElementById('premium-app');
 const toast = document.getElementById('premium-toast');
-const ONBOARDED_KEY = 'nastardamus-onboarded-v2';
 const JOURNAL_KEY = 'nastardamus-journal-v2';
 const SUPPORT_KEY = 'nastardamus-support-v4';
 const HOROSCOPE_KEY = 'nastardamus-horoscope-v1';
@@ -55,7 +51,7 @@ const requestedInviteGoal = ['love', 'friendship', 'business', 'creative'].inclu
   ? params.get('invite')
   : 'love';
 const state = {
-  screen: requestedScreen || (localStorage.getItem(ONBOARDED_KEY) ? 'home' : 'welcome'),
+  screen: requestedScreen || 'welcome',
   wallet: null,
   walletStatus: 'loading',
   walletMessage: '',
@@ -103,6 +99,20 @@ const state = {
 };
 
 let toastTimer;
+
+function configureTelegram() {
+  const webApp = window.Telegram?.WebApp;
+  if (!webApp) return false;
+  tg = webApp;
+  if (!telegramConfigured) {
+    tg.ready?.();
+    tg.expand?.();
+    tg.setHeaderColor?.('#070913');
+    tg.setBackgroundColor?.('#070913');
+    telegramConfigured = true;
+  }
+  return true;
+}
 
 function readJSON(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
@@ -231,9 +241,12 @@ function loadingCard(message = 'Эзотериум соединяет знаки
 
 function welcomeScreen() {
   const enter = MysticButton({ text: 'Открыть пространство', icon: 'sparkle', variant: 'primary', onClick: () => {
-    localStorage.setItem(ONBOARDED_KEY, 'true');
     pulse('medium');
-    navigate('home', { replace: true });
+    state.screen = 'home';
+    const url = new URL(location.href);
+    url.searchParams.delete('screen');
+    history.replaceState({}, '', url);
+    render();
   } });
   return shell([
     h('section', { className: 'premium-welcome' },
@@ -1124,10 +1137,29 @@ window.addEventListener('popstate', () => {
   render();
 });
 
+function hideBootScreen() {
+  const boot = document.getElementById('boot-screen');
+  if (!boot) return;
+  boot.classList.add('is-hidden');
+  window.setTimeout(() => boot.remove(), 260);
+}
+
+function loadTelegramData({ force = false } = {}) {
+  if (!configureTelegram()) return false;
+  loadPublicConfig();
+  loadWallet({ force });
+  loadPreferences();
+  return true;
+}
+
 render();
-window.hideNastardamusBoot?.();
-loadPublicConfig();
-loadWallet();
-loadPreferences();
+hideBootScreen();
+if (!loadTelegramData()) {
+  document.getElementById('telegram-web-app-sdk')?.addEventListener(
+    'load',
+    () => loadTelegramData({ force: true }),
+    { once: true }
+  );
+}
 
 export { navigate, render, state };

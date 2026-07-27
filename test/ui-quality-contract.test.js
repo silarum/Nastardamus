@@ -4,6 +4,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 
 const components = readFileSync(new URL('../ui-kit/components.css', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../ui-kit/app.css', import.meta.url), 'utf8');
+const appSource = readFileSync(new URL('../ui-kit/app.js', import.meta.url), 'utf8');
+const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const css = `${components}\n${app}`;
 const artV2 = new URL('../ui-kit/assets/art-v2/', import.meta.url);
 const legacyArt = new URL('../ui-kit/assets/art/', import.meta.url);
@@ -24,9 +26,24 @@ test('premium UI keeps readable text and complete mobile headers', () => {
 test('gift wheel and primary navigation preserve their geometry', () => {
   const wheelComponent = readFileSync(new URL('../ui-kit/components/FortuneWheel.js', import.meta.url), 'utf8');
   assert.doesNotMatch(wheelComponent, /WheelSegment|values=/);
+  assert.doesNotMatch(wheelComponent, /WheelPointer|n-wheel-pointer/);
   assert.match(components, /\.n-bottom-navigation::before\s*\{/s);
   assert.match(components, /\.n-bottom-nav-item\s*\{[^}]*min-height:\s*52px/s);
   assert.match(components, /\.n-icon-button\s*\{[^}]*width:\s*44px;\s*height:\s*44px/s);
+});
+
+test('startup renders the branded elder splash without waiting for Telegram', () => {
+  const appBundleIndex = html.indexOf('/ui-kit/app.bundle.js');
+  const telegramSdkIndex = html.indexOf('telegram-web-app.js');
+
+  assert.ok(appBundleIndex >= 0);
+  assert.ok(telegramSdkIndex > appBundleIndex, 'Local application must start before the Telegram SDK');
+  assert.match(html, /<script async id="telegram-web-app-sdk"/);
+  assert.match(html, /splash-v2\.webp/);
+  assert.match(html, />Nastardamus</);
+  assert.doesNotMatch(html, /setTimeout\(window\.hideNastardamusBoot/);
+  assert.match(appSource, /screen:\s*requestedScreen\s*\|\|\s*'welcome'/);
+  assert.match(appSource, /function hideBootScreen\(\)/);
 });
 
 test('every illustrated module uses the approved PNG asset set', () => {
