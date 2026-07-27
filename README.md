@@ -36,9 +36,11 @@ npm test
 
 - `BOT_TOKEN` — токен Telegram-бота;
 - `TELEGRAM_WEBHOOK_SECRET` — секрет заголовка Telegram webhook;
-- `OPENAI_API_KEY` — основной серверный ключ OpenAI;
-- `OPENAI_MODEL` — основная модель OpenAI (по умолчанию `gpt-5-mini`);
-- `OPENROUTER_API_KEY` — необязательный резервный ключ OpenRouter;
+- `DEEPSEEK_API_KEY` — серверный ключ DeepSeek для Таро, гороскопов и поддержки Эзотериума;
+- `DEEPSEEK_MODEL` — текстовая модель DeepSeek (по умолчанию `deepseek-v4-flash`);
+- `OPENAI_API_KEY` — серверный ключ OpenAI для ладоней, определения порчи и совместимости;
+- `OPENAI_MODEL` — vision-модель OpenAI (по умолчанию `gpt-5-mini`);
+- `OPENROUTER_API_KEY` — необязательный ключ OpenRouter для пользовательских агентов AI-центра;
 - `OPENROUTER_MODEL` и `OPENROUTER_VISION_MODEL` — резервные текстовая и vision-модели;
 - `WEB_APP_URL` — публичный HTTPS-адрес Mini App;
 - `ALLOW_UNAUTHENTICATED_PREVIEW` — только для локального предпросмотра; в production оставьте `false`.

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import botHandler from '../api/bot.js';
+import { createHoroscope } from '../api/daily-horoscope.js';
 import proxyHandler from '../api/proxy.js';
 import { runAgent } from '../lib/ai-runtime.js';
 
@@ -26,18 +27,25 @@ function preserveEnvironment(names) {
     };
 }
 
-test('reading proxy prefers OpenAI and keeps its key on the server', async () => {
-    const restore = preserveEnvironment(['BOT_TOKEN', 'OPENAI_API_KEY', 'OPENAI_MODEL', 'OPENROUTER_API_KEY', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
+test('text readings use DeepSeek and keep its key on the server', async () => {
+    const restore = preserveEnvironment(['BOT_TOKEN', 'DEEPSEEK_API_KEY', 'DEEPSEEK_MODEL', 'OPENAI_API_KEY', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
     const previousFetch = global.fetch;
     let providerRequest;
     process.env.BOT_TOKEN = 'telegram-test-token';
-    process.env.OPENAI_API_KEY = 'openai-test-key';
-    process.env.OPENAI_MODEL = 'gpt-5-mini';
-    process.env.OPENROUTER_API_KEY = 'openrouter-fallback-key';
+    process.env.DEEPSEEK_API_KEY = 'deepseek-test-key';
+    process.env.DEEPSEEK_MODEL = 'deepseek-v4-flash';
+    process.env.OPENAI_API_KEY = 'openai-vision-key';
     process.env.ALLOW_UNAUTHENTICATED_PREVIEW = 'true';
     global.fetch = async (url, options) => {
         providerRequest = { url, headers: options.headers, body: JSON.parse(options.body) };
-        return { ok: true, status: 200, json: async () => ({ output_text: '  Символический ответ.  ' }) };
+        return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+                model: 'deepseek-v4-flash',
+                choices: [{ message: { content: '  Символический ответ.  ' } }]
+            })
+        };
     };
 
     try {
@@ -45,25 +53,25 @@ test('reading proxy prefers OpenAI and keeps its key on the server', async () =>
         await proxyHandler({ method: 'POST', headers: {}, body: { feature: 'natal', payload: { date: '2026-07-21', time: '12:00' } } }, response);
         assert.equal(response.statusCode, 200);
         assert.deepEqual(response.body, { answer: 'Символический ответ.' });
-        assert.equal(providerRequest.url, 'https://api.openai.com/v1/responses');
-        assert.equal(providerRequest.headers.Authorization, 'Bearer openai-test-key');
-        assert.equal(providerRequest.body.model, 'gpt-5-mini');
-        assert.equal(providerRequest.body.store, false);
-        assert.doesNotMatch(JSON.stringify(response.body), /openai-test-key/);
+        assert.equal(providerRequest.url, 'https://api.deepseek.com/chat/completions');
+        assert.equal(providerRequest.headers.Authorization, 'Bearer deepseek-test-key');
+        assert.equal(providerRequest.body.model, 'deepseek-v4-flash');
+        assert.equal(providerRequest.body.max_tokens, 850);
+        assert.doesNotMatch(JSON.stringify(response.body), /deepseek-test-key|openai-vision-key/);
     } finally {
         restore();
         global.fetch = previousFetch;
     }
 });
 
-test('photo readings become OpenAI image inputs', async () => {
-    const restore = preserveEnvironment(['BOT_TOKEN', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
+test('photo readings use only OpenAI image inputs', async () => {
+    const restore = preserveEnvironment(['BOT_TOKEN', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
     const previousFetch = global.fetch;
     let requestBody;
     const calls = [];
     process.env.BOT_TOKEN = 'telegram-test-token';
+    process.env.DEEPSEEK_API_KEY = 'deepseek-text-key';
     process.env.OPENAI_API_KEY = 'openai-test-key';
-    delete process.env.OPENROUTER_API_KEY;
     process.env.ALLOW_UNAUTHENTICATED_PREVIEW = 'true';
     global.fetch = async (url, options) => {
         calls.push(url);
@@ -110,54 +118,99 @@ test('photo readings become OpenAI image inputs', async () => {
     }
 });
 
-test('reading proxy falls back to OpenRouter after an OpenAI failure', async () => {
-    const restore = preserveEnvironment(['BOT_TOKEN', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
+test('two-person compatibility remains on OpenAI', async () => {
+    const restore = preserveEnvironment(['BOT_TOKEN', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
     const previousFetch = global.fetch;
     const calls = [];
     process.env.BOT_TOKEN = 'telegram-test-token';
+    process.env.DEEPSEEK_API_KEY = 'deepseek-text-key';
     process.env.OPENAI_API_KEY = 'openai-test-key';
-    process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
     process.env.ALLOW_UNAUTHENTICATED_PREVIEW = 'true';
-    global.fetch = async (url) => {
+    global.fetch = async (url, options) => {
         calls.push(url);
-        if (url.includes('api.openai.com')) {
-            return { ok: false, status: 429, json: async () => ({ error: { message: 'rate limited' } }) };
-        }
-        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'Резервный ответ.' } }] }) };
+        const body = JSON.parse(options.body);
+        assert.equal(body.model, 'gpt-5-mini');
+        return { ok: true, status: 200, json: async () => ({ output_text: 'Бережный ответ.' }) };
     };
 
     try {
         const response = createResponse();
-        await proxyHandler({ method: 'POST', headers: {}, body: { feature: 'natal', payload: { date: '2026-07-21', time: '12:00' } } }, response);
+        await proxyHandler({
+            method: 'POST',
+            headers: {},
+            body: {
+                feature: 'compatibility',
+                payload: {
+                    first: { name: 'Анна', date: '1990-01-01' },
+                    second: { name: 'Иван', date: '1991-02-02' }
+                }
+            }
+        }, response);
         assert.equal(response.statusCode, 200);
-        assert.deepEqual(response.body, { answer: 'Резервный ответ.' });
-        assert.deepEqual(calls, ['https://api.openai.com/v1/responses', 'https://openrouter.ai/api/v1/chat/completions']);
+        assert.deepEqual(response.body, { answer: 'Бережный ответ.' });
+        assert.deepEqual(calls, ['https://api.openai.com/v1/responses']);
     } finally {
         restore();
         global.fetch = previousFetch;
     }
 });
 
-test('built-in support agent uses the system OpenAI key', async () => {
-    const restore = preserveEnvironment(['OPENAI_API_KEY', 'OPENAI_MODEL', 'OPENROUTER_API_KEY']);
+test('built-in support agent uses the system DeepSeek key', async () => {
+    const restore = preserveEnvironment(['DEEPSEEK_API_KEY', 'DEEPSEEK_MODEL', 'OPENAI_API_KEY']);
     const previousFetch = global.fetch;
     const calls = [];
-    process.env.OPENAI_API_KEY = 'openai-test-key';
-    process.env.OPENAI_MODEL = 'gpt-5-mini';
-    delete process.env.OPENROUTER_API_KEY;
+    process.env.DEEPSEEK_API_KEY = 'deepseek-test-key';
+    process.env.DEEPSEEK_MODEL = 'deepseek-v4-flash';
+    process.env.OPENAI_API_KEY = 'openai-vision-key';
     global.fetch = async (url, options) => {
         calls.push({ url, body: JSON.parse(options.body) });
         if (url.includes('supabase.co')) {
             return { ok: true, status: 200, json: async () => ({ ok: true, agents: [] }) };
         }
-        return { ok: true, status: 200, json: async () => ({ output_text: 'Откройте раздел «Расклады».' }) };
+        return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+                model: 'deepseek-v4-flash',
+                choices: [{ message: { content: 'Откройте раздел «Расклады».' } }]
+            })
+        };
     };
 
     try {
         const result = await runAgent({ botToken: 'telegram-test-token', slug: 'support-guide', message: 'Как начать расклад?' });
         assert.equal(result.answer, 'Откройте раздел «Расклады».');
-        assert.equal(result.model, 'gpt-5-mini');
-        assert.equal(calls[1].url, 'https://api.openai.com/v1/responses');
+        assert.equal(result.model, 'deepseek-v4-flash');
+        assert.equal(calls[1].url, 'https://api.deepseek.com/chat/completions');
+    } finally {
+        restore();
+        global.fetch = previousFetch;
+    }
+});
+
+test('daily horoscope uses DeepSeek', async () => {
+    const restore = preserveEnvironment(['DEEPSEEK_API_KEY', 'DEEPSEEK_MODEL', 'OPENAI_API_KEY']);
+    const previousFetch = global.fetch;
+    let request;
+    process.env.DEEPSEEK_API_KEY = 'deepseek-test-key';
+    process.env.DEEPSEEK_MODEL = 'deepseek-v4-flash';
+    process.env.OPENAI_API_KEY = 'openai-vision-key';
+    global.fetch = async (url, options) => {
+        request = { url, body: JSON.parse(options.body) };
+        return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+                choices: [{ message: { content: 'Сегодня берегите внутренний ритм.' } }]
+            })
+        };
+    };
+
+    try {
+        const answer = await createHoroscope('aries', '2026-07-27');
+        assert.equal(answer, 'Сегодня берегите внутренний ритм.');
+        assert.equal(request.url, 'https://api.deepseek.com/chat/completions');
+        assert.equal(request.body.max_tokens, 520);
     } finally {
         restore();
         global.fetch = previousFetch;
@@ -165,9 +218,11 @@ test('built-in support agent uses the system OpenAI key', async () => {
 });
 
 test('bot health reports both providers without exposing secrets', async () => {
-    const restore = preserveEnvironment(['BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'OPENAI_API_KEY', 'OPENAI_MODEL', 'OPENROUTER_API_KEY']);
+    const restore = preserveEnvironment(['BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'DEEPSEEK_API_KEY', 'DEEPSEEK_MODEL', 'OPENAI_API_KEY', 'OPENAI_MODEL', 'OPENROUTER_API_KEY']);
     process.env.BOT_TOKEN = 'telegram-test-token';
     process.env.TELEGRAM_WEBHOOK_SECRET = 'webhook-test-secret';
+    process.env.DEEPSEEK_API_KEY = 'deepseek-test-key';
+    process.env.DEEPSEEK_MODEL = 'deepseek-v4-flash';
     process.env.OPENAI_API_KEY = 'openai-test-key';
     process.env.OPENAI_MODEL = 'gpt-5-mini';
     process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
@@ -176,6 +231,8 @@ test('bot health reports both providers without exposing secrets', async () => {
         await botHandler({ method: 'GET', headers: {}, query: {} }, response);
         assert.equal(response.statusCode, 200);
         assert.equal(response.body.services.readings, true);
+        assert.equal(response.body.services.aiSupport, true);
+        assert.equal(response.body.services.deepSeek, true);
         assert.equal(response.body.services.openAi, true);
         assert.equal(response.body.services.openRouterFallback, true);
         assert.doesNotMatch(JSON.stringify(response.body), /test-key|test-secret/);
