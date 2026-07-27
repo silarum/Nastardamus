@@ -7,7 +7,7 @@
     "build:client": "node scripts/build-client.mjs",
     "check": "node scripts/check-project.mjs",
     "test": "node --test",
-    "vercel-build": "npm run build:client && node scripts/configure-telegram.mjs"
+    "vercel-build": "npm run build:client"
   },
   "engines": {
     "node": "24.x"
