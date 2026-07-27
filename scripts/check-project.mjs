@@ -40,7 +40,7 @@ if (/^\s*(?:(?:const|let|var)\s+[A-Za-z_$]|function\s+[A-Za-z_$]|document\.)/m.t
     throw new Error('ui-kit/app.css appears to contain JavaScript');
 }
 
-for (const required of ['/ui-kit/tokens.css', '/ui-kit/components.css', '/ui-kit/app.css', '/ui-kit/app.js']) {
+for (const required of ['/ui-kit/tokens.css', '/ui-kit/components.css', '/ui-kit/app.css', '/ui-kit/app.bundle.js']) {
     if (!html.includes(required)) throw new Error(`Main page does not load ${required}`);
 }
 

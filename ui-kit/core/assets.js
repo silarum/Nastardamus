@@ -1,7 +1,7 @@
-const ROOT = new URL("../assets/", import.meta.url);
+const ROOT = "/ui-kit/assets/";
 export function iconUrl(name) {
-  return new URL(`icons/${name}.svg`, ROOT).href;
+  return `${ROOT}icons/${name}.svg`;
 }
 export function premiumArtUrl(name) {
-  return new URL(`art-v2/${name}.png`, ROOT).href;
+  return `${ROOT}art-v2/${name}.png`;
 }

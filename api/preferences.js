@@ -1,0 +1,60 @@
+import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
+
+const USER_STORE_URL = process.env.USER_STORE_URL
+  || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-user-store';
+
+function sendJson(res, status, body) {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  return res.status(status).json(body);
+}
+
+async function userStore(botToken, action, payload) {
+  const response = await fetch(USER_STORE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-App-Bot-Token': botToken },
+    body: JSON.stringify({ action, ...payload }),
+    signal: AbortSignal.timeout(10_000)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok) {
+    const error = new Error(data.error || `preferences_store_${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+export default async function handler(req, res) {
+  if (!['GET', 'POST'].includes(req.method)) {
+    res.setHeader('Allow', 'GET, POST');
+    return sendJson(res, 405, { error: 'method_not_allowed' });
+  }
+  const botToken = process.env.BOT_TOKEN;
+  if (!botToken) return sendJson(res, 503, { error: 'preferences_unavailable' });
+  const auth = validateTelegramInitData(getRequestHeader(req, 'x-telegram-init-data') || '', botToken);
+  if (!auth.ok) return sendJson(res, 401, { error: 'telegram_auth_required' });
+  const telegramId = Number(auth.user.id);
+  try {
+    await userStore(botToken, 'register_user', {
+      telegramId,
+      chatId: telegramId,
+      username: auth.user.username,
+      firstName: auth.user.first_name
+    });
+    if (req.method === 'POST') {
+      await userStore(botToken, 'update_user_preferences', {
+        telegramId,
+        chatId: telegramId,
+        zodiacSign: req.body?.zodiacSign,
+        enabled: req.body?.enabled === true,
+        timezone: req.body?.timezone || 'Europe/Berlin'
+      });
+    }
+    const data = await userStore(botToken, 'get_user_preferences', { telegramId });
+    return sendJson(res, 200, { ok: true, preferences: data.preferences || null });
+  } catch (error) {
+    console.error('Preferences API failed:', error);
+    return sendJson(res, error.status || 503, { error: error.message || 'preferences_unavailable' });
+  }
+}

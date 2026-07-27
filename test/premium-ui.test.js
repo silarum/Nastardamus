@@ -62,6 +62,8 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     const mount = document.getElementById('premium-app');
     assert.equal(mount.dataset.screen, 'home');
     assert.equal(mount.querySelectorAll('.n-app-shell').length, 1);
+    assert.equal(mount.querySelectorAll('.n-balance-card').length, 0, 'Balance must not be shown on the home screen');
+    assert.equal(document.body.textContent.includes('Посмотреть приветствие'), false);
 
     click(document, 'Услуги');
     assert.equal(mount.dataset.screen, 'services');
@@ -93,10 +95,15 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     click(document, 'Услуги');
     click(document, 'Энергетический след');
     assert.equal(mount.dataset.screen, 'photo-energy');
-    assert.ok(document.body.textContent.includes('Без диагнозов и утверждений о порче'));
+    assert.equal(document.querySelectorAll('.n-info-banner').length, 0);
 
     click(document, 'Назад');
     assert.equal(mount.dataset.screen, 'services');
+    click(document, 'Определение порчи');
+    assert.equal(mount.dataset.screen, 'photo-damage');
+    assert.ok(document.body.textContent.includes('Опишите, что происходит'));
+
+    click(document, 'Назад');
     click(document, 'Совместимость по фото');
     assert.equal(mount.dataset.screen, 'photo-compat');
     assert.equal(document.querySelectorAll('.n-upload-card').length, 2);

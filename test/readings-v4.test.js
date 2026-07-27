@@ -65,6 +65,29 @@ test('builds a safe symbolic single-photo reading', () => {
   assert.match(messages[1].content[0].text, /не доказательство внешнего воздействия/i);
 });
 
+test('damage reading addresses the concern without validating magical harm', () => {
+  const messages = buildReadingMessages('photo_damage', {
+    concern: 'Мне кажется, что всё резко стало идти плохо.',
+    image: tinyImage
+  });
+
+  assert.equal(isVisionFeature('photo_damage'), true);
+  assert.match(messages[1].content[0].text, /Не подтверждай существование порчи/i);
+  assert.match(messages[1].content[0].text, /Что находится в вашей власти/i);
+});
+
+test('daily horoscope is personalized by name, sign and date', () => {
+  const messages = buildReadingMessages('daily_horoscope', {
+    name: 'Анна',
+    sign: 'Весы',
+    date: '2026-07-27'
+  });
+
+  assert.match(messages[1].content, /Анна/);
+  assert.match(messages[1].content, /Весы/);
+  assert.match(messages[1].content, /2026-07-27/);
+});
+
 test('builds a two-photo compatibility reading', () => {
   const messages = buildReadingMessages('photo_compatibility', {
     concern: 'Что важно проговорить?',

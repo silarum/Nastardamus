@@ -73,6 +73,13 @@ async function readSettings() {
   return rows?.[0]?.settings || {};
 }
 
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
@@ -90,20 +97,23 @@ Deno.serve(async (req: Request) => {
         return json(400, { error: "invalid_telegram_id" });
       }
       await ensureWallet(telegramId);
-      const [walletResponse, ledgerResponse, withdrawalResponse, settings] = await Promise.all([
+      const [walletResponse, ledgerResponse, withdrawalResponse, entitlementResponse, settings] = await Promise.all([
         rest(`nastardamus_wallets?telegram_id=eq.${telegramId}&select=telegram_id,balance_units,locked_units,free_spins,updated_at&limit=1`),
         rest(`nastardamus_wallet_ledger?telegram_id=eq.${telegramId}&select=id,entry_type,amount_units,balance_after_units,locked_after_units,metadata,created_at&order=created_at.desc&limit=30`),
         rest(`nastardamus_withdrawal_requests?telegram_id=eq.${telegramId}&select=id,gross_units,fee_units,net_units,destination,status,created_at,updated_at&order=created_at.desc&limit=20`),
+        rest(`nastardamus_service_entitlements?telegram_id=eq.${telegramId}&quantity=gt.0&select=service_id,quantity,updated_at&order=updated_at.desc`),
         readSettings()
       ]);
       const wallets = await walletResponse.json();
       const ledger = await ledgerResponse.json();
       const withdrawals = await withdrawalResponse.json();
+      const entitlements = await entitlementResponse.json();
       return json(200, {
         ok: true,
         wallet: wallets?.[0] || null,
         ledger: ledger || [],
         withdrawals: withdrawals || [],
+        entitlements: entitlements || [],
         config: {
           withdrawalsEnabled: settings.withdrawalsEnabled === true,
           withdrawalFee: Number(settings.withdrawalFee ?? 25),
@@ -125,7 +135,11 @@ Deno.serve(async (req: Request) => {
           palmLinkEnabled: settings.palmLinkEnabled === true,
           jointReadingsEnabled: settings.jointReadingsEnabled === true,
           manualPhotoReview: settings.manualPhotoReview !== false,
-          adultOnly: settings.adultOnly !== false
+          adultOnly: settings.adultOnly !== false,
+          wheelDailySpins: Math.max(1, Math.min(10, Number(settings.wheelDailySpins || 1))),
+          wheelRewards: Array.isArray(settings.wheelRewards) ? settings.wheelRewards : [],
+          serviceCatalog: settings.serviceCatalog && typeof settings.serviceCatalog === "object" ? settings.serviceCatalog : {},
+          dailyHoroscopeEnabled: settings.dailyHoroscopeEnabled !== false
         },
         moderation: moderationRows?.[0] || {
           enabled: true,
@@ -134,6 +148,112 @@ Deno.serve(async (req: Request) => {
           actions: { high_risk: "block", medium_risk: "review" }
         }
       });
+    }
+
+    if (action === "authorize_cron") {
+      const cronToken = String(body?.cronToken || "");
+      if (cronToken.length < 32 || cronToken.length > 256) {
+        return json(401, { error: "invalid_cron_token" });
+      }
+      const settings = await readSettings();
+      const expectedHash = String(settings.dailyHoroscopeCronHash || "");
+      const actualHash = await sha256Hex(cronToken);
+      if (!/^[a-f0-9]{64}$/.test(expectedHash) || actualHash !== expectedHash) {
+        return json(401, { error: "invalid_cron_token" });
+      }
+      return json(200, { ok: true });
+    }
+
+    if (action === "claim_wheel_reward") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const idempotencyKey = String(body?.idempotencyKey || "").trim();
+      if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/.test(idempotencyKey)) {
+        return json(400, { error: "invalid_idempotency_key" });
+      }
+      const response = await rest("rpc/nastardamus_claim_wheel_reward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_telegram_id: telegramId,
+          p_idempotency_key: idempotencyKey
+        })
+      });
+      const result = await response.json();
+      return json(200, { ok: true, ...result });
+    }
+
+    if (action === "register_user" || action === "update_user_preferences") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const chatId = Number(body?.chatId || telegramId);
+      if (!Number.isSafeInteger(chatId) || chatId <= 0) {
+        return json(400, { error: "invalid_chat_id" });
+      }
+      const signs = new Set([
+        "aries", "taurus", "gemini", "cancer", "leo", "virgo",
+        "libra", "scorpio", "sagittarius", "capricorn", "aquarius", "pisces"
+      ]);
+      const zodiacSign = body?.zodiacSign ? String(body.zodiacSign) : null;
+      if (zodiacSign && !signs.has(zodiacSign)) return json(400, { error: "invalid_zodiac_sign" });
+      const payload: Record<string, unknown> = {
+        telegram_id: telegramId,
+        chat_id: chatId,
+        updated_at: new Date().toISOString()
+      };
+      if (action === "register_user") {
+        payload.username = String(body?.username || "").replace(/^@/, "").slice(0, 64) || null;
+        payload.first_name = String(body?.firstName || "").trim().slice(0, 80) || null;
+      } else {
+        payload.zodiac_sign = zodiacSign;
+        payload.daily_horoscope_enabled = body?.enabled === true;
+        payload.timezone = String(body?.timezone || "Europe/Berlin").slice(0, 80);
+      }
+      await rest("nastardamus_users?on_conflict=telegram_id", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(payload)
+      });
+      return json(200, { ok: true });
+    }
+
+    if (action === "get_user_preferences") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const response = await rest(`nastardamus_users?telegram_id=eq.${telegramId}&select=zodiac_sign,daily_horoscope_enabled,timezone,last_horoscope_sent_on&limit=1`);
+      const rows = await response.json();
+      return json(200, { ok: true, preferences: rows?.[0] || null });
+    }
+
+    if (action === "list_horoscope_recipients") {
+      const today = String(body?.today || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) return json(400, { error: "invalid_date" });
+      const settings = await readSettings();
+      if (settings.dailyHoroscopeEnabled === false) {
+        return json(200, { ok: true, recipients: [] });
+      }
+      const limit = Math.max(1, Math.min(500, Number(body?.limit || 200)));
+      const response = await rest(
+        `nastardamus_users?daily_horoscope_enabled=eq.true&zodiac_sign=not.is.null&or=(last_horoscope_sent_on.is.null,last_horoscope_sent_on.lt.${today})&select=telegram_id,chat_id,first_name,zodiac_sign&order=telegram_id.asc&limit=${limit}`
+      );
+      return json(200, { ok: true, recipients: await response.json() });
+    }
+
+    if (action === "mark_horoscope_sent") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const sentOn = String(body?.sentOn || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(sentOn)) return json(400, { error: "invalid_date" });
+      await rest(`nastardamus_users?telegram_id=eq.${telegramId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ last_horoscope_sent_on: sentOn, updated_at: new Date().toISOString() })
+      });
+      return json(200, { ok: true });
     }
 
     if (action === "take_rate_limit") {
@@ -231,6 +351,9 @@ Deno.serve(async (req: Request) => {
     if (message.includes("insufficient_funds")) return json(400, { error: "insufficient_funds" });
     if (message.includes("invalid_destination")) return json(400, { error: "invalid_destination" });
     if (message.includes("invalid_idempotency_key")) return json(400, { error: "invalid_idempotency_key" });
+    if (message.includes("wheel_disabled")) return json(403, { error: "wheel_disabled" });
+    if (message.includes("wheel_daily_limit")) return json(409, { error: "wheel_daily_limit" });
+    if (message.includes("wheel_rewards_exhausted")) return json(409, { error: "wheel_rewards_exhausted" });
     return json(502, { error: "wallet_store_failed" });
   }
 });

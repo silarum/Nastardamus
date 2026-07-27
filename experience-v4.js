@@ -56,7 +56,7 @@
             screen.classList.toggle('active', active);
             screen.setAttribute('aria-hidden', active ? 'false' : 'true');
         });
-        const hideTabs = screenId === 'welcome-screen' || screenId === 'video-screen';
+        const hideTabs = screenId === 'welcome-screen';
         tabBar.hidden = hideTabs;
         document.body.classList.toggle('has-tab-bar', !hideTabs);
         document.querySelectorAll('[data-nav-target]').forEach((button) => {
@@ -82,15 +82,6 @@
         if (copy) copy.textContent = 'Таро, звёзды, символы ладони и ответы на важные вопросы — в одном личном пространстве.';
         if (signature) signature.innerHTML = '<span>маг и провидец</span><i>✦</i><span>личный дневник</span>';
         if (fine) fine.textContent = 'Толкования созданы для размышления и развлечения и не заменяют профессиональную помощь.';
-        if (!document.getElementById('welcome-video-btn')) {
-            const button = document.createElement('button');
-            button.id = 'welcome-video-btn';
-            button.className = 'welcome-video-btn';
-            button.type = 'button';
-            button.innerHTML = '<span aria-hidden="true">▶</span> Посмотреть приветствие';
-            screen.querySelector('#continue-btn')?.insertAdjacentElement('afterend', button);
-            button.addEventListener('click', () => document.getElementById('watch-intro')?.click());
-        }
     }
 
     function decorateHome() {
@@ -144,12 +135,6 @@
                 </div>
             </section>
         `);
-
-        const intro = document.getElementById('watch-intro');
-        if (intro) {
-            intro.querySelector('strong').textContent = 'Послание Эзотериума';
-            intro.querySelector('small').textContent = 'Короткое приветствие мага перед ритуалом';
-        }
 
         document.getElementById('home-wallet-card')?.addEventListener('click', () => navigate('wallet-screen'));
         document.getElementById('go-photo-energy')?.addEventListener('click', () => openPhotoLab('energy'));
@@ -658,21 +643,6 @@
         tabBar.appendChild(button);
     }
 
-    function improveVideo() {
-        const video = document.getElementById('mage-video');
-        if (!video) return;
-        video.setAttribute('controls', '');
-        video.removeAttribute('muted');
-        const watch = document.getElementById('watch-intro');
-        watch?.addEventListener('click', () => {
-            setTimeout(() => {
-                video.muted = false;
-                video.volume = 1;
-                video.play().catch(() => notify('Нажмите кнопку воспроизведения на видео'));
-            }, 80);
-        });
-    }
-
     function init() {
         decorateWelcome();
         decorateHome();
@@ -680,7 +650,6 @@
         injectScreens();
         decorateWallet();
         addWalletTab();
-        improveVideo();
         renderWallet();
         document.body.classList.add('experience-v4');
     }

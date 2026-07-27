@@ -85,7 +85,7 @@ async function userStore(botToken, action, payload = {}) {
 }
 
 function imageInputs(feature, payload) {
-    if (feature === 'photo_energy') return [payload?.image];
+    if (feature === 'photo_energy' || feature === 'photo_damage') return [payload?.image];
     if (feature === 'photo_compatibility') return [payload?.firstImage, payload?.secondImage];
     return [];
 }

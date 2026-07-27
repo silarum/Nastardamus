@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import proxyHandler from '../api/proxy.js';
 import walletHandler from '../api/wallet.js';
+import wheelHandler from '../api/wheel.js';
+import dailyHoroscopeHandler from '../api/daily-horoscope.js';
 import {
   normalizeIdempotencyKey,
   unauthenticatedPreviewAllowed,
@@ -65,6 +67,31 @@ test('wallet writes reject unauthenticated preview requests', async () => {
   } finally {
     restore();
   }
+});
+
+test('wheel claims always require a signed Telegram session', async () => {
+  const restore = preserveEnvironment(['BOT_TOKEN', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
+  try {
+    process.env.BOT_TOKEN = 'telegram-test-token-long-enough';
+    process.env.ALLOW_UNAUTHENTICATED_PREVIEW = 'true';
+    const response = createResponse();
+    await wheelHandler({
+      method: 'POST',
+      headers: {},
+      body: { idempotencyKey: 'wheel-1234567890-abcdef' }
+    }, response);
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.body.error, 'telegram_auth_required');
+  } finally {
+    restore();
+  }
+});
+
+test('daily horoscope delivery requires the private scheduler token', async () => {
+  const response = createResponse();
+  await dailyHoroscopeHandler({ method: 'GET', headers: {} }, response);
+  assert.equal(response.statusCode, 401);
+  assert.equal(response.body.error, 'cron_authorization_required');
 });
 
 test('photo reading requires explicit consent before provider calls', async () => {

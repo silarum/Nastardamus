@@ -65,6 +65,25 @@ async function claimTelegramUpdate(botToken, updateId) {
     return data.claimed === true;
 }
 
+async function registerUser(botToken, message) {
+    const telegramId = Number(message?.from?.id);
+    const chatId = Number(message?.chat?.id);
+    if (!Number.isSafeInteger(telegramId) || telegramId <= 0 || !Number.isSafeInteger(chatId) || chatId <= 0) return;
+    const response = await fetch(USER_STORE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-App-Bot-Token': botToken },
+        body: JSON.stringify({
+            action: 'register_user',
+            telegramId,
+            chatId,
+            username: message.from?.username,
+            firstName: message.from?.first_name
+        }),
+        signal: AbortSignal.timeout(10_000)
+    });
+    if (!response.ok) throw new Error(`user_registration_${response.status}`);
+}
+
 async function isAdminUser(botToken, userId) {
     if (parseAdminIds(process.env.ADMIN_TELEGRAM_IDS).includes(userId)) return true;
     try {
@@ -233,6 +252,9 @@ export default async function handler(req, res) {
 
         const message = req.body.message;
         if (!message?.text || !message.chat?.id) return sendJson(res, 200, { ok: true });
+        await registerUser(botToken, message).catch((error) => {
+            console.error('Telegram user registration failed:', error);
+        });
         const userId = Number(message.from?.id);
         const admin = await isAdminUser(botToken, userId);
         const reply = buildBotReply(
