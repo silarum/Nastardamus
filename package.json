@@ -4,14 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:client": "node scripts/build-client.mjs",
     "check": "node scripts/check-project.mjs",
     "test": "node --test",
-    "vercel-build": "node scripts/configure-telegram.mjs"
+    "vercel-build": "npm run build:client && node scripts/configure-telegram.mjs"
   },
   "engines": {
     "node": "24.x"
   },
   "devDependencies": {
+    "esbuild": "^0.25.8",
     "jsdom": "29.1.1"
   }
 }

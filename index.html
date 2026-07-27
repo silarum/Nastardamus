@@ -10,11 +10,26 @@
   <link rel="stylesheet" href="/ui-kit/tokens.css">
   <link rel="stylesheet" href="/ui-kit/components.css">
   <link rel="stylesheet" href="/ui-kit/app.css">
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    .boot-screen{position:fixed;inset:0;z-index:999;display:grid;place-items:center;background:#070913;color:#f8d98b;font:600 18px Georgia,serif;transition:opacity .25s}
+    .boot-screen span{display:grid;justify-items:center;gap:13px}
+    .boot-screen i{width:48px;height:48px;border:1px solid #b98238;border-radius:50%;box-shadow:0 0 28px #7227a8;animation:boot 1.2s linear infinite}
+    .boot-screen i::after{content:"✦";display:grid;place-items:center;height:100%;font-style:normal}
+    @keyframes boot{to{transform:rotate(360deg)}}
+  </style>
+  <script defer src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
+  <div id="boot-screen" class="boot-screen"><span><i></i>Эзотериум открывает пространство…</span></div>
   <div id="premium-app"></div>
   <div id="premium-toast" class="premium-toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/ui-kit/app.js"></script>
+  <script>
+    window.hideNastardamusBoot = function () {
+      var boot = document.getElementById('boot-screen');
+      if (boot) { boot.style.opacity = '0'; window.setTimeout(function(){ boot.remove(); }, 260); }
+    };
+    window.setTimeout(window.hideNastardamusBoot, 8000);
+  </script>
+  <script defer src="/ui-kit/app.bundle.js"></script>
 </body>
 </html>

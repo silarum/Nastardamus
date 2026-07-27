@@ -40,7 +40,7 @@ body { overflow-x:hidden; }
   grid-row: 1 / 4;
   width: min(44vw, 184px);
 }
-.premium-wheel-wrap.is-spinning .n-fortune-wheel { animation:premium-spin 3.4s cubic-bezier(.15,.72,.12,1) both; }
+.premium-wheel-wrap.is-spinning .n-fortune-wheel__art { animation:premium-spin 3.4s cubic-bezier(.15,.72,.12,1) both; }
 .premium-wheel-action { position:absolute;inset:0;border:0;border-radius:50%;background:transparent;cursor:pointer;z-index:4; }
 .premium-wheel-result { min-height:24px;text-align:center;color:var(--n-gold-light);font:500 12px/1.2 var(--n-title-font);padding-top:4px; }
 .premium-shortcuts { margin-top:2px; }
@@ -114,8 +114,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .premium-welcome-content > p:not(.premium-kicker) { max-width: 330px; margin: 0 auto 4px; color: #d7d1db; font-size: 13px; line-height: 1.5; }
 .premium-welcome-content > small { color: #918a9b; font-size: 10px; line-height: 1.35; }
 
-.premium-video-card { padding: 5px; overflow: hidden; }
-.premium-video { display: block; width: 100%; max-height: 72dvh; border-radius: 11px; background: #03040a; object-fit: contain; }
 
 .premium-wallet-state {
   position: absolute;
@@ -222,6 +220,31 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .premium-wallet-metrics small { color: var(--n-muted); font-size: 10px; }
 .premium-wallet-metrics strong { color: var(--n-gold-light); font: 500 18px/1.2 var(--n-title-font); }
 .premium-profile-actions { display: grid; gap: 8px; }
+.premium-prize-reveal,
+.premium-horoscope-hero {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 18px;
+  text-align: center;
+  background: radial-gradient(circle at 50% 10%, rgba(149, 70, 199, .28), transparent 52%), rgba(17, 11, 29, .94);
+}
+.premium-prize-reveal h2,
+.premium-horoscope-hero h2 { margin: 0; color: var(--n-gold-light); font: 600 23px/1.15 var(--n-title-font); }
+.premium-prize-reveal > p:last-of-type,
+.premium-horoscope-hero > p:last-of-type { margin: 0; color: var(--n-muted); font-size: 11px; line-height: 1.5; }
+.premium-gift-box { font-size: 56px; filter: drop-shadow(0 0 18px rgba(224, 168, 65, .5)); animation: premium-gift-open .7s cubic-bezier(.2,.8,.2,1) both; }
+.premium-invite-panel { display: grid; gap: 8px; }
+.premium-wallet-summary { display: grid; gap: 5px; padding: 14px; }
+.premium-wallet-summary small { color: var(--n-muted); }
+.premium-wallet-summary strong { color: var(--n-gold-light); font: 600 22px/1.1 var(--n-title-font); }
+.premium-wallet-summary p { margin: 0; color: var(--n-muted); font-size: 11px; }
+.premium-entitlements { display: grid; gap: 8px; }
+.premium-entitlement { display: grid; grid-template-columns: 28px minmax(0,1fr) auto; align-items: center; gap: 9px; padding: 11px; }
+.premium-entitlement strong { display: block; color: var(--n-gold-light); font-size: 12px; }
+.premium-entitlement small { display: block; margin-top: 3px; color: var(--n-muted); font-size: 10px; }
+.premium-entitlement .n-mystic-button { min-height: 36px; padding: 7px 9px; font-size: 10px; }
+@keyframes premium-gift-open { from { opacity: 0; transform: scale(.55) rotate(-8deg); } 70% { transform: scale(1.1) rotate(3deg); } to { opacity: 1; transform: none; } }
 .premium-ledger { display: grid; gap: 7px; }
 .premium-ledger-row { min-height: 60px; padding: 9px 11px; display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 9px; }
 .premium-ledger-row span { min-width: 0; }

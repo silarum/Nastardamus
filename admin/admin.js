@@ -117,6 +117,48 @@ function applySettings(settings = {}) {
     if (field.type === 'checkbox') field.checked = Boolean(value);
     else field.value = String(value);
   }
+  document.querySelectorAll('[data-service]').forEach((row) => {
+    const service = settings.serviceCatalog?.[row.dataset.service] || {};
+    row.querySelector('[data-service-enabled]').checked = service.enabled !== false;
+    row.querySelector('[data-service-price]').value = service.price !== null
+      && service.price !== undefined
+      && Number.isFinite(Number(service.price))
+      ? String(service.price)
+      : '';
+  });
+  const rewards = new Map((settings.wheelRewards || []).map((reward) => [reward.id, reward]));
+  document.querySelectorAll('[data-reward]').forEach((row) => {
+    const reward = rewards.get(row.dataset.reward);
+    if (!reward) return;
+    row.querySelector('[data-reward-enabled]').checked = reward.enabled === true;
+    row.querySelector('[data-reward-title]').value = reward.title || '';
+    row.querySelector('[data-reward-service]').value = reward.serviceId || 'tarot_relationship';
+    row.querySelector('[data-reward-quantity]').value = reward.quantity ?? 1;
+    row.querySelector('[data-reward-daily]').value = reward.dailyLimit ?? 0;
+    row.querySelector('[data-reward-weight]').value = reward.weight ?? 1;
+  });
+}
+
+function collectServiceCatalog() {
+  return Object.fromEntries([...document.querySelectorAll('[data-service]')].map((row) => {
+    const rawPrice = row.querySelector('[data-service-price]').value.trim();
+    return [row.dataset.service, {
+      enabled: row.querySelector('[data-service-enabled]').checked,
+      price: rawPrice === '' ? null : Number(rawPrice)
+    }];
+  }));
+}
+
+function collectWheelRewards() {
+  return [...document.querySelectorAll('[data-reward]')].map((row) => ({
+    id: row.dataset.reward,
+    enabled: row.querySelector('[data-reward-enabled]').checked,
+    title: row.querySelector('[data-reward-title]').value,
+    serviceId: row.querySelector('[data-reward-service]').value,
+    quantity: Number(row.querySelector('[data-reward-quantity]').value),
+    dailyLimit: Number(row.querySelector('[data-reward-daily]').value),
+    weight: Number(row.querySelector('[data-reward-weight]').value)
+  }));
 }
 
 function disableForm(form, disabled) {
@@ -644,9 +686,13 @@ settingsForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const button = settingsForm.querySelector('button[type="submit"]');
   const values = {};
-  for (const [key, value] of new FormData(settingsForm).entries()) values[key] = value;
+  for (const [key, value] of new FormData(settingsForm).entries()) {
+    if (key) values[key] = value;
+  }
   for (const checkbox of settingsForm.querySelectorAll('input[type="checkbox"]')) values[checkbox.name] = checkbox.checked;
   for (const number of settingsForm.querySelectorAll('input[type="number"]')) values[number.name] = Number(number.value);
+  values.serviceCatalog = collectServiceCatalog();
+  values.wheelRewards = collectWheelRewards();
   button.disabled = true;
   saveState.textContent = 'Сохраняем…';
   try {

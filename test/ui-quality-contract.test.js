@@ -7,6 +7,7 @@ const app = readFileSync(new URL('../ui-kit/app.css', import.meta.url), 'utf8');
 const css = `${components}\n${app}`;
 const artV2 = new URL('../ui-kit/assets/art-v2/', import.meta.url);
 const legacyArt = new URL('../ui-kit/assets/art/', import.meta.url);
+const invites = new URL('../images/invites/', import.meta.url);
 
 test('premium UI keeps readable text and complete mobile headers', () => {
   const pixelFontSizes = [...css.matchAll(/font-size\s*:\s*([0-9.]+)px/g)]
@@ -20,8 +21,10 @@ test('premium UI keeps readable text and complete mobile headers', () => {
   assert.doesNotMatch(app, /\.premium-wallet-state\s*\{[^}]*text-overflow:\s*ellipsis/s);
 });
 
-test('fortune wheel labels and primary navigation preserve their geometry', () => {
-  assert.match(components, /\.n-wheel-segment\s*\{[^}]*align-items:\s*flex-start/s);
+test('gift wheel and primary navigation preserve their geometry', () => {
+  const wheelComponent = readFileSync(new URL('../ui-kit/components/FortuneWheel.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(wheelComponent, /WheelSegment|values=/);
+  assert.match(components, /\.n-bottom-navigation::before\s*\{/s);
   assert.match(components, /\.n-bottom-nav-item\s*\{[^}]*min-height:\s*52px/s);
   assert.match(components, /\.n-icon-button\s*\{[^}]*width:\s*44px;\s*height:\s*44px/s);
 });
@@ -63,4 +66,17 @@ test('every illustrated module uses the approved PNG asset set', () => {
   }
 
   assert.ok(totalBytes < 16_000_000, 'Illustrated asset bundle exceeds the 16 MB delivery budget');
+});
+
+test('paired invitations have an original image for every category', () => {
+  assert.deepEqual(
+    readdirSync(invites).sort(),
+    ['business.png', 'creative.png', 'friendship.png', 'love.png']
+  );
+  for (const name of readdirSync(invites)) {
+    const data = readFileSync(new URL(name, invites));
+    assert.ok(data.length > 100_000, `${name} is too small to be a finished invitation`);
+    assert.equal(data.readUInt32BE(16), 720);
+    assert.equal(data.readUInt32BE(20), 720);
+  }
 });

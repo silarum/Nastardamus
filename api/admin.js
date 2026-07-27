@@ -3,6 +3,29 @@ import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 const ADMIN_STORE_URL = process.env.ADMIN_STORE_URL
   || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-admin-store';
 
+const SERVICE_DEFINITIONS = Object.freeze({
+  tarot: 'Расклад Таро',
+  tarot_relationship: 'Расклад Таро на двоих',
+  natal: 'Натальная подсказка',
+  photo_energy: 'Энергетический след',
+  photo_damage: 'Определение порчи',
+  photo_compatibility: 'Совместимость по фото',
+  palmlink: 'Путь двух судеб'
+});
+
+const DEFAULT_SERVICE_CATALOG = Object.freeze(
+  Object.fromEntries(Object.entries(SERVICE_DEFINITIONS).map(([id, title]) => [
+    id,
+    { id, title, enabled: true, price: null }
+  ]))
+);
+
+const DEFAULT_WHEEL_REWARDS = Object.freeze([
+  { id: 'pair-tarot', serviceId: 'tarot_relationship', title: 'Бесплатный расклад на двоих', enabled: true, quantity: 1, dailyLimit: 5, weight: 4 },
+  { id: 'photo-pair', serviceId: 'photo_compatibility', title: 'Совместимость по фото', enabled: true, quantity: 1, dailyLimit: 5, weight: 3 },
+  { id: 'destiny-pair', serviceId: 'palmlink', title: 'Путь двух судеб', enabled: false, quantity: 1, dailyLimit: 3, weight: 2 }
+]);
+
 const DEFAULT_SETTINGS = Object.freeze({
   withdrawalFee: 25,
   minimumWithdrawal: 25,
@@ -10,6 +33,10 @@ const DEFAULT_SETTINGS = Object.freeze({
   wheelEnabled: true,
   wheelPrizeShare: 50,
   wheelMaxPrize: 1000,
+  wheelDailySpins: 1,
+  wheelRewards: DEFAULT_WHEEL_REWARDS,
+  serviceCatalog: DEFAULT_SERVICE_CATALOG,
+  dailyHoroscopeEnabled: true,
   referralsEnabled: true,
   firstReferralRate: 50,
   repeatReferralRate: 13,
@@ -39,6 +66,45 @@ function clampNumber(value, min, max, fallback) {
   return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
 }
 
+function sanitizeServiceCatalog(input) {
+  const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  return Object.fromEntries(Object.entries(SERVICE_DEFINITIONS).map(([id, title]) => {
+    const item = source[id] && typeof source[id] === 'object' ? source[id] : {};
+    const numericPrice = item.price === '' || item.price === null || item.price === undefined
+      ? null
+      : clampNumber(item.price, 0, 1_000_000, null);
+    return [id, {
+      id,
+      title,
+      enabled: item.enabled !== false,
+      price: numericPrice
+    }];
+  }));
+}
+
+function sanitizeWheelRewards(input) {
+  const source = Array.isArray(input) ? input : DEFAULT_WHEEL_REWARDS;
+  const seen = new Set();
+  return source.slice(0, 24).flatMap((item, index) => {
+    if (!item || typeof item !== 'object') return [];
+    const serviceId = String(item.serviceId || '');
+    if (!SERVICE_DEFINITIONS[serviceId]) return [];
+    const rawId = String(item.id || `reward-${index + 1}`).toLowerCase();
+    const id = rawId.replace(/[^a-z0-9_-]/g, '').slice(0, 48);
+    if (!id || seen.has(id)) return [];
+    seen.add(id);
+    return [{
+      id,
+      serviceId,
+      title: String(item.title || SERVICE_DEFINITIONS[serviceId]).trim().slice(0, 100),
+      enabled: item.enabled === true,
+      quantity: Math.round(clampNumber(item.quantity, 1, 20, 1)),
+      dailyLimit: Math.round(clampNumber(item.dailyLimit, 0, 100_000, 0)),
+      weight: Math.round(clampNumber(item.weight, 1, 10_000, 1))
+    }];
+  });
+}
+
 function sanitizeSettings(input = {}) {
   return {
     withdrawalFee: clampNumber(input.withdrawalFee, 0, 100, 25),
@@ -47,6 +113,10 @@ function sanitizeSettings(input = {}) {
     wheelEnabled: Boolean(input.wheelEnabled),
     wheelPrizeShare: clampNumber(input.wheelPrizeShare, 0, 100, 50),
     wheelMaxPrize: clampNumber(input.wheelMaxPrize, 1, 1_000_000, 1000),
+    wheelDailySpins: Math.round(clampNumber(input.wheelDailySpins, 1, 10, 1)),
+    wheelRewards: sanitizeWheelRewards(input.wheelRewards),
+    serviceCatalog: sanitizeServiceCatalog(input.serviceCatalog),
+    dailyHoroscopeEnabled: input.dailyHoroscopeEnabled !== false,
     referralsEnabled: Boolean(input.referralsEnabled),
     firstReferralRate: clampNumber(input.firstReferralRate, 0, 100, 50),
     repeatReferralRate: clampNumber(input.repeatReferralRate, 0, 100, 13),

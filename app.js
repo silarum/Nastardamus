@@ -74,8 +74,6 @@ const journalFilterButtons = [...document.querySelectorAll('[data-journal-filter
 const deckNames = Object.keys(CARD_IMAGES);
 
 let toastTimer;
-let videoFinished = false;
-let videoTimer;
 let selectedCards = [];
 let availableCards = [];
 let cardsToSelect = 3;
@@ -87,7 +85,6 @@ let currentScreenId = 'welcome-screen';
 
 const BACK_TARGETS = {
     'daily-screen': 'menu-screen',
-    'video-screen': 'menu-screen',
     'tarot-input-screen': 'menu-screen',
     'tarot-cards-screen': 'tarot-input-screen',
     'tarot-result-screen': 'menu-screen',
@@ -122,7 +119,7 @@ function showScreen(screenId) {
         screen.setAttribute('aria-hidden', isTarget ? 'false' : 'true');
     }
 
-    tabBar.hidden = screenId === 'welcome-screen' || screenId === 'video-screen';
+    tabBar.hidden = screenId === 'welcome-screen';
     document.body.classList.toggle('has-tab-bar', !tabBar.hidden);
     currentScreenId = screenId;
     if (BACK_TARGETS[screenId]) telegramBackButton?.show?.();
@@ -193,7 +190,6 @@ bindClick('go-tarot', () => { haptic(); showScreen('tarot-input-screen'); });
 bindClick('go-natal', () => { haptic(); showScreen('natal-input-screen'); });
 bindClick('go-compat', () => { haptic(); showScreen('compat-input-screen'); });
 bindClick('profile-btn', () => { haptic(); showScreen('wallet-screen'); });
-bindClick('watch-intro', playMageVideo);
 
 function localDateKey(date = new Date()) {
     const year = date.getFullYear();
@@ -302,30 +298,6 @@ function dailyReadingRecord() {
 
 bindClick('save-daily', () => saveReading(dailyReadingRecord()));
 bindClick('share-daily', () => shareReading(dailyReadingRecord()));
-
-function playMageVideo() {
-    const video = document.getElementById('mage-video');
-    videoFinished = false;
-    clearTimeout(videoTimer);
-    video.src = 'video/welcome-v2.mp4';
-    video.currentTime = 0;
-    video.onended = finishVideo;
-    video.onerror = finishVideo;
-    video.onclick = finishVideo;
-    showScreen('video-screen');
-    video.play().catch(() => {});
-    videoTimer = setTimeout(finishVideo, 10_000);
-}
-
-function finishVideo() {
-    if (videoFinished) return;
-    videoFinished = true;
-    clearTimeout(videoTimer);
-    document.getElementById('mage-video').pause();
-    showScreen('tarot-input-screen');
-}
-
-bindClick('skip-video-btn', finishVideo);
 
 document.querySelectorAll('[data-question]').forEach((button) => {
     button.addEventListener('click', () => {

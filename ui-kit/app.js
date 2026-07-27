@@ -1,7 +1,7 @@
 import {
-  AppShell, ScreenContainer, BrandLogo, AppHeader, GreetingCard, BalanceCard,
+  AppShell, ScreenContainer, BrandLogo, AppHeader, GreetingCard,
   FortuneWheelCard, SectionTitle, QuickAccessGrid, BottomNavigation, UploadCard,
-  GoalSelector, EnergyHandsScene, InfoBanner, MysticButton, PriceLine,
+  GoalSelector, EnergyHandsScene, MysticButton, PriceLine,
   DataStatusCard, ActionGroup, CompatibilityHero, Tabs, MysticCard, ServiceCard,
   StatusBadge, GlowDivider, MetricsList, ForecastGrid, FinalScoreCard
 } from './components/index.js';
@@ -19,6 +19,14 @@ const toast = document.getElementById('premium-toast');
 const ONBOARDED_KEY = 'nastardamus-onboarded-v2';
 const JOURNAL_KEY = 'nastardamus-journal-v2';
 const SUPPORT_KEY = 'nastardamus-support-v4';
+const HOROSCOPE_KEY = 'nastardamus-horoscope-v1';
+
+const ZODIAC_SIGNS = {
+  aries: { label: 'Овен' }, taurus: { label: 'Телец' }, gemini: { label: 'Близнецы' },
+  cancer: { label: 'Рак' }, leo: { label: 'Лев' }, virgo: { label: 'Дева' },
+  libra: { label: 'Весы' }, scorpio: { label: 'Скорпион' }, sagittarius: { label: 'Стрелец' },
+  capricorn: { label: 'Козерог' }, aquarius: { label: 'Водолей' }, pisces: { label: 'Рыбы' }
+};
 
 const CARD_IMAGES = {
   'Шут': 'fool.webp', 'Маг': 'magician.webp', 'Верховная Жрица': 'high-priestess.webp',
@@ -43,6 +51,9 @@ const SPREADS = {
 
 const params = new URLSearchParams(location.search);
 const requestedScreen = params.get('screen');
+const requestedInviteGoal = ['love', 'friendship', 'business', 'creative'].includes(params.get('invite'))
+  ? params.get('invite')
+  : 'love';
 const state = {
   screen: requestedScreen || (localStorage.getItem(ONBOARDED_KEY) ? 'home' : 'welcome'),
   wallet: null,
@@ -67,7 +78,8 @@ const state = {
   photoAdultConfirmed: false,
   palmOne: '',
   palmTwo: '',
-  palmGoal: 'love',
+  palmGoal: requestedInviteGoal,
+  inviteGoal: requestedInviteGoal,
   partnerName: '',
   palmConsentOwn: false,
   palmConsentPartner: false,
@@ -77,8 +89,15 @@ const state = {
     palmLinkEnabled: false,
     jointReadingsEnabled: true,
     manualPhotoReview: true,
-    adultOnly: true
+    adultOnly: true,
+    serviceCatalog: {},
+    wheelRewards: [],
+    wheelDailySpins: 1,
+    dailyHoroscopeEnabled: true
   },
+  wheelStatus: null,
+  wheelPrize: null,
+  horoscope: readJSON(HOROSCOPE_KEY, { sign: 'aries', enabled: false, reading: '', date: '' }),
   support: readJSON(SUPPORT_KEY, []),
   supportDraft: ''
 };
@@ -113,6 +132,17 @@ function formatMoney(value) {
   return Number(value || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function serviceConfig(id) {
+  return state.publicConfig.serviceCatalog?.[id] || { enabled: true, price: null };
+}
+
+function serviceBadge(id, fallback = 'AI') {
+  const price = serviceConfig(id).price;
+  return price === null || price === undefined || price === ''
+    ? fallback
+    : `${Number(price).toLocaleString('ru-RU')} S`;
+}
+
 function navigate(screen, { replace = false } = {}) {
   state.screen = screen;
   const url = new URL(location.href);
@@ -124,7 +154,7 @@ function navigate(screen, { replace = false } = {}) {
 }
 
 function activeTab(screen = state.screen) {
-  if (screen === 'home' || screen === 'wheel' || screen === 'video') return 'home';
+  if (screen === 'home' || screen === 'wheel' || screen === 'horoscope') return 'home';
   if (screen === 'history') return 'history';
   if (screen === 'profile' || screen === 'withdrawal') return 'profile';
   if (screen === 'services' || screen === 'support') return 'services';
@@ -205,7 +235,6 @@ function welcomeScreen() {
     pulse('medium');
     navigate('home', { replace: true });
   } });
-  const watch = MysticButton({ text: 'Посмотреть приветствие', icon: 'orbit', variant: 'gold', onClick: () => navigate('video') });
   return shell([
     h('section', { className: 'premium-welcome' },
       h('img', { className: 'premium-welcome-art', attrs: { src: '/images/splash-v2.webp', alt: '' } }),
@@ -214,36 +243,19 @@ function welcomeScreen() {
         BrandLogo(), h('p', { className: 'premium-kicker', text: 'ПРОСТРАНСТВО ЭЗОТЕРИУМА' }),
         h('h1', { text: 'Услышьте свой знак' }),
         h('p', { text: 'Таро, звёзды, символические фото-чтения и личный дневник в одном пространстве.' }),
-        enter, watch,
+        enter,
         h('small', { text: 'Толкования созданы для размышления и развлечения.' })
       )
     )
   ], { tabs: false });
 }
 
-function videoScreen() {
-  const video = h('video', { className: 'premium-video', attrs: { src: '/video/welcome-v2.mp4', poster: '/images/splash-v2.webp', controls: true, playsinline: true, preload: 'metadata' } });
-  return shell([
-    screenHeader('Послание Эзотериума', '8 секунд перед началом', 'home'),
-    MysticCard({ className: 'premium-video-card', children: [video] }),
-    MysticButton({ text: 'Перейти в приложение', icon: 'sparkle', variant: 'primary', onClick: () => navigate('home') })
-  ], { active: 'home' });
-}
-
 function homeScreen() {
-  const wallet = state.wallet?.wallet || { balance: 0, available: 0, freeSpins: 0 };
+  const wallet = state.wallet?.wallet || { freeSpins: 0 };
   const header = h('header', { className: 'premium-home-header' }, BrandLogo(),
     h('button', { className: 'premium-avatar-button', attrs: { type: 'button', 'aria-label': 'Открыть профиль' }, on: { click: () => navigate('profile') } }, Icon('profile', { size: 23 }))
   );
-  const balance = BalanceCard({ amount: Number(wallet.balance || 0), currency: 'SILARUM' });
-  balance.classList.add('premium-balance');
-  balance.setAttribute('role', 'button');
-  balance.tabIndex = 0;
-  balance.addEventListener('click', () => navigate('profile'));
-  balance.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') navigate('profile'); });
-  balance.append(h('div', { className: `premium-wallet-state premium-wallet-state--${state.walletStatus}`, text: walletStatusText() }));
-
-  const wheel = FortuneWheelCard({ caption: `Доступно вращений: ${Number(wallet.freeSpins || 0)}` });
+  const wheel = FortuneWheelCard({ caption: 'Одна из коробок хранит вашу услугу' });
   const wheelEnabled = state.publicConfig.wheelEnabled === true;
   const wheelWrap = h('div', { className: 'premium-wheel-wrap' }, wheel,
     h('button', { className: 'premium-wheel-action', attrs: { type: 'button', 'aria-label': 'Открыть Колесо Фортуны' }, on: { click: () => openEnabledFeature(wheelEnabled, 'wheel', 'Колесо отключено администратором') } }),
@@ -253,13 +265,12 @@ function homeScreen() {
   return shell([
     header,
     GreetingCard({ username: firstName(), message: 'Слушай знаки. Доверься интуиции.' }),
-    balance,
     wheelWrap,
     SectionTitle({ text: 'Быстрый доступ' }),
     QuickAccessGrid({ items: [
       { art: 'shortcut-destiny-hearts', title: 'Путь двух судеб', onClick: () => openEnabledFeature(state.publicConfig.palmLinkEnabled, 'palm', 'PalmLink временно отключён') },
       { art: 'tarot-deck', title: 'Таро расклад', onClick: () => navigate('tarot') },
-      { art: 'shortcut-astro-orbit', title: 'Астро прогноз', onClick: () => navigate('natal') },
+      { art: 'shortcut-astro-orbit', title: 'Гороскоп дня', onClick: () => navigate('horoscope') },
       { art: 'shortcut-fortune-compass', title: 'Колесо Фортуны', badge: wallet.freeSpins ? `+${wallet.freeSpins}` : '', onClick: () => openEnabledFeature(wheelEnabled, 'wheel', 'Колесо отключено администратором') }
     ] })
   ], { active: 'home' });
@@ -275,50 +286,79 @@ function servicesScreen() {
   return shell([
     screenHeader('Услуги', 'Выберите пространство', 'home'),
     h('div', { className: 'premium-service-list' },
-      serviceTile('tarot', 'Семь раскладов Таро', 'От одной карты до Кельтского креста', () => navigate('tarot'), 'AI'),
-      serviceTile('orbit', 'Натальная подсказка', 'Сильные стороны и текущий ориентир', () => navigate('natal'), 'AI'),
-      serviceTile('sparkle', 'Энергетический след', 'Одно фото и безопасное символическое чтение', () => navigate('photo-energy'), 'AI'),
-      serviceTile('users', 'Совместимость по фото', 'Два образа, диалог и точки опоры', () => openEnabledFeature(state.publicConfig.jointReadingsEnabled, 'photo-compat', 'Совместные чтения временно отключены'), 'AI'),
-      serviceTile('hand', 'Путь двух судеб', 'Ладони и совместный ритуал', () => openEnabledFeature(state.publicConfig.palmLinkEnabled, 'palm', 'PalmLink временно отключён')),
+      serviceTile('tarot', 'Семь раскладов Таро', 'От одной карты до Кельтского креста', () => navigate('tarot'), serviceBadge('tarot')),
+      serviceTile('orbit', 'Натальная подсказка', 'Сильные стороны и текущий ориентир', () => navigate('natal'), serviceBadge('natal')),
+      serviceTile('sparkle', 'Энергетический след', 'Фото как личный символ и точка опоры', () => navigate('photo-energy'), serviceBadge('photo_energy')),
+      serviceTile('sparkle', 'Определение порчи', 'Фото, ваша история и совет Эзотериума', () => navigate('photo-damage'), serviceBadge('photo_damage')),
+      serviceTile('users', 'Совместимость по фото', 'Два образа, диалог и точки опоры', () => openEnabledFeature(state.publicConfig.jointReadingsEnabled, 'photo-compat', 'Совместные чтения временно отключены'), serviceBadge('photo_compatibility')),
+      serviceTile('hand', 'Путь двух судеб', 'Ладони и совместный ритуал', () => openEnabledFeature(state.publicConfig.palmLinkEnabled, 'palm', 'PalmLink временно отключён'), serviceBadge('palmlink', '')),
+      serviceTile('orbit', 'Гороскоп дня', 'Личный знак и ежедневное послание', () => navigate('horoscope'), ''),
       serviceTile('info', 'Спросить Эзотериума', 'Помощник по функциям приложения', () => navigate('support'))
-    ),
-    InfoBanner({ text: 'Фото-чтения и прогнозы являются символическими и не заменяют профессиональную помощь.' })
+    )
   ], { active: 'services' });
 }
 
 function wheelScreen() {
   if (state.publicConfig.wheelEnabled !== true) {
     return shell([
-      screenHeader('Колесо Фортуны', 'Функция временно отключена', 'home'),
-      InfoBanner({ text: 'Администратор временно отключил Колесо Фортуны.' })
+      screenHeader('Колесо Фортуны', 'Сегодня колесо отдыхает', 'home'),
+      MysticCard({ className: 'premium-empty-state', children: [h('p', { text: 'Эзотериум готовит новые подарки.' })] })
     ], { active: 'home' });
   }
-  const wrap = h('div', { className: 'premium-wheel-wrap premium-wheel-screen' }, FortuneWheelCard({ caption: 'Демо-вращение не меняет баланс' }),
-    h('div', { className: 'premium-wheel-result', text: 'Нажмите кнопку, чтобы увидеть анимацию' })
+  const wrap = h('div', { className: 'premium-wheel-wrap premium-wheel-screen' }, FortuneWheelCard({ caption: 'Коробка раскроется после остановки' }),
+    h('div', { className: 'premium-wheel-result', text: state.wheelPrize ? 'Подарок уже найден' : 'Коснитесь кнопки и доверьтесь знаку' })
   );
-  const spin = MysticButton({ text: 'Демо-вращение', icon: 'wheel', variant: 'gold', onClick: () => spinWheel(wrap) });
+  const spin = MysticButton({ text: state.busy ? 'Колесо вращается…' : 'Открыть коробку', icon: 'wheel', variant: 'gold', disabled: state.busy, onClick: () => spinWheel(wrap) });
   return shell([
-    screenHeader('Колесо Фортуны', 'Без начислений в Preview', 'home'), wrap, spin,
-    InfoBanner({ text: 'Настоящие начисления появятся только после подключения защищённой серверной операции. Демо не списывает и не добавляет SILARUM.' })
+    screenHeader('Колесо Фортуны', 'Подарок дня от Эзотериума', 'home'), wrap, spin,
+    state.wheelPrize ? prizeReveal(state.wheelPrize) : null
   ], { active: 'home' });
 }
 
-function spinWheel(wrap) {
-  if (wrap.classList.contains('is-spinning')) return;
+async function spinWheel(wrap) {
+  if (wrap.classList.contains('is-spinning') || state.busy) return;
   wrap.classList.add('is-spinning');
-  wrap.querySelector('.premium-wheel-result').textContent = 'Колесо читает знак…';
+  state.busy = true;
+  wrap.querySelector('.premium-wheel-result').textContent = 'Коробки выбирают ваш подарок…';
   pulse('medium');
-  setTimeout(() => {
-    const values = [5, 10, 50, 75, 100, 250, 500, 1000];
-    const value = values[Math.floor(Math.random() * values.length)];
+  try {
+    const [data] = await Promise.all([
+      api('/api/wheel', { method: 'POST', body: { idempotencyKey: uniqueId('wheel') } }),
+      new Promise((resolve) => setTimeout(resolve, 3400))
+    ]);
+    state.wheelPrize = data.reward;
     wrap.classList.remove('is-spinning');
-    wrap.querySelector('.premium-wheel-result').textContent = `Демо-сектор: ${value} SILARUM`;
-    notify('Баланс не изменён — это демонстрация');
-  }, 3400);
+    state.busy = false;
+    pulse('medium');
+    render();
+  } catch (error) {
+    wrap.classList.remove('is-spinning');
+    state.busy = false;
+    notify(apiErrorMessage(error));
+    render();
+  }
+}
+
+function prizeReveal(reward) {
+  return MysticCard({ className: 'premium-prize-reveal', children: [
+    h('div', { className: 'premium-gift-box', attrs: { 'aria-hidden': 'true' }, text: '🎁' }),
+    h('p', { className: 'premium-kicker', text: 'КОРОБКА РАСКРЫТА' }),
+    h('h2', { text: reward.title }),
+    h('p', { text: reward.quantity > 1 ? `Внутри ${reward.quantity} услуги` : 'Услуга уже добавлена в ваш профиль' }),
+    MysticButton({ text: 'Перейти к подарку', icon: 'sparkle', variant: 'primary', onClick: () => navigate(rewardScreen(reward.serviceId)) })
+  ] });
+}
+
+function rewardScreen(serviceId) {
+  return ({
+    tarot: 'tarot', tarot_relationship: 'tarot', natal: 'natal',
+    photo_energy: 'photo-energy', photo_damage: 'photo-damage',
+    photo_compatibility: 'photo-compat', palmlink: 'palm'
+  })[serviceId] || 'services';
 }
 
 function tarotScreen() {
-  const spread = selectField(SPREADS, state.spread, (value) => { state.spread = value; });
+  const spread = selectField(SPREADS, state.spread, (value) => { state.spread = value; render(); });
   const question = textarea({ value: state.tarotQuestion, placeholder: 'Например: что поможет мне принять решение?', onInput: (value) => { state.tarotQuestion = value; }, maxLength: 500 });
   return shell([
     screenHeader('Расклад Таро', 'Семь вариантов для разных вопросов', 'services'),
@@ -326,8 +366,14 @@ function tarotScreen() {
       field('Вид расклада', spread),
       field('Ваш вопрос', question, 'Не вводите адреса, пароли и платёжные данные.')
     ] }),
-    MysticButton({ text: 'Перейти к выбору карт', icon: 'tarot', variant: 'primary', onClick: startTarot }),
-    InfoBanner({ text: 'Карты не предрешают будущее — они помогают увидеть ситуацию с другого угла.' })
+    state.spread === 'relationship'
+      ? h('div', { className: 'premium-invite-panel' },
+          SectionTitle({ text: 'Кого вы приглашаете?' }),
+          GoalSelector({ value: state.inviteGoal, onChange: (goal) => { state.inviteGoal = goal; render(); } }),
+          MysticButton({ text: 'Пригласить второго человека', icon: 'send', variant: 'gold', onClick: () => shareInvite('tarot') })
+        )
+      : null,
+    MysticButton({ text: 'Перейти к выбору карт', icon: 'tarot', variant: 'primary', onClick: startTarot })
   ]);
 }
 
@@ -398,8 +444,7 @@ function natalScreen() {
     screenHeader('Натальная подсказка', 'Ваш символический космический отпечаток', 'services'),
     MysticCard({ className: 'premium-form-card', children: [field('Дата рождения', date), field('Время рождения', time)] }),
     MysticButton({ text: state.busy ? 'Соединяем ориентиры…' : 'Открыть подсказку', icon: 'orbit', variant: 'primary', disabled: state.busy, onClick: submitNatal }),
-    state.busy ? loadingCard('Смотрим на дату и время…') : null,
-    InfoBanner({ text: 'Без места рождения результат ограничен и носит символический характер.' })
+    state.busy ? loadingCard('Смотрим на дату и время…') : null
   ]);
 }
 
@@ -422,16 +467,29 @@ function natalResultScreen() {
 function photoScreen(mode) {
   state.photoMode = mode;
   const isPair = mode === 'compatibility';
+  const isDamage = mode === 'damage';
+  const title = isPair ? 'Совместимость по фото' : isDamage ? 'Определение порчи' : 'Энергетический след';
+  const subtitle = isPair ? 'Два образа и бережный диалог' : isDamage ? 'Фото, ваша история и личный совет' : 'Фото как символ вашего состояния';
   const firstUpload = imageUpload({ title: isPair ? 'Первое фото' : 'Загрузите фотографию', image: state.photoOne, onImage: (image) => { state.photoOne = image; render(); } });
   const secondUpload = isPair ? imageUpload({ title: 'Второе фото', image: state.photoTwo, onImage: (image) => { state.photoTwo = image; render(); } }) : null;
   return shell([
-    screenHeader(isPair ? 'Совместимость по фото' : 'Энергетический след', isPair ? 'Два образа и бережный диалог' : 'Без диагнозов и утверждений о порче', 'services'),
+    screenHeader(title, subtitle, 'services'),
     h('div', { className: isPair ? 'premium-upload-grid' : '' }, firstUpload, secondUpload),
     isPair ? MysticCard({ className: 'premium-form-card', children: [
       field('Имя первого человека', textInput({ value: state.photoNameOne, placeholder: 'Имя', onInput: (value) => { state.photoNameOne = value; } })),
       field('Имя второго человека', textInput({ value: state.photoNameTwo, placeholder: 'Имя', onInput: (value) => { state.photoNameTwo = value; } }))
     ] }) : null,
-    field('Что важно понять?', textarea({ value: state.photoConcern, placeholder: isPair ? 'Что важно проговорить в этих отношениях?' : 'Что сейчас беспокоит и где найти опору?', onInput: (value) => { state.photoConcern = value; }, maxLength: 600 })),
+    isPair ? h('div', { className: 'premium-invite-panel' },
+      SectionTitle({ text: 'Сфера вашей связи' }),
+      GoalSelector({ value: state.inviteGoal, onChange: (goal) => { state.inviteGoal = goal; render(); } }),
+      MysticButton({ text: 'Пригласить человека', icon: 'send', variant: 'gold', onClick: () => shareInvite('photo') })
+    ) : null,
+    field(isDamage ? 'Опишите, что происходит' : 'Что важно понять?', textarea({
+      value: state.photoConcern,
+      placeholder: isPair ? 'Что важно проговорить в этих отношениях?' : isDamage ? 'Что изменилось, чего вы опасаетесь и когда это началось?' : 'Что сейчас беспокоит и где найти опору?',
+      onInput: (value) => { state.photoConcern = value; },
+      maxLength: 600
+    })),
     consentRow(
       'Я согласен на обработку своей фотографии внешним AI‑провайдером для этого чтения.',
       state.photoConsentOwn,
@@ -447,9 +505,8 @@ function photoScreen(mode) {
       state.photoAdultConfirmed,
       (checked) => { state.photoAdultConfirmed = checked; }
     ) : null,
-    MysticButton({ text: state.busy ? 'Читаем образ…' : 'Получить символическое чтение', icon: 'sparkle', variant: 'primary', disabled: state.busy, onClick: () => submitPhoto(isPair) }),
-    state.busy ? loadingCard('Изучаем свет, композицию и настроение…') : null,
-    InfoBanner({ text: 'Nastardamus не определяет здоровье, характер, верность, магическое воздействие или будущее по фотографии.' })
+    MysticButton({ text: state.busy ? 'Эзотериум изучает образ…' : isDamage ? 'Получить разбор Эзотериума' : 'Получить символическое чтение', icon: 'sparkle', variant: 'primary', disabled: state.busy, onClick: () => submitPhoto(isPair, isDamage) }),
+    state.busy ? loadingCard('Изучаем свет, композицию и вашу историю…') : null
   ]);
 }
 
@@ -504,7 +561,7 @@ function loadImage(src) {
   });
 }
 
-async function submitPhoto(pair) {
+async function submitPhoto(pair, damage = false) {
   if (!state.photoOne || (pair && !state.photoTwo)) return notify(pair ? 'Загрузите оба фото' : 'Загрузите фотографию');
   if (!state.photoConsentOwn) return notify('Подтвердите согласие на обработку своей фотографии');
   if (pair && !state.photoConsentPartner) return notify('Подтвердите согласие второго человека');
@@ -514,7 +571,7 @@ async function submitPhoto(pair) {
   if (state.busy) return;
   state.busy = true; render();
   try {
-    const feature = pair ? 'photo_compatibility' : 'photo_energy';
+    const feature = pair ? 'photo_compatibility' : damage ? 'photo_damage' : 'photo_energy';
     const payload = pair
       ? {
           concern: state.photoConcern || 'Что важно понять о динамике этих отношений?',
@@ -527,26 +584,27 @@ async function submitPhoto(pair) {
           adultConfirmed: state.photoAdultConfirmed
         }
       : {
-          concern: state.photoConcern || 'Что сейчас важно понять и где вернуть опору?',
+          concern: state.photoConcern || (damage ? 'Почему я чувствую чужое негативное влияние и как вернуть опору?' : 'Что сейчас важно понять и где вернуть опору?'),
           image: state.photoOne,
           consentOwn: true
         };
     const answer = await requestReading(feature, payload);
-    state.result = { id: uniqueId(feature), type: pair ? 'Совместимость по фото' : 'Энергетический след', title: state.photoConcern || 'Символическое фото-чтение', body: answer, cards: [], createdAt: new Date().toISOString(), favorite: false };
+    state.result = { id: uniqueId(feature), type: pair ? 'Совместимость по фото' : damage ? 'Разбор Эзотериума' : 'Энергетический след', title: state.photoConcern || 'Символическое фото-чтение', body: answer, cards: [], createdAt: new Date().toISOString(), favorite: false };
     navigate('photo-result');
   } catch (error) { notify(apiErrorMessage(error)); }
   finally { state.busy = false; render(); }
 }
 
 function photoResultScreen() {
-  return state.result ? resultScreen({ title: state.result.type, subtitle: 'Безопасное символическое чтение', back: state.photoMode === 'compatibility' ? 'photo-compat' : 'photo-energy', result: state.result }) : servicesScreen();
+  const back = state.photoMode === 'compatibility' ? 'photo-compat' : state.photoMode === 'damage' ? 'photo-damage' : 'photo-energy';
+  return state.result ? resultScreen({ title: state.result.type, subtitle: 'Личный ответ Эзотериума', back, result: state.result }) : servicesScreen();
 }
 
 function palmScreen() {
   if (state.publicConfig.palmLinkEnabled !== true) {
     return shell([
       screenHeader('Путь двух судеб', 'Функция временно отключена', 'services'),
-      InfoBanner({ text: 'PalmLink временно отключён администратором.' })
+      MysticCard({ className: 'premium-empty-state', children: [h('p', { text: 'Эзотериум готовит это пространство.' })] })
     ]);
   }
   const upload = imageUpload({ title: 'Загрузите фото своей ладони', image: state.palmOne, onImage: (image) => { state.palmOne = image; render(); } });
@@ -556,9 +614,9 @@ function palmScreen() {
     upload,
     SectionTitle({ text: 'Цель поиска' }), selector,
     EnergyHandsScene(),
-    InfoBanner({ text: 'Чтение сравнивает видимые образы и служит поводом для диалога, а не измерением судьбы.' }),
+    MysticButton({ text: 'Пригласить человека', icon: 'send', variant: 'gold', onClick: () => shareInvite('palm') }),
     MysticButton({ text: 'Продолжить ритуал', icon: 'heart', variant: 'primary', onClick: () => state.palmOne ? navigate('ritual') : notify('Сначала загрузите фото ладони') }),
-    PriceLine({ price: 250 })
+    PriceLine({ price: serviceConfig('palmlink').price })
   ]);
 }
 
@@ -570,7 +628,7 @@ function ritualScreen() {
   ] });
   return shell([
     screenHeader('Совместный ритуал', 'Две ладони — одно символическое чтение', 'palm'),
-    ServiceCard({ title: 'Путь двух судеб', description: 'Бережный анализ образов, точек притяжения и тем для разговора.', price: 250 }),
+    ServiceCard({ title: 'Путь двух судеб', description: 'Бережный анализ образов, точек притяжения и тем для разговора.', price: serviceConfig('palmlink').price }),
     DataStatusCard({ title: 'Ваши данные', status: state.palmOne ? 'ready' : 'waiting', description: state.palmOne ? 'Ваша ладонь загружена' : 'Фото отсутствует', meta: state.palmOne ? 'Готово к чтению' : 'Вернитесь на шаг назад', empty: !state.palmOne }),
     SectionTitle({ text: 'Данные партнёра' }), partnerUpload,
     field('Имя партнёра', textInput({ value: state.partnerName, placeholder: 'Имя', onInput: (value) => { state.partnerName = value; } })),
@@ -589,20 +647,33 @@ function ritualScreen() {
       state.palmAdultConfirmed,
       (checked) => { state.palmAdultConfirmed = checked; }
     ) : null,
-    InfoBanner({ art: 'partner-invite-emblem', text: 'Партнёр сможет добавить свою ладонь по приглашению. Оплата и списание SILARUM пока отключены.' }),
     SectionTitle({ text: 'Что дальше?' }),
     actions,
     MysticButton({ text: state.busy ? 'Соединяем образы…' : 'Получить совместное чтение', icon: 'sparkle', variant: 'primary', disabled: state.busy, onClick: submitPalmCompatibility }),
-    state.busy ? loadingCard() : null,
-    h('p', { className: 'premium-info-note', text: 'Списание SILARUM не выполняется: платёжный контур пока отключён.' })
+    state.busy ? loadingCard() : null
   ]);
 }
 
-async function shareInvite() {
-  const text = 'Nastardamus: присоединитесь к символическому ритуалу «Путь двух судеб».';
+async function shareInvite(flow = 'palm') {
+  const goal = flow === 'palm' ? state.palmGoal : state.inviteGoal;
+  const copy = {
+    love: 'Хочу бережно посмотреть на то, что соединяет наши сердца.',
+    friendship: 'Давай узнаем, в чём сила нашей дружбы и как её беречь.',
+    business: 'Предлагаю увидеть сильные стороны нашего делового союза.',
+    creative: 'Давай раскроем энергию нашего творческого союза.'
+  }[goal];
+  const flowName = flow === 'tarot' ? 'расклад на двоих' : flow === 'photo' ? 'чтение совместимости' : 'ритуал «Путь двух судеб»';
+  const inviteUrl = new URL(location.origin);
+  inviteUrl.searchParams.set('screen', flow === 'tarot' ? 'tarot' : flow === 'photo' ? 'photo-compat' : 'palm');
+  inviteUrl.searchParams.set('invite', goal);
+  const text = `${copy}\n\nПрисоединяйся к ${flowName} в Nastardamus — Эзотериум проведёт нас через знаки.`;
   try {
-    if (navigator.share) await navigator.share({ title: 'Nastardamus', text, url: location.origin });
-    else await navigator.clipboard.writeText(`${text} ${location.origin}`);
+    const image = await fetch(`/images/invites/${goal}.png`).then((response) => response.ok ? response.blob() : null).catch(() => null);
+    const file = image && typeof File === 'function' ? new File([image], `nastardamus-${goal}.png`, { type: 'image/png' }) : null;
+    const shareData = { title: 'Приглашение от Nastardamus', text, url: inviteUrl.toString() };
+    if (file && navigator.canShare?.({ files: [file] })) shareData.files = [file];
+    if (navigator.share) await navigator.share(shareData);
+    else await navigator.clipboard.writeText(`${text}\n${inviteUrl}`);
     notify('Приглашение готово');
   } catch (error) { if (error?.name !== 'AbortError') notify('Не удалось поделиться'); }
 }
@@ -704,6 +775,80 @@ async function shareResult(result) {
   } catch (error) { if (error?.name !== 'AbortError') notify('Не удалось поделиться'); }
 }
 
+function horoscopeScreen() {
+  const sign = selectField(ZODIAC_SIGNS, state.horoscope.sign, (value) => {
+    state.horoscope.sign = value;
+    state.horoscope.reading = '';
+    writeJSON(HOROSCOPE_KEY, state.horoscope);
+  });
+  const enabled = state.publicConfig.dailyHoroscopeEnabled !== false;
+  return shell([
+    screenHeader('Гороскоп дня', 'Личное послание от Эзотериума', 'home'),
+    MysticCard({ className: 'premium-horoscope-hero', children: [
+      Icon('orbit', { size: 44 }),
+      h('p', { className: 'premium-kicker', text: 'ВАШ НЕБЕСНЫЙ ОРИЕНТИР' }),
+      h('h2', { text: ZODIAC_SIGNS[state.horoscope.sign]?.label || 'Выберите знак' }),
+      h('p', { text: 'Каждый день — новый образ, одна точка опоры и действие, которое можно сделать сегодня.' })
+    ] }),
+    field('Ваш знак зодиака', sign),
+    MysticButton({ text: state.busy ? 'Слушаем звёзды…' : 'Открыть гороскоп сегодня', icon: 'sparkle', variant: 'primary', disabled: state.busy, onClick: createDailyHoroscope }),
+    state.busy ? loadingCard('Эзотериум собирает послание дня…') : null,
+    state.horoscope.reading ? MysticCard({ className: 'premium-result-reading', children: [formatReading(state.horoscope.reading)] }) : null,
+    enabled ? consentRow(
+      'Присылать мой гороскоп каждое утро в Telegram.',
+      state.horoscope.enabled,
+      (checked) => saveHoroscopePreference(checked)
+    ) : null
+  ], { active: 'home' });
+}
+
+async function createDailyHoroscope() {
+  if (state.busy) return;
+  state.busy = true;
+  render();
+  try {
+    const date = new Intl.DateTimeFormat('en-CA').format(new Date());
+    const answer = await requestReading('daily_horoscope', {
+      sign: ZODIAC_SIGNS[state.horoscope.sign]?.label || state.horoscope.sign,
+      date,
+      name: firstName()
+    });
+    state.horoscope = { ...state.horoscope, reading: answer, date };
+    writeJSON(HOROSCOPE_KEY, state.horoscope);
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
+async function saveHoroscopePreference(checked) {
+  state.horoscope.enabled = checked;
+  writeJSON(HOROSCOPE_KEY, state.horoscope);
+  if (!tg?.initData) {
+    notify('Откройте Nastardamus внутри Telegram, чтобы включить доставку');
+    render();
+    return;
+  }
+  try {
+    await api('/api/preferences', {
+      method: 'POST',
+      body: {
+        zodiacSign: state.horoscope.sign,
+        enabled: checked,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Berlin'
+      }
+    });
+    notify(checked ? 'Гороскоп будет приходить каждое утро' : 'Ежедневная доставка выключена');
+  } catch (error) {
+    state.horoscope.enabled = !checked;
+    writeJSON(HOROSCOPE_KEY, state.horoscope);
+    notify(apiErrorMessage(error));
+  }
+  render();
+}
+
 function historyScreen() {
   const entries = readJSON(JOURNAL_KEY, []);
   return shell([
@@ -727,23 +872,37 @@ function clearHistory() {
 
 function profileScreen() {
   const wallet = state.wallet?.wallet || { balance: 0, available: 0, locked: 0, freeSpins: 0 };
-  const balance = BalanceCard({ amount: wallet.balance || 0, currency: 'SILARUM' });
   const ledger = state.wallet?.ledger || [];
+  const entitlements = state.wallet?.entitlements || [];
   return shell([
     screenHeader('Профиль', 'Личное пространство и счёт', 'home'),
-    GreetingCard({ username: firstName(), message: 'Ваши данные из Telegram не показываются другим пользователям.' }),
-    balance,
+    GreetingCard({
+      username: firstName(),
+      message: state.walletStatus === 'error' ? state.walletMessage : 'Ваш счёт и личные настройки',
+      balance: formatMoney(wallet.balance || 0)
+    }),
     h('div', { className: 'premium-wallet-metrics' },
       MysticCard({ children: [h('small', { text: 'Доступно' }), h('strong', { text: formatMoney(wallet.available) })] }),
       MysticCard({ children: [h('small', { text: 'Заблокировано' }), h('strong', { text: formatMoney(wallet.locked) })] }),
       MysticCard({ children: [h('small', { text: 'Вращения' }), h('strong', { text: String(wallet.freeSpins || 0) })] })
     ),
-    state.walletStatus === 'error' ? InfoBanner({ text: state.walletMessage || 'Счёт доступен внутри Telegram.' }) : null,
     h('div', { className: 'premium-profile-actions' },
+      MysticButton({ text: state.horoscope.enabled ? 'Гороскоп приходит ежедневно' : 'Настроить ежедневный гороскоп', icon: 'orbit', variant: 'gold', onClick: () => navigate('horoscope') }),
       MysticButton({ text: 'Обновить счёт', icon: 'coin', variant: 'outline', onClick: () => loadWallet({ force: true }) }),
       MysticButton({ text: state.wallet?.config?.withdrawalsEnabled ? 'Обменять SILARUM' : 'Обмен закрыт', icon: 'payment', variant: 'gold', disabled: !state.wallet?.config?.withdrawalsEnabled, onClick: () => navigate('withdrawal') }),
       MysticButton({ text: 'Спросить поддержку', icon: 'info', variant: 'primary', onClick: () => navigate('support') })
     ),
+    entitlements.length ? SectionTitle({ text: 'Мои подарки' }) : null,
+    entitlements.length ? h('div', { className: 'premium-entitlements' }, entitlements.map((item) =>
+      MysticCard({ className: 'premium-entitlement', children: [
+        Icon('sparkle', { size: 24 }),
+        h('span', {},
+          h('strong', { text: serviceConfig(item.service_id).title || item.service_id }),
+          h('small', { text: `Доступно: ${item.quantity}` })
+        ),
+        MysticButton({ text: 'Открыть', icon: 'arrow-left', variant: 'outline', onClick: () => navigate(rewardScreen(item.service_id)) })
+      ] })
+    )) : null,
     SectionTitle({ text: 'Последние операции' }),
     ledger.length ? h('div', { className: 'premium-ledger' }, ledger.slice(0, 20).map(ledgerRow)) : MysticCard({ className: 'premium-empty-state premium-empty-state--small', children: [h('p', { text: 'Операций пока нет.' })] })
   ], { active: 'profile' });
@@ -765,7 +924,11 @@ function withdrawalScreen() {
   let confirmed = false;
   return shell([
     screenHeader('Обмен SILARUM', 'Защищённая заявка на вывод', 'profile'),
-    InfoBanner({ text: `Доступно ${formatMoney(state.wallet?.wallet?.available)} SILARUM. Минимум ${formatMoney(config.minimumWithdrawal || 25)}. Комиссия ${Number(config.withdrawalFee || 25)}%.` }),
+    MysticCard({ className: 'premium-wallet-summary', children: [
+      h('small', { text: 'Доступно для обмена' }),
+      h('strong', { text: `${formatMoney(state.wallet?.wallet?.available)} SILARUM` }),
+      h('p', { text: `Минимум ${formatMoney(config.minimumWithdrawal || 25)} · комиссия ${Number(config.withdrawalFee || 25)}%` })
+    ] }),
     MysticCard({ className: 'premium-form-card', children: [
       field('Сумма SILARUM', textInput({ type: 'number', placeholder: String(config.minimumWithdrawal || 25), attrs: { min: config.minimumWithdrawal || 25, step: '0.01', inputmode: 'decimal' }, onInput: (value) => { amount = value; } })),
       field('USDT-адрес сети TON', textInput({ placeholder: 'Введите адрес кошелька', attrs: { maxlength: 200, autocomplete: 'off' }, onInput: (value) => { destination = value; } })),
@@ -865,6 +1028,10 @@ function apiErrorMessage(error) {
     rate_limited: 'Слишком много запросов. Попробуйте позже.',
     rate_limit_backend_failed: 'Защита запросов временно недоступна.',
     invalid_idempotency_key: 'Не удалось защитить заявку от повтора.',
+    wheel_disabled: 'Колесо сегодня закрыто.',
+    wheel_daily_limit: 'Сегодняшняя коробка уже открыта. Возвращайтесь завтра.',
+    wheel_rewards_exhausted: 'Подарки на сегодня разобраны. Новые коробки появятся завтра.',
+    wheel_unavailable: 'Колесо временно не отвечает. Попробуйте позже.',
     withdrawals_disabled: 'Обмен сейчас закрыт.', below_minimum: 'Сумма ниже минимума.',
     insufficient_funds: 'Недостаточно доступных SILARUM.', invalid_destination: 'Проверьте адрес кошелька.'
   };
@@ -903,6 +1070,22 @@ async function loadPublicConfig() {
   if (['home', 'services', 'wheel', 'palm', 'ritual'].includes(state.screen)) render();
 }
 
+async function loadPreferences() {
+  if (!tg?.initData) return;
+  try {
+    const data = await api('/api/preferences');
+    const preferences = data.preferences;
+    if (preferences) {
+      state.horoscope.sign = preferences.zodiac_sign || state.horoscope.sign;
+      state.horoscope.enabled = preferences.daily_horoscope_enabled === true;
+      writeJSON(HOROSCOPE_KEY, state.horoscope);
+    }
+  } catch {
+    // Local preference remains available if the profile endpoint is temporarily unavailable.
+  }
+  if (state.screen === 'profile' || state.screen === 'horoscope') render();
+}
+
 function shuffle(values) {
   const result = [...values];
   for (let index = result.length - 1; index > 0; index -= 1) {
@@ -923,10 +1106,11 @@ function formatDate(value) {
 
 function render() {
   const routes = {
-    welcome: welcomeScreen, video: videoScreen, home: homeScreen, services: servicesScreen,
+    welcome: welcomeScreen, home: homeScreen, services: servicesScreen,
     wheel: wheelScreen, tarot: tarotScreen, 'tarot-draw': tarotDrawScreen, 'tarot-result': tarotResultScreen,
     natal: natalScreen, 'natal-result': natalResultScreen,
-    'photo-energy': () => photoScreen('energy'), 'photo-compat': () => photoScreen('compatibility'), 'photo-result': photoResultScreen,
+    horoscope: horoscopeScreen,
+    'photo-energy': () => photoScreen('energy'), 'photo-damage': () => photoScreen('damage'), 'photo-compat': () => photoScreen('compatibility'), 'photo-result': photoResultScreen,
     palm: palmScreen, ritual: ritualScreen, 'compatibility-result': compatibilityResultScreen,
     history: historyScreen, profile: profileScreen, withdrawal: withdrawalScreen, support: supportScreen
   };
@@ -941,7 +1125,9 @@ window.addEventListener('popstate', () => {
 });
 
 render();
+window.hideNastardamusBoot?.();
 loadPublicConfig();
 loadWallet();
+loadPreferences();
 
 export { navigate, render, state };

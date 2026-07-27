@@ -223,8 +223,7 @@ textarea:focus-visible {
 .text-btn,
 .icon-btn,
 .icon-action,
-.avatar-btn,
-.video-skip {
+.avatar-btn {
     border: 0;
 }
 
@@ -1021,48 +1020,6 @@ textarea:focus-visible {
 
 .action-row .secondary-btn {
     flex: 1;
-}
-
-.video-screen {
-    padding: 0;
-    overflow: hidden;
-    background: #000;
-}
-
-#mage-video {
-    width: 100%;
-    min-height: 100vh;
-    min-height: 100dvh;
-    object-fit: cover;
-}
-
-.video-scrim {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.1), transparent 55%, rgba(0, 0, 0, 0.72));
-    pointer-events: none;
-}
-
-.video-skip {
-    position: absolute;
-    right: 24px;
-    bottom: calc(var(--safe-bottom) + 24px);
-    left: 24px;
-    min-height: 52px;
-    border: 1px solid rgba(255, 255, 255, 0.24);
-    border-radius: 18px;
-    background: rgba(13, 10, 25, 0.68);
-    backdrop-filter: blur(16px);
-    font-size: 14px;
-    font-weight: 700;
-}
-
-.video-back {
-    position: absolute;
-    top: calc(var(--safe-top) + 18px);
-    left: 18px;
-    background: rgba(0, 0, 0, 0.34);
-    backdrop-filter: blur(12px);
 }
 
 .ritual-symbol {

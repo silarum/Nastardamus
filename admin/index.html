@@ -7,6 +7,16 @@
   <meta name="color-scheme" content="dark">
   <title>Nastardamus Admin</title>
   <link rel="stylesheet" href="/admin/admin.css">
+  <style>
+    .panel-copy{margin:-6px 0 14px;color:var(--muted);font-size:12px;line-height:1.5}
+    .service-price-list,.reward-list{display:grid;gap:10px}
+    .service-price-row,.reward-row{padding:13px;border:1px solid var(--line);border-radius:17px;background:rgba(7,5,15,.42)}
+    .service-price-row{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(130px,.7fr);align-items:end;gap:12px}
+    .service-price-row label{margin:0}
+    .reward-row>.switch-row{padding-top:0}
+    .reward-row .three-cols{grid-template-columns:repeat(3,1fr)}
+    @media(max-width:620px){.service-price-row,.reward-row .three-cols{grid-template-columns:1fr}}
+  </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -55,10 +65,49 @@
           </section>
 
           <section class="card panel">
-            <div class="panel-head"><div><p class="eyebrow">Удержание</p><h2>Колесо Фортуны</h2></div><span class="badge violet">0,5 SILARUM</span></div>
-            <label class="switch-row"><span><strong>Колесо включено</strong><small>Бесплатное вращение после покупки услуги</small></span><input name="wheelEnabled" type="checkbox" checked></label>
-            <label>Доля призового фонда, %<input name="wheelPrizeShare" type="number" min="0" max="100" step="1" value="50"></label>
-            <label>Максимальный приз<input name="wheelMaxPrize" type="number" min="1" step="1" value="1000"></label>
+            <div class="panel-head"><div><p class="eyebrow">Каталог</p><h2>Стоимость услуг</h2></div><span class="badge">Из админки</span></div>
+            <p class="panel-copy">Цена появится в приложении только после сохранения здесь. Пустое поле скрывает стоимость.</p>
+            <div class="service-price-list">
+              <div class="service-price-row" data-service="tarot"><label class="switch-row"><span><strong>Расклад Таро</strong></span><input data-service-enabled type="checkbox" checked></label><label>Цена, SILARUM<input data-service-price type="number" min="0" step="0.01" placeholder="Не показывать"></label></div>
+              <div class="service-price-row" data-service="tarot_relationship"><label class="switch-row"><span><strong>Расклад Таро на двоих</strong></span><input data-service-enabled type="checkbox" checked></label><label>Цена, SILARUM<input data-service-price type="number" min="0" step="0.01" placeholder="Не показывать"></label></div>
+              <div class="service-price-row" data-service="natal"><label class="switch-row"><span><strong>Натальная подсказка</strong></span><input data-service-enabled type="checkbox" checked></label><label>Цена, SILARUM<input data-service-price type="number" min="0" step="0.01" placeholder="Не показывать"></label></div>
+              <div class="service-price-row" data-service="photo_energy"><label class="switch-row"><span><strong>Энергетический след</strong></span><input data-service-enabled type="checkbox" checked></label><label>Цена, SILARUM<input data-service-price type="number" min="0" step="0.01" placeholder="Не показывать"></label></div>
+              <div class="service-price-row" data-service="photo_damage"><label class="switch-row"><span><strong>Определение порчи</strong></span><input data-service-enabled type="checkbox" checked></label><label>Цена, SILARUM<input data-service-price type="number" min="0" step="0.01" placeholder="Не показывать"></label></div>
+              <div class="service-price-row" data-service="photo_compatibility"><label class="switch-row"><span><strong>Совместимость по фото</strong></span><input data-service-enabled type="checkbox" checked></label><label>Цена, SILARUM<input data-service-price type="number" min="0" step="0.01" placeholder="Не показывать"></label></div>
+              <div class="service-price-row" data-service="palmlink"><label class="switch-row"><span><strong>Путь двух судеб</strong></span><input data-service-enabled type="checkbox" checked></label><label>Цена, SILARUM<input data-service-price type="number" min="0" step="0.01" placeholder="Не показывать"></label></div>
+            </div>
+          </section>
+
+          <section class="card panel">
+            <div class="panel-head"><div><p class="eyebrow">Подарки</p><h2>Колесо Фортуны</h2></div><span class="badge violet">Коробки</span></div>
+            <label class="switch-row"><span><strong>Колесо включено</strong><small>Один ежедневный шанс плюс бонусные вращения</small></span><input name="wheelEnabled" type="checkbox" checked></label>
+            <label>Вращений пользователю в сутки<input name="wheelDailySpins" type="number" min="1" max="10" step="1" value="1"></label>
+            <p class="panel-copy">Для каждой коробки задайте услугу, количество внутри, общий суточный лимит выдач и вес выпадения.</p>
+            <div class="reward-list">
+              <div class="reward-row" data-reward="pair-tarot">
+                <label class="switch-row"><span><strong>Коробка 1</strong></span><input data-reward-enabled type="checkbox" checked></label>
+                <label>Название<input data-reward-title value="Бесплатный расклад на двоих" maxlength="100"></label>
+                <label>Услуга<select data-reward-service><option value="tarot_relationship">Расклад Таро на двоих</option><option value="photo_compatibility">Совместимость по фото</option><option value="palmlink">Путь двух судеб</option><option value="tarot">Расклад Таро</option><option value="natal">Натальная подсказка</option><option value="photo_damage">Определение порчи</option></select></label>
+                <div class="three-cols"><label>В коробке<input data-reward-quantity type="number" min="1" max="20" value="1"></label><label>В сутки<input data-reward-daily type="number" min="0" value="5"></label><label>Вес<input data-reward-weight type="number" min="1" value="4"></label></div>
+              </div>
+              <div class="reward-row" data-reward="photo-pair">
+                <label class="switch-row"><span><strong>Коробка 2</strong></span><input data-reward-enabled type="checkbox" checked></label>
+                <label>Название<input data-reward-title value="Совместимость по фото" maxlength="100"></label>
+                <label>Услуга<select data-reward-service><option value="photo_compatibility">Совместимость по фото</option><option value="tarot_relationship">Расклад Таро на двоих</option><option value="palmlink">Путь двух судеб</option><option value="tarot">Расклад Таро</option><option value="natal">Натальная подсказка</option><option value="photo_damage">Определение порчи</option></select></label>
+                <div class="three-cols"><label>В коробке<input data-reward-quantity type="number" min="1" max="20" value="1"></label><label>В сутки<input data-reward-daily type="number" min="0" value="5"></label><label>Вес<input data-reward-weight type="number" min="1" value="3"></label></div>
+              </div>
+              <div class="reward-row" data-reward="destiny-pair">
+                <label class="switch-row"><span><strong>Коробка 3</strong></span><input data-reward-enabled type="checkbox"></label>
+                <label>Название<input data-reward-title value="Путь двух судеб" maxlength="100"></label>
+                <label>Услуга<select data-reward-service><option value="palmlink">Путь двух судеб</option><option value="tarot_relationship">Расклад Таро на двоих</option><option value="photo_compatibility">Совместимость по фото</option><option value="tarot">Расклад Таро</option><option value="natal">Натальная подсказка</option><option value="photo_damage">Определение порчи</option></select></label>
+                <div class="three-cols"><label>В коробке<input data-reward-quantity type="number" min="1" max="20" value="1"></label><label>В сутки<input data-reward-daily type="number" min="0" value="3"></label><label>Вес<input data-reward-weight type="number" min="1" value="2"></label></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="card panel">
+            <div class="panel-head"><div><p class="eyebrow">Каждый день</p><h2>Гороскоп Эзотериума</h2></div></div>
+            <label class="switch-row"><span><strong>Ежедневный гороскоп</strong><small>Рассылка только пользователям, которые включили её в профиле</small></span><input name="dailyHoroscopeEnabled" type="checkbox" checked></label>
           </section>
 
           <section class="card panel">
