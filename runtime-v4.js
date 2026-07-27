@@ -185,7 +185,12 @@
       const response = await fetch('/api/wallet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tg?.initData || '' },
-        body: JSON.stringify({ action: 'request_withdrawal', amount, destination })
+        body: JSON.stringify({
+          action: 'request_withdrawal',
+          amount,
+          destination,
+          idempotencyKey: `withdrawal-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`
+        })
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {

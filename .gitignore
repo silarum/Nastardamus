@@ -1,0 +1,7 @@
+node_modules/
+.npm-cache/
+.browser-home/
+.env
+.env.*.local
+.vercel/
+npm-debug.log*

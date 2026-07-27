@@ -1,5 +1,8 @@
 import { getRequestHeader } from '../lib/telegram.js';
 
+const ADMIN_STORE_URL = process.env.ADMIN_STORE_URL
+  || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-admin-store';
+
 function sendJson(res, status, body) {
   res.setHeader('Cache-Control', 'no-store');
   return res.status(status).json(body);
@@ -17,6 +20,25 @@ async function callTelegram(token, method, payload) {
     throw new Error(`telegram_${method}_${response.status}`);
   }
   return data.result;
+}
+
+async function claimTelegramUpdate(botToken, updateId) {
+  const response = await fetch(ADMIN_STORE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Admin-Bot-Token': botToken
+    },
+    body: JSON.stringify({
+      action: 'claim_telegram_update',
+      botScope: 'admin',
+      updateId
+    }),
+    signal: AbortSignal.timeout(10_000)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok) throw new Error(data.error || `update_store_${response.status}`);
+  return data.claimed === true;
 }
 
 function adminPanelUrl() {
@@ -71,6 +93,9 @@ export default async function handler(req, res) {
     try {
       if (req.query?.configure === 'webhook') {
         if (!webhookSecret) return sendJson(res, 503, { error: 'webhook_secret_missing' });
+        if (getRequestHeader(req, 'x-webhook-config-secret') !== webhookSecret) {
+          return sendJson(res, 401, { error: 'webhook_configuration_denied' });
+        }
         const base = process.env.WEB_APP_URL || 'https://nastardamus.vercel.app';
         const webhookUrl = new URL('/api/admin-bot', base).toString();
         await callTelegram(botToken, 'setWebhook', {
@@ -113,6 +138,12 @@ export default async function handler(req, res) {
   }
 
   try {
+    const updateId = Number(req.body?.update_id);
+    if (Number.isSafeInteger(updateId)) {
+      const claimed = await claimTelegramUpdate(botToken, updateId);
+      if (!claimed) return sendJson(res, 200, { ok: true, duplicate: true });
+    }
+
     if (req.body?.callback_query?.id) {
       await callTelegram(botToken, 'answerCallbackQuery', {
         callback_query_id: req.body.callback_query.id

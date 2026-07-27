@@ -1,4 +1,5 @@
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
+import { validateProviderBaseUrl } from '../lib/request-security.js';
 
 const ADMIN_STORE_URL = process.env.ADMIN_STORE_URL
   || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-admin-store';
@@ -17,7 +18,7 @@ function parseAdminIds(value) {
 function hasPermission(profile, permission) {
   if (!profile?.is_active) return false;
   if (profile.role === 'owner') return true;
-  return profile.permissions?.['*'] === true || profile.permissions?.[permission] === true;
+  return profile.permissions?.[permission] === true;
 }
 
 async function edgeStore(botToken, action, payload = {}) {
@@ -110,6 +111,20 @@ export default async function handler(req, res) {
 
     if (action === 'upsert_provider') {
       const provider = req.body?.provider || {};
+      try {
+        provider.baseUrl = validateProviderBaseUrl(
+          provider.baseUrl,
+          String(provider.providerType || 'openai_compatible'),
+          ({
+            openai: 'https://api.openai.com/v1',
+            anthropic: 'https://api.anthropic.com',
+            google: 'https://generativelanguage.googleapis.com/v1beta/interactions',
+            openai_compatible: 'https://openrouter.ai/api/v1'
+          })[provider.providerType || 'openai_compatible']
+        );
+      } catch (error) {
+        return sendJson(res, 400, { error: error.message });
+      }
       const result = await edgeStore(botToken, 'upsert_ai_provider', {
         provider: { ...provider, updatedBy: userId }
       });

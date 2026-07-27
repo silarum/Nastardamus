@@ -5,7 +5,6 @@ const ADMIN_STORE_URL = process.env.ADMIN_STORE_URL
 
 const ROLES = new Set(['owner', 'admin', 'manager', 'support', 'moderator', 'analyst']);
 const PERMISSIONS = new Set([
-  '*',
   'admins.manage',
   'settings.manage',
   'finance.view',
@@ -99,7 +98,7 @@ function sanitizePermissions(value, role) {
 function hasPermission(profile, permission) {
   if (!profile?.is_active) return false;
   if (profile.role === 'owner') return true;
-  return profile.permissions?.['*'] === true || profile.permissions?.[permission] === true;
+  return profile.permissions?.[permission] === true;
 }
 
 async function edgeStore(botToken, action, payload = {}) {
@@ -239,12 +238,20 @@ export default async function handler(req, res) {
         return sendJson(res, 403, { error: 'cannot_edit_owner' });
       }
 
+      const permissions = sanitizePermissions(input.permissions, role);
+      if (
+        profile.role !== 'owner'
+        && Object.keys(permissions).some((permission) => !hasPermission(profile, permission))
+      ) {
+        return sendJson(res, 403, { error: 'cannot_delegate_permission' });
+      }
+
       const admin = {
         telegramId,
         role,
         displayName: cleanText(input.displayName, 80),
         username: cleanText(input.username, 64).replace(/^@/, ''),
-        permissions: sanitizePermissions(input.permissions, role),
+        permissions,
         isActive: input.isActive !== false,
         createdBy: existing?.created_by || userId
       };

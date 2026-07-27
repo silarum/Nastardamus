@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+<defs>
+<linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFE7A3"/><stop offset=".45" stop-color="#D4AF37"/><stop offset="1" stop-color="#8C6420"/></linearGradient>
+<linearGradient id="violet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#D59BFF"/><stop offset=".45" stop-color="#8A3DDB"/><stop offset="1" stop-color="#3A165B"/></linearGradient>
+<filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+
+</defs>
+
+<circle cx="32" cy="32" r="9" stroke="url(#gold)" stroke-width="2"/>
+<circle cx="32" cy="32" r="3" fill="url(#gold)" filter="url(#glow)"/>
+<path d="M32 3v10M32 51v10M3 32h10M51 32h10M11.5 11.5l7 7M45.5 45.5l7 7M52.5 11.5l-7 7M18.5 45.5l-7 7" stroke="url(#gold)" stroke-width="2" stroke-linecap="round"/>
+<path d="M32 18l3.6 10.4L46 32l-10.4 3.6L32 46l-3.6-10.4L18 32l10.4-3.6L32 18Z" stroke="url(#gold)" stroke-width="1.5"/>
+
+</svg>

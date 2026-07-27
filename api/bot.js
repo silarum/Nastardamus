@@ -1,9 +1,12 @@
 import { runAgent } from '../lib/ai-runtime.js';
 import { buildBotReply } from '../lib/bot-replies.js';
 import { getRequestHeader } from '../lib/telegram.js';
+import { unauthenticatedPreviewAllowed } from '../lib/request-security.js';
 
 const ADMIN_STORE_URL = process.env.ADMIN_STORE_URL
     || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-admin-store';
+const USER_STORE_URL = process.env.USER_STORE_URL
+    || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-user-store';
 
 function sendJson(res, status, body) {
     res.setHeader('Cache-Control', 'no-store');
@@ -41,6 +44,25 @@ async function edgeStore(botToken, action, payload = {}) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.ok) throw new Error(data.error || `admin_store_${response.status}`);
     return data;
+}
+
+async function claimTelegramUpdate(botToken, updateId) {
+    const response = await fetch(USER_STORE_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-App-Bot-Token': botToken
+        },
+        body: JSON.stringify({
+            action: 'claim_telegram_update',
+            botScope: 'app',
+            updateId
+        }),
+        signal: AbortSignal.timeout(10_000)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) throw new Error(data.error || `update_store_${response.status}`);
+    return data.claimed === true;
 }
 
 async function isAdminUser(botToken, userId) {
@@ -128,6 +150,9 @@ export default async function handler(req, res) {
 
         if (req.query?.configure === 'webhook') {
             if (!botToken || !webhookSecret) return sendJson(res, 503, { error: 'bot_not_configured' });
+            if (getRequestHeader(req, 'x-webhook-config-secret') !== webhookSecret) {
+                return sendJson(res, 401, { error: 'webhook_configuration_denied' });
+            }
             try {
                 const webhookUrl = new URL('/api/bot', webAppUrl).toString();
                 await callTelegram(botToken, 'setWebhook', {
@@ -162,11 +187,14 @@ export default async function handler(req, res) {
             services: {
                 bot: Boolean(botToken),
                 webhookSecret: Boolean(webhookSecret),
-                readings: Boolean(process.env.OPENROUTER_API_KEY),
-                aiSupport: Boolean(process.env.OPENROUTER_API_KEY || botToken),
+                readings: Boolean(process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY),
+                aiSupport: Boolean(process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY),
+                openAi: Boolean(process.env.OPENAI_API_KEY),
+                openAiModel: Boolean(process.env.OPENAI_MODEL),
+                openRouterFallback: Boolean(process.env.OPENROUTER_API_KEY),
                 openRouterModel: Boolean(process.env.OPENROUTER_MODEL),
                 webAppUrl: Boolean(process.env.WEB_APP_URL),
-                authenticatedPreviewOnly: process.env.ALLOW_UNAUTHENTICATED_PREVIEW === 'false'
+                authenticatedPreviewOnly: !unauthenticatedPreviewAllowed()
             }
         });
     }
@@ -185,6 +213,12 @@ export default async function handler(req, res) {
     if (!req.body || typeof req.body !== 'object') return sendJson(res, 400, { error: 'invalid_update' });
 
     try {
+        const updateId = Number(req.body.update_id);
+        if (Number.isSafeInteger(updateId)) {
+            const claimed = await claimTelegramUpdate(botToken, updateId);
+            if (!claimed) return sendJson(res, 200, { ok: true, duplicate: true });
+        }
+
         const callback = req.body.callback_query;
         if (callback?.id) {
             await callTelegram(botToken, 'answerCallbackQuery', { callback_query_id: callback.id });
