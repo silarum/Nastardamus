@@ -206,8 +206,10 @@ export default async function handler(req, res) {
             services: {
                 bot: Boolean(botToken),
                 webhookSecret: Boolean(webhookSecret),
-                readings: Boolean(process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY),
-                aiSupport: Boolean(process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY),
+                readings: Boolean(process.env.DEEPSEEK_API_KEY && process.env.OPENAI_API_KEY),
+                aiSupport: Boolean(process.env.DEEPSEEK_API_KEY),
+                deepSeek: Boolean(process.env.DEEPSEEK_API_KEY),
+                deepSeekModel: Boolean(process.env.DEEPSEEK_MODEL),
                 openAi: Boolean(process.env.OPENAI_API_KEY),
                 openAiModel: Boolean(process.env.OPENAI_MODEL),
                 openRouterFallback: Boolean(process.env.OPENROUTER_API_KEY),

@@ -1,4 +1,5 @@
 import { buildReadingMessages, isVisionFeature } from '../lib/readings.js';
+import { requestDeepSeekChat } from '../lib/deepseek.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 import {
     enforceRateLimit,
@@ -7,8 +8,13 @@ import {
 } from '../lib/request-security.js';
 
 const DEFAULT_OPENAI_MODEL = 'gpt-5-mini';
-const DEFAULT_OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash:free';
-const DEFAULT_OPENROUTER_VISION_MODEL = 'openrouter/free';
+const DEEPSEEK_READING_FEATURES = new Set(['tarot', 'natal', 'daily_horoscope']);
+const OPENAI_READING_FEATURES = new Set([
+    'compatibility',
+    'photo_energy',
+    'photo_damage',
+    'photo_compatibility'
+]);
 const USER_STORE_URL = process.env.USER_STORE_URL
     || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-user-store';
 const DEFAULT_PUBLIC_POLICY = Object.freeze({
@@ -180,35 +186,10 @@ async function requestOpenAI(messages, vision) {
     return answer;
 }
 
-async function requestOpenRouter(messages, vision) {
-    const model = vision
-        ? process.env.OPENROUTER_VISION_MODEL || DEFAULT_OPENROUTER_VISION_MODEL
-        : process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-            'HTTP-Referer': process.env.WEB_APP_URL || 'https://nastardamus.vercel.app',
-            'X-Title': 'Nastardamus'
-        },
-        body: JSON.stringify({
-            model,
-            messages,
-            temperature: vision ? 0.55 : 0.76,
-            max_tokens: vision ? 900 : 850
-        }),
-        signal: AbortSignal.timeout(vision ? 45_000 : 30_000)
-    });
-    const data = await response.json().catch(() => null);
-    if (!response.ok) {
-        throw new Error(data?.error?.message || `openrouter_${response.status}`);
-    }
-    const answer = data?.choices?.[0]?.message?.content;
-    if (typeof answer !== 'string' || !answer.trim()) {
-        throw new Error('empty_openrouter_response');
-    }
-    return answer.trim();
+function providerForFeature(feature) {
+    if (DEEPSEEK_READING_FEATURES.has(feature)) return 'deepseek';
+    if (OPENAI_READING_FEATURES.has(feature)) return 'openai';
+    return null;
 }
 
 export default async function handler(req, res) {
@@ -218,14 +199,7 @@ export default async function handler(req, res) {
     }
 
     const botToken = process.env.BOT_TOKEN;
-    const providers = [
-        process.env.OPENAI_API_KEY ? { name: 'openai', request: requestOpenAI } : null,
-        process.env.OPENROUTER_API_KEY ? { name: 'openrouter', request: requestOpenRouter } : null
-    ].filter(Boolean);
-    if (!botToken || providers.length === 0) {
-        console.error('OPENAI_API_KEY/OPENROUTER_API_KEY or BOT_TOKEN is not configured');
-        return sendJson(res, 503, { error: 'service_not_configured' });
-    }
+    if (!botToken) return sendJson(res, 503, { error: 'service_not_configured' });
 
     const initData = getRequestHeader(req, 'x-telegram-init-data') || '';
     const auth = validateTelegramInitData(initData, botToken);
@@ -236,6 +210,7 @@ export default async function handler(req, res) {
 
     const feature = String(req.body?.feature || '');
     const vision = isVisionFeature(feature);
+    const provider = providerForFeature(feature);
     let messages;
     try {
         const telegramId = auth.ok ? Number(auth.user.id) : null;
@@ -266,19 +241,31 @@ export default async function handler(req, res) {
         return sendJson(res, 400, { error: code });
     }
 
-    const failures = [];
-    for (const provider of providers) {
-        try {
-            const answer = await provider.request(messages, vision);
-            return sendJson(res, 200, { answer });
-        } catch (error) {
-            failures.push(provider.name);
-            console.error(`${provider.name} reading request failed:`, error?.message || error);
-        }
+    if (!provider) return sendJson(res, 400, { error: 'unsupported_feature' });
+    if (provider === 'deepseek' && !process.env.DEEPSEEK_API_KEY) {
+        return sendJson(res, 503, { error: 'deepseek_not_configured' });
+    }
+    if (provider === 'openai' && !process.env.OPENAI_API_KEY) {
+        return sendJson(res, 503, { error: 'openai_not_configured' });
     }
 
-    console.error('All reading providers failed:', failures.join(', '));
-    return sendJson(res, 502, {
-        error: vision ? 'vision_provider_unavailable' : 'reading_provider_unavailable'
-    });
+    try {
+        const answer = provider === 'deepseek'
+            ? (await requestDeepSeekChat({
+                messages,
+                temperature: 0.76,
+                maxTokens: 850
+            })).answer
+            : await requestOpenAI(messages, vision);
+        return sendJson(res, 200, { answer });
+    } catch (error) {
+        console.error(`${provider} reading request failed:`, error?.message || error);
+        return sendJson(res, 502, {
+            error: provider === 'deepseek'
+                ? 'deepseek_provider_unavailable'
+                : vision
+                    ? 'vision_provider_unavailable'
+                    : 'openai_provider_unavailable'
+        });
+    }
 }

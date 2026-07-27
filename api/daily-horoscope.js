@@ -1,4 +1,5 @@
 import { buildReadingMessages } from '../lib/readings.js';
+import { requestDeepSeekChat } from '../lib/deepseek.js';
 
 const USER_STORE_URL = process.env.USER_STORE_URL
   || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-user-store';
@@ -27,29 +28,18 @@ async function userStore(botToken, action, payload = {}) {
   return data;
 }
 
-async function createHoroscope(sign, date) {
+export async function createHoroscope(sign, date) {
   const messages = buildReadingMessages('daily_horoscope', {
     sign: SIGN_LABELS[sign] || sign,
     date,
     name: 'Искатель'
   });
-  if (process.env.OPENAI_API_KEY) {
-    const input = messages.map((message) => ({
-      role: message.role,
-      content: [{ type: 'input_text', text: message.content }]
-    }));
-    const response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-      body: JSON.stringify({ model: process.env.OPENAI_MODEL || 'gpt-5-mini', input, max_output_tokens: 520, store: false }),
-      signal: AbortSignal.timeout(30_000)
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(`openai_${response.status}`);
-    const text = data.output_text || (data.output || []).flatMap((item) => item.content || []).map((part) => part.text || '').join('\n');
-    if (text.trim()) return text.trim();
-  }
-  throw new Error('horoscope_provider_unavailable');
+  const result = await requestDeepSeekChat({
+    messages,
+    temperature: 0.72,
+    maxTokens: 520
+  });
+  return result.answer;
 }
 
 async function sendTelegram(botToken, payload) {
