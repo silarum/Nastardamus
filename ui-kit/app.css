@@ -3,6 +3,7 @@ body { overflow-x:hidden; }
 #premium-app { min-height:100vh; }
 .premium-shell { min-height:100vh; position:relative; isolation:isolate; overflow:hidden; }
 .premium-screen { width:min(100%,430px); margin:auto; min-height:100vh; padding:max(6px, env(safe-area-inset-top,0px)) 13px calc(154px + env(safe-area-inset-bottom,0px)); position:relative; z-index:2; }
+.premium-screen--reading { padding-bottom:calc(32px + env(safe-area-inset-bottom,0px)); }
 .premium-stack { display:grid; gap:10px; }
 .premium-home-header { display:flex; align-items:center; justify-content:space-between; min-height:62px; }
 .premium-home-header .n-brand-logo { font-size:21px; }
@@ -320,6 +321,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .premium-result-reading .premium-reading-copy { position:relative; z-index:1; }
 .premium-reading-copy { display:grid; gap:14px; }
 .premium-reading-copy p { margin:0; white-space:pre-wrap; }
+.premium-shell--reading .premium-result-reading {
+  max-height:none;
+  overflow:visible;
+  overscroll-behavior:auto;
+  touch-action:auto;
+}
 
 .premium-upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .premium-upload-wrap { min-width: 0; }

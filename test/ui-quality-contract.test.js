@@ -49,6 +49,25 @@ test('PalmLink keeps the approved artwork visible and controls aligned', () => {
   assert.match(appSource, /serviceTile\('two-photo-compatibility',\s*'Совместимость по фото'/);
 });
 
+test('reading mode removes navigation overlays and uses natural page scrolling', () => {
+  assert.match(
+    appSource,
+    /tabs\s*&&\s*!reading\s*\?\s*BottomNavigation/
+  );
+  assert.match(
+    appSource,
+    /function resultScreen[\s\S]*\{\s*tabs:\s*false,\s*reading:\s*true\s*\}/
+  );
+  assert.match(
+    app,
+    /\.premium-screen--reading\s*\{[^}]*padding-bottom:\s*calc\(32px \+ env\(safe-area-inset-bottom/s
+  );
+  assert.match(
+    app,
+    /\.premium-shell--reading \.premium-result-reading\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible/s
+  );
+});
+
 test('profile exposes a voluntary grammatical gender preference', () => {
   assert.match(appSource, /female:\s*\{\s*label:\s*'Женщина'/s);
   assert.match(appSource, /male:\s*\{\s*label:\s*'Мужчина'/s);

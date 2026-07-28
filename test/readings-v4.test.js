@@ -34,6 +34,28 @@ test('accepts a one-card spread', () => {
   assert.match(messages[0].content, /Не используй Markdown/);
 });
 
+test('shared Ezoterium voice has a vivid dramatic arc and anti-template guardrails', () => {
+  const messages = buildReadingMessages('tarot', {
+    question: 'Что сейчас требует честного выбора?',
+    cards: ['Верховная Жрица', 'Колесница', 'Сила'],
+    spread: 'three-paths',
+    positions: ['Что скрыто', 'Что движет', 'Что поддержит']
+  });
+  const voice = messages[0].content;
+
+  assert.match(voice, /# Личность/);
+  assert.match(voice, /# Драматургия ответа/);
+  assert.match(voice, /порог, раскрытие, послевкусие/i);
+  assert.match(voice, /первые две-три строки сразу создают уникальный чувственный образ/i);
+  assert.match(voice, /финальная фраза должна звучать как личный ключ/i);
+  assert.match(voice, /Запрещены сухие клише и автозаполнение/i);
+  assert.match(voice, /«карты говорят»/i);
+  assert.match(voice, /<пример_порога>/);
+  assert.match(voice, /Никогда не копируй их образы/i);
+  assert.doesNotMatch(voice, /450–750 слов/);
+  assert.match(messages[1].content, /Заверши отдельным сильным абзацем/i);
+});
+
 test('accepts a ten-card Celtic Cross', () => {
   const messages = buildReadingMessages('tarot', {
     question: 'Как увидеть ситуацию целиком?',

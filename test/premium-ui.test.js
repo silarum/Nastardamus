@@ -76,6 +76,14 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     click(document, 'Спортивные знамения');
     assert.equal(mount.dataset.screen, 'sports');
     assert.ok(document.body.textContent.includes('Символический прогноз события'));
+    assert.equal(mount.querySelectorAll('.n-bottom-navigation').length, 1);
+    app.state.sportsResult = 'Арена на мгновение замирает.\n\nРисунок встречи меняется в самой тишине.';
+    app.render();
+    assert.equal(mount.querySelectorAll('.n-bottom-navigation').length, 0);
+    assert.ok(mount.querySelector('.premium-shell--reading'));
+    assert.ok(mount.querySelector('.premium-screen--reading'));
+    app.state.sportsResult = '';
+    app.render();
     click(document, 'Назад');
     assert.equal(mount.dataset.screen, 'home');
 
@@ -98,7 +106,22 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     }
     assert.ok(findButton(document, 'Получить толкование'));
 
-    click(document, 'Профиль');
+    app.state.result = {
+      id: 'reading-test',
+      type: 'Расклад «Три пути»',
+      title: 'Что поможет сделать следующий шаг?',
+      body: 'Первый знак возникает сразу.\n\nВторой абзац раскрывает движение.',
+      cards: ['Шут', 'Маг', 'Сила'],
+      createdAt: new Date().toISOString(),
+      favorite: false
+    };
+    app.navigate('tarot-result');
+    assert.equal(mount.dataset.screen, 'tarot-result');
+    assert.equal(mount.querySelectorAll('.n-bottom-navigation').length, 0);
+    assert.ok(mount.querySelector('.premium-shell--reading'));
+    assert.equal(mount.querySelectorAll('.premium-reading-copy p').length, 2);
+
+    app.navigate('profile');
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(mount.dataset.screen, 'profile');
     assert.ok(document.body.textContent.includes('Откройте приложение внутри Telegram'));
