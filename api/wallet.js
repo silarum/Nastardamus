@@ -67,7 +67,34 @@ function serialize(data) {
       createdAt: entry.created_at,
       updatedAt: entry.updated_at
     })),
+    entitlements: (data.entitlements || []).map((entry) => ({
+      service_id: entry.service_id,
+      quantity: Number(entry.quantity || 0),
+      updatedAt: entry.updated_at
+    })),
+    topups: (data.topups || []).map((entry) => ({
+      id: entry.id,
+      silarum: unitsToSilarum(entry.silarum_units),
+      rubles: Number(entry.ruble_kopecks || 0) / 100,
+      reference: entry.payment_reference,
+      status: entry.status,
+      createdAt: entry.created_at,
+      updatedAt: entry.updated_at,
+      paidAt: entry.paid_at,
+      expiresAt: entry.expires_at
+    })),
     config: {
+      paymentsEnabled: data.config?.paymentsEnabled !== false,
+      sbpTopupsEnabled: data.config?.sbpTopupsEnabled === true,
+      sbpMinimumSilarum: Number(data.config?.sbpMinimumSilarum ?? 10),
+      sbpMaximumSilarum: Number(data.config?.sbpMaximumSilarum ?? 1000),
+      sbpRoublesPerSilarum: Number(data.config?.sbpRoublesPerSilarum ?? 0),
+      sbpRecipientName: String(data.config?.sbpRecipientName || ''),
+      sbpBankName: String(data.config?.sbpBankName || ''),
+      sbpPhone: String(data.config?.sbpPhone || ''),
+      sbpPaymentUrl: String(data.config?.sbpPaymentUrl || ''),
+      sbpQrImageUrl: String(data.config?.sbpQrImageUrl || ''),
+      sbpInstructions: String(data.config?.sbpInstructions || ''),
       withdrawalsEnabled: data.config?.withdrawalsEnabled === true,
       withdrawalFee: Number(data.config?.withdrawalFee ?? 25),
       minimumWithdrawal: Number(data.config?.minimumWithdrawal ?? 25)
@@ -104,7 +131,14 @@ export default async function handler(req, res) {
       },
       ledger: [],
       withdrawals: [],
+      entitlements: [],
+      topups: [],
       config: {
+        paymentsEnabled: true,
+        sbpTopupsEnabled: false,
+        sbpMinimumSilarum: 10,
+        sbpMaximumSilarum: 1000,
+        sbpRoublesPerSilarum: 0,
         withdrawalsEnabled: false,
         withdrawalFee: 25,
         minimumWithdrawal: 25
@@ -121,27 +155,15 @@ export default async function handler(req, res) {
     }
 
     const action = String(req.body?.action || '');
-    if (action !== 'request_withdrawal') {
+    if (!['request_withdrawal', 'create_sbp_topup', 'mark_sbp_topup_sent'].includes(action)) {
       return sendJson(res, 400, { error: 'unknown_action' });
-    }
-
-    const amount = Number(req.body?.amount);
-    const destination = String(req.body?.destination || '').trim();
-    const idempotencyKey = normalizeIdempotencyKey(
-      getRequestHeader(req, 'x-idempotency-key') || req.body?.idempotencyKey
-    );
-    if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) {
-      return sendJson(res, 400, { error: 'invalid_amount' });
-    }
-    if (!idempotencyKey) {
-      return sendJson(res, 400, { error: 'invalid_idempotency_key' });
     }
 
     const rateLimit = await enforceRateLimit(req, {
       botToken,
       telegramId: userId,
-      scope: 'wallet:withdrawal',
-      limit: 3,
+      scope: action === 'request_withdrawal' ? 'wallet:withdrawal' : 'wallet:topup',
+      limit: action === 'request_withdrawal' ? 3 : 8,
       windowSeconds: 60 * 60
     });
     setRateLimitHeaders(res, rateLimit);
@@ -149,25 +171,51 @@ export default async function handler(req, res) {
       return sendJson(res, 429, { error: 'rate_limited' });
     }
 
-    const amountUnits = Math.round(amount * 100);
-    const result = await userStore(botToken, 'request_withdrawal', {
-      telegramId: userId,
-      amountUnits,
-      destination,
-      idempotencyKey
-    });
+    let result;
+    if (action === 'mark_sbp_topup_sent') {
+      const orderId = String(req.body?.orderId || '');
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) {
+        return sendJson(res, 400, { error: 'invalid_order_id' });
+      }
+      result = await userStore(botToken, action, { telegramId: userId, orderId });
+    } else {
+      const amount = Number(req.body?.amount);
+      const idempotencyKey = normalizeIdempotencyKey(
+        getRequestHeader(req, 'x-idempotency-key') || req.body?.idempotencyKey
+      );
+      if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) {
+        return sendJson(res, 400, { error: 'invalid_amount' });
+      }
+      if (!idempotencyKey) {
+        return sendJson(res, 400, { error: 'invalid_idempotency_key' });
+      }
+      const payload = {
+        telegramId: userId,
+        amountUnits: Math.round(amount * 100),
+        idempotencyKey
+      };
+      if (action === 'request_withdrawal') {
+        payload.destination = String(req.body?.destination || '').trim();
+      }
+      result = await userStore(botToken, action, payload);
+    }
     const refreshed = await userStore(botToken, 'get_wallet', { telegramId: userId });
     return sendJson(res, 200, {
       ok: true,
-      withdrawal: result.withdrawal,
+      ...(action === 'request_withdrawal' ? { withdrawal: result.withdrawal } : { order: result.order }),
       ...serialize(refreshed)
     });
   } catch (error) {
     console.error('Wallet API failed:', error);
     const code = error?.message || 'wallet_backend_failed';
-    if (['withdrawals_disabled', 'below_minimum', 'insufficient_funds', 'invalid_destination', 'invalid_idempotency_key'].includes(code)) {
+    if ([
+      'withdrawals_disabled', 'below_minimum', 'insufficient_funds', 'invalid_destination',
+      'invalid_idempotency_key', 'invalid_order_id', 'payments_disabled', 'sbp_topups_disabled',
+      'below_topup_minimum', 'above_topup_maximum', 'topup_not_found', 'topup_not_pending', 'topup_expired'
+    ].includes(code)) {
       return sendJson(res, error.status || 400, { error: code });
     }
+    if (code === 'sbp_not_configured') return sendJson(res, 503, { error: code });
     if (code === 'rate_limit_backend_failed') {
       return sendJson(res, 503, { error: code });
     }

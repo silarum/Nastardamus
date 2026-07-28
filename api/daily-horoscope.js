@@ -36,8 +36,8 @@ export async function createHoroscope(sign, date) {
   });
   const result = await requestDeepSeekChat({
     messages,
-    temperature: 0.72,
-    maxTokens: 520
+    temperature: 0.86,
+    maxTokens: 700
   });
   return result.answer;
 }

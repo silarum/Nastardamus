@@ -26,9 +26,12 @@ test('premium UI keeps readable text and complete mobile headers', () => {
 test('gift wheel and primary navigation preserve their geometry', () => {
   const wheelComponent = readFileSync(new URL('../ui-kit/components/FortuneWheel.js', import.meta.url), 'utf8');
   assert.doesNotMatch(wheelComponent, /WheelSegment|values=/);
-  assert.doesNotMatch(wheelComponent, /WheelPointer|n-wheel-pointer/);
+  assert.match(wheelComponent, /WheelPointer/);
+  assert.match(components, /\.n-wheel-pointer\s*\{[^}]*left:\s*50%/s);
   assert.match(components, /\.n-bottom-navigation::before\s*\{/s);
   assert.match(components, /\.n-bottom-nav-item\s*\{[^}]*min-height:\s*52px/s);
+  assert.match(components, /\.n-center-magic-button\s*\{[^}]*left:\s*50%;[^}]*top:\s*50%/s);
+  assert.match(components, /\.n-center-magic-button\s*\{[^}]*transform:\s*translate\(-50%,-66%\)/s);
   assert.match(components, /\.n-icon-button\s*\{[^}]*width:\s*44px;\s*height:\s*44px/s);
 });
 

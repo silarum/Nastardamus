@@ -3,6 +3,7 @@ import { requestDeepSeekChat } from '../lib/deepseek.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 import {
     enforceRateLimit,
+    normalizeIdempotencyKey,
     setRateLimitHeaders,
     unauthenticatedPreviewAllowed
 } from '../lib/request-security.js';
@@ -86,7 +87,11 @@ async function userStore(botToken, action, payload = {}) {
         signal: AbortSignal.timeout(10_000)
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.ok) throw new Error(data.error || `user_store_${response.status}`);
+    if (!response.ok || !data.ok) {
+        const error = new Error(data.error || `user_store_${response.status}`);
+        error.status = response.status;
+        throw error;
+    }
     return data;
 }
 
@@ -172,7 +177,7 @@ async function requestOpenAI(messages, vision) {
         body: JSON.stringify({
             model: process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL,
             input: toOpenAIInput(messages),
-            max_output_tokens: vision ? 900 : 850,
+            max_output_tokens: vision ? 1400 : 1200,
             store: false
         }),
         signal: AbortSignal.timeout(vision ? 45_000 : 30_000)
@@ -190,6 +195,35 @@ function providerForFeature(feature) {
     if (DEEPSEEK_READING_FEATURES.has(feature)) return 'deepseek';
     if (OPENAI_READING_FEATURES.has(feature)) return 'openai';
     return null;
+}
+
+function paidServiceForFeature(feature, payload) {
+    if (feature === 'tarot') {
+        return payload?.spread === 'relationship' ? 'tarot_relationship' : 'tarot';
+    }
+    if (feature === 'natal') return 'natal';
+    if (feature === 'photo_energy') return 'photo_energy';
+    if (feature === 'photo_damage') return 'photo_damage';
+    if (feature === 'photo_compatibility') {
+        return payload?.source === 'palmlink' ? 'palmlink' : 'photo_compatibility';
+    }
+    return null;
+}
+
+function paymentDetails(policy, walletData, serviceId) {
+    const service = policy?.settings?.serviceCatalog?.[serviceId] || {};
+    const price = Number(service.price || 0);
+    const available = Number(walletData?.wallet?.balance_units || 0)
+        - Number(walletData?.wallet?.locked_units || 0);
+    const priceUnits = Math.max(0, Math.round(price * 100));
+    return {
+        serviceId,
+        serviceTitle: String(service.title || serviceId),
+        price,
+        available: available / 100,
+        shortage: Math.max(0, priceUnits - available) / 100,
+        sbpTopupsEnabled: policy?.settings?.sbpTopupsEnabled === true
+    };
 }
 
 export default async function handler(req, res) {
@@ -211,9 +245,12 @@ export default async function handler(req, res) {
     const feature = String(req.body?.feature || '');
     const vision = isVisionFeature(feature);
     const provider = providerForFeature(feature);
+    const serviceId = paidServiceForFeature(feature, req.body?.payload);
+    const idempotencyKey = normalizeIdempotencyKey(req.body?.idempotencyKey);
+    const telegramId = auth.ok ? Number(auth.user.id) : null;
     let messages;
+    let policy = DEFAULT_PUBLIC_POLICY;
     try {
-        const telegramId = auth.ok ? Number(auth.user.id) : null;
         const rateLimit = await enforceRateLimit(req, {
             botToken,
             telegramId,
@@ -225,7 +262,7 @@ export default async function handler(req, res) {
         setRateLimitHeaders(res, rateLimit);
         if (!rateLimit.allowed) return sendJson(res, 429, { error: 'rate_limited' });
 
-        const policy = auth.ok
+        policy = auth.ok
             ? await userStore(botToken, 'get_public_config', { telegramId })
             : DEFAULT_PUBLIC_POLICY;
         validateVisionConsent(feature, req.body?.payload, policy);
@@ -249,17 +286,73 @@ export default async function handler(req, res) {
         return sendJson(res, 503, { error: 'openai_not_configured' });
     }
 
+    let charge = null;
+    if (auth.ok && serviceId) {
+        if (!idempotencyKey) {
+            return sendJson(res, 400, { error: 'invalid_idempotency_key' });
+        }
+        try {
+            const charged = await userStore(botToken, 'charge_service', {
+                telegramId,
+                serviceId,
+                idempotencyKey
+            });
+            charge = charged.charge;
+            if (!charge?.charge_id || charge.status === 'refunded' || charge.status === 'fulfilled') {
+                return sendJson(res, 409, { error: 'payment_retry_required' });
+            }
+        } catch (error) {
+            const code = error?.message || 'payment_backend_failed';
+            if (code === 'insufficient_funds') {
+                const wallet = await userStore(botToken, 'get_wallet', { telegramId }).catch(() => null);
+                return sendJson(res, 402, {
+                    error: code,
+                    payment: paymentDetails(policy, wallet, serviceId)
+                });
+            }
+            if (['payments_disabled', 'service_disabled'].includes(code)) {
+                return sendJson(res, 403, { error: code });
+            }
+            if (code === 'service_price_not_configured') {
+                return sendJson(res, 503, { error: code });
+            }
+            console.error('Service charge failed:', code);
+            return sendJson(res, 502, { error: 'payment_backend_failed' });
+        }
+    }
+
     try {
         const answer = provider === 'deepseek'
             ? (await requestDeepSeekChat({
                 messages,
-                temperature: 0.76,
-                maxTokens: 850
+                temperature: 0.84,
+                maxTokens: 1400
             })).answer
             : await requestOpenAI(messages, vision);
-        return sendJson(res, 200, { answer });
+        if (charge?.charge_id) {
+            await userStore(botToken, 'complete_service_charge', {
+                telegramId,
+                chargeId: charge.charge_id
+            });
+        }
+        return sendJson(res, 200, {
+            answer,
+            ...(charge ? { payment: {
+                source: charge.payment_source,
+                amount: Number(charge.price_units || 0) / 100
+            } } : {})
+        });
     } catch (error) {
         console.error(`${provider} reading request failed:`, error?.message || error);
+        if (charge?.charge_id) {
+            await userStore(botToken, 'refund_service_charge', {
+                telegramId,
+                chargeId: charge.charge_id,
+                reason: 'provider_or_delivery_error'
+            }).catch((refundError) => {
+                console.error('Automatic service refund failed:', refundError?.message || refundError);
+            });
+        }
         return sendJson(res, 502, {
             error: provider === 'deepseek'
                 ? 'deepseek_provider_unavailable'

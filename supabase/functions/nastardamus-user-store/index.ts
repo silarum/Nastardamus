@@ -97,24 +97,38 @@ Deno.serve(async (req: Request) => {
         return json(400, { error: "invalid_telegram_id" });
       }
       await ensureWallet(telegramId);
-      const [walletResponse, ledgerResponse, withdrawalResponse, entitlementResponse, settings] = await Promise.all([
+      const [walletResponse, ledgerResponse, withdrawalResponse, entitlementResponse, topupResponse, settings] = await Promise.all([
         rest(`nastardamus_wallets?telegram_id=eq.${telegramId}&select=telegram_id,balance_units,locked_units,free_spins,updated_at&limit=1`),
         rest(`nastardamus_wallet_ledger?telegram_id=eq.${telegramId}&select=id,entry_type,amount_units,balance_after_units,locked_after_units,metadata,created_at&order=created_at.desc&limit=30`),
         rest(`nastardamus_withdrawal_requests?telegram_id=eq.${telegramId}&select=id,gross_units,fee_units,net_units,destination,status,created_at,updated_at&order=created_at.desc&limit=20`),
         rest(`nastardamus_service_entitlements?telegram_id=eq.${telegramId}&quantity=gt.0&select=service_id,quantity,updated_at&order=updated_at.desc`),
+        rest(`nastardamus_sbp_topups?telegram_id=eq.${telegramId}&select=id,silarum_units,ruble_kopecks,payment_reference,status,created_at,updated_at,paid_at,expires_at&order=created_at.desc&limit=20`),
         readSettings()
       ]);
       const wallets = await walletResponse.json();
       const ledger = await ledgerResponse.json();
       const withdrawals = await withdrawalResponse.json();
       const entitlements = await entitlementResponse.json();
+      const topups = await topupResponse.json();
       return json(200, {
         ok: true,
         wallet: wallets?.[0] || null,
         ledger: ledger || [],
         withdrawals: withdrawals || [],
         entitlements: entitlements || [],
+        topups: topups || [],
         config: {
+          paymentsEnabled: settings.paymentsEnabled !== false,
+          sbpTopupsEnabled: settings.sbpTopupsEnabled === true,
+          sbpMinimumSilarum: Number(settings.sbpMinimumSilarum ?? 10),
+          sbpMaximumSilarum: Number(settings.sbpMaximumSilarum ?? 1000),
+          sbpRoublesPerSilarum: Number(settings.sbpRoublesPerSilarum ?? 0),
+          sbpRecipientName: String(settings.sbpRecipientName || ""),
+          sbpBankName: String(settings.sbpBankName || ""),
+          sbpPhone: String(settings.sbpPhone || ""),
+          sbpPaymentUrl: String(settings.sbpPaymentUrl || ""),
+          sbpQrImageUrl: String(settings.sbpQrImageUrl || ""),
+          sbpInstructions: String(settings.sbpInstructions || ""),
           withdrawalsEnabled: settings.withdrawalsEnabled === true,
           withdrawalFee: Number(settings.withdrawalFee ?? 25),
           minimumWithdrawal: Number(settings.minimumWithdrawal ?? 25)
@@ -139,7 +153,12 @@ Deno.serve(async (req: Request) => {
           wheelDailySpins: Math.max(1, Math.min(10, Number(settings.wheelDailySpins || 1))),
           wheelRewards: Array.isArray(settings.wheelRewards) ? settings.wheelRewards : [],
           serviceCatalog: settings.serviceCatalog && typeof settings.serviceCatalog === "object" ? settings.serviceCatalog : {},
-          dailyHoroscopeEnabled: settings.dailyHoroscopeEnabled !== false
+          dailyHoroscopeEnabled: settings.dailyHoroscopeEnabled !== false,
+          paymentsEnabled: settings.paymentsEnabled !== false,
+          sbpTopupsEnabled: settings.sbpTopupsEnabled === true,
+          sbpMinimumSilarum: Number(settings.sbpMinimumSilarum ?? 10),
+          sbpMaximumSilarum: Number(settings.sbpMaximumSilarum ?? 1000),
+          sbpRoublesPerSilarum: Number(settings.sbpRoublesPerSilarum ?? 0)
         },
         moderation: moderationRows?.[0] || {
           enabled: true,
@@ -182,6 +201,102 @@ Deno.serve(async (req: Request) => {
       });
       const result = await response.json();
       return json(200, { ok: true, ...result });
+    }
+
+    if (action === "create_sbp_topup") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const amountUnits = Number(body?.amountUnits);
+      const idempotencyKey = String(body?.idempotencyKey || "").trim();
+      if (!Number.isSafeInteger(amountUnits) || amountUnits <= 0) {
+        return json(400, { error: "invalid_amount" });
+      }
+      if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/.test(idempotencyKey)) {
+        return json(400, { error: "invalid_idempotency_key" });
+      }
+      const response = await rest("rpc/nastardamus_create_sbp_topup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_telegram_id: telegramId,
+          p_silarum_units: amountUnits,
+          p_idempotency_key: idempotencyKey
+        })
+      });
+      return json(200, { ok: true, order: await response.json() });
+    }
+
+    if (action === "mark_sbp_topup_sent") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const orderId = String(body?.orderId || "");
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) {
+        return json(400, { error: "invalid_order_id" });
+      }
+      const response = await rest("rpc/nastardamus_mark_sbp_topup_sent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_telegram_id: telegramId,
+          p_order_id: orderId
+        })
+      });
+      return json(200, { ok: true, order: await response.json() });
+    }
+
+    if (action === "charge_service") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const serviceId = String(body?.serviceId || "");
+      const idempotencyKey = String(body?.idempotencyKey || "").trim();
+      if (!/^[a-z0-9_-]{1,64}$/.test(serviceId)) {
+        return json(400, { error: "invalid_service_id" });
+      }
+      if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/.test(idempotencyKey)) {
+        return json(400, { error: "invalid_idempotency_key" });
+      }
+      const response = await rest("rpc/nastardamus_charge_service", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_telegram_id: telegramId,
+          p_service_id: serviceId,
+          p_idempotency_key: idempotencyKey
+        })
+      });
+      return json(200, { ok: true, charge: await response.json() });
+    }
+
+    if (action === "complete_service_charge" || action === "refund_service_charge") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const chargeId = String(body?.chargeId || "");
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(chargeId)) {
+        return json(400, { error: "invalid_charge_id" });
+      }
+      const refund = action === "refund_service_charge";
+      const response = await rest(
+        refund ? "rpc/nastardamus_refund_service_charge" : "rpc/nastardamus_complete_service_charge",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(refund
+            ? {
+                p_telegram_id: telegramId,
+                p_charge_id: chargeId,
+                p_reason: String(body?.reason || "provider_error").slice(0, 200)
+              }
+            : {
+                p_telegram_id: telegramId,
+                p_charge_id: chargeId
+              })
+        }
+      );
+      return json(200, { ok: true, charge: await response.json() });
     }
 
     if (action === "register_user" || action === "update_user_preferences") {
@@ -349,6 +464,18 @@ Deno.serve(async (req: Request) => {
     console.error("nastardamus-user-store failed", message);
     if (message.includes("below_minimum")) return json(400, { error: "below_minimum" });
     if (message.includes("insufficient_funds")) return json(400, { error: "insufficient_funds" });
+    if (message.includes("payments_disabled")) return json(403, { error: "payments_disabled" });
+    if (message.includes("sbp_topups_disabled")) return json(403, { error: "sbp_topups_disabled" });
+    if (message.includes("below_topup_minimum")) return json(400, { error: "below_topup_minimum" });
+    if (message.includes("above_topup_maximum")) return json(400, { error: "above_topup_maximum" });
+    if (message.includes("sbp_rate_not_configured") || message.includes("sbp_recipient_not_configured") || message.includes("sbp_destination_not_configured")) {
+      return json(503, { error: "sbp_not_configured" });
+    }
+    if (message.includes("service_price_not_configured")) return json(503, { error: "service_price_not_configured" });
+    if (message.includes("service_disabled")) return json(403, { error: "service_disabled" });
+    if (message.includes("topup_not_found")) return json(404, { error: "topup_not_found" });
+    if (message.includes("topup_not_pending") || message.includes("topup_already_reviewed")) return json(409, { error: "topup_not_pending" });
+    if (message.includes("topup_expired")) return json(409, { error: "topup_expired" });
     if (message.includes("invalid_destination")) return json(400, { error: "invalid_destination" });
     if (message.includes("invalid_idempotency_key")) return json(400, { error: "invalid_idempotency_key" });
     if (message.includes("wheel_disabled")) return json(403, { error: "wheel_disabled" });

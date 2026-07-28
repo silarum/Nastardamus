@@ -42,7 +42,10 @@ export default async function handler(req, res) {
     if (!response.ok || !data.ok) throw new Error(data.error || `config_store_${response.status}`);
     return sendJson(res, 200, {
       ok: true,
-      settings: data.settings || {},
+      settings: {
+        ...(data.settings || {}),
+        botUsername: String(process.env.BOT_USERNAME || 'BelonTip_bot').replace(/^@/, '')
+      },
       moderation: data.moderation || null
     });
   } catch (error) {

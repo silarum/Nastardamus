@@ -50,6 +50,7 @@
 
       <nav class="admin-tabs" aria-label="Разделы админ-панели">
         <button type="button" class="active" data-tab="overview">Настройки</button>
+        <button type="button" data-tab="payments">Платежи</button>
         <button type="button" data-tab="team">Команда</button>
         <button type="button" data-tab="support">Поддержка</button>
         <button type="button" data-tab="ai">AI-центр</button>
@@ -57,6 +58,26 @@
 
       <section class="tab-panel active" data-panel="overview">
         <form id="settings-form">
+          <section class="card panel">
+            <div class="panel-head"><div><p class="eyebrow">Оплата</p><h2>СБП и покупка SILARUM</h2></div><span class="badge">Ручная проверка</span></div>
+            <p class="panel-copy">Пользователь переводит точную сумму по СБП и сообщает об оплате. SILARUM начисляются только после подтверждения администратором.</p>
+            <label class="switch-row"><span><strong>Платные услуги включены</strong><small>Полный ответ выдаётся после списания цены услуги</small></span><input name="paymentsEnabled" type="checkbox" checked></label>
+            <label class="switch-row"><span><strong>Пополнение по СБП</strong><small>Включайте только после заполнения реквизитов и курса</small></span><input name="sbpTopupsEnabled" type="checkbox"></label>
+            <div class="two-cols">
+              <label>Минимум, SILARUM<input name="sbpMinimumSilarum" type="number" min="0.01" max="1000000" step="0.01" value="10"></label>
+              <label>Максимум, SILARUM<input name="sbpMaximumSilarum" type="number" min="0.01" max="1000000" step="0.01" value="1000"></label>
+            </div>
+            <label>Стоимость 1 SILARUM, ₽<input name="sbpRoublesPerSilarum" type="number" min="0" max="1000000" step="0.01" value="0"></label>
+            <div class="two-cols">
+              <label>Получатель<input name="sbpRecipientName" maxlength="160" placeholder="Имя получателя"></label>
+              <label>Банк<input name="sbpBankName" maxlength="120" placeholder="Название банка"></label>
+            </div>
+            <label>Телефон СБП<input name="sbpPhone" maxlength="40" inputmode="tel" placeholder="+7 900 000-00-00"></label>
+            <label>Ссылка банка для оплаты, HTTPS<input name="sbpPaymentUrl" type="url" maxlength="1000" placeholder="https://..."></label>
+            <label>Ссылка на изображение QR СБП, HTTPS<input name="sbpQrImageUrl" type="url" maxlength="1000" placeholder="https://..."></label>
+            <label>Инструкция пользователю<textarea name="sbpInstructions" rows="4" maxlength="700">Переведите точную сумму и укажите код заявки в сообщении к платежу. Начисление выполняется после проверки администратором.</textarea></label>
+          </section>
+
           <section class="card panel">
             <div class="panel-head"><div><p class="eyebrow">Экономика</p><h2>SILARUM</h2></div><span class="badge">1 SILARUM = 1 USDT</span></div>
             <label>Комиссия вывода, %<input name="withdrawalFee" type="number" min="0" max="100" step="1" value="25"></label>
@@ -137,6 +158,18 @@
             <button type="submit">Сохранить</button>
           </div>
         </form>
+      </section>
+
+      <section class="tab-panel" data-panel="payments" hidden>
+        <section class="card panel intro-panel">
+          <p class="eyebrow">СБП</p>
+          <h2>Заявки на пополнение</h2>
+          <p>Подтверждайте только те переводы, которые реально поступили на указанный счёт. Повторное подтверждение не начислит средства второй раз.</p>
+        </section>
+        <section class="card panel">
+          <div class="panel-head"><div><p class="eyebrow">Очередь</p><h2>Последние заявки</h2></div><button type="button" class="mini-button" id="refresh-payments-button">Обновить</button></div>
+          <div id="payments-list" class="entity-list"><p class="empty-state">Загрузка платежей…</p></div>
+        </section>
       </section>
 
       <section class="tab-panel" data-panel="team" hidden>

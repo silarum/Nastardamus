@@ -27,6 +27,17 @@ const DEFAULT_WHEEL_REWARDS = Object.freeze([
 ]);
 
 const DEFAULT_SETTINGS = Object.freeze({
+  paymentsEnabled: true,
+  sbpTopupsEnabled: false,
+  sbpMinimumSilarum: 10,
+  sbpMaximumSilarum: 1000,
+  sbpRoublesPerSilarum: 0,
+  sbpRecipientName: '',
+  sbpBankName: '',
+  sbpPhone: '',
+  sbpPaymentUrl: '',
+  sbpQrImageUrl: '',
+  sbpInstructions: 'Переведите точную сумму и укажите код заявки в сообщении к платежу. Начисление выполняется после проверки администратором.',
   withdrawalFee: 25,
   minimumWithdrawal: 25,
   withdrawalsEnabled: false,
@@ -64,6 +75,21 @@ function parseAdminIds(value) {
 function clampNumber(value, min, max, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+}
+
+function cleanText(value, maxLength) {
+  return String(value || '').trim().slice(0, maxLength);
+}
+
+function cleanHttpsUrl(value) {
+  const text = cleanText(value, 1000);
+  if (!text) return '';
+  try {
+    const url = new URL(text);
+    return url.protocol === 'https:' ? url.toString() : '';
+  } catch {
+    return '';
+  }
 }
 
 function sanitizeServiceCatalog(input) {
@@ -106,7 +132,20 @@ function sanitizeWheelRewards(input) {
 }
 
 function sanitizeSettings(input = {}) {
+  const minimumTopup = clampNumber(input.sbpMinimumSilarum, 0.01, 1_000_000, 10);
+  const maximumTopup = clampNumber(input.sbpMaximumSilarum, minimumTopup, 1_000_000, Math.max(1000, minimumTopup));
   return {
+    paymentsEnabled: input.paymentsEnabled !== false,
+    sbpTopupsEnabled: Boolean(input.sbpTopupsEnabled),
+    sbpMinimumSilarum: minimumTopup,
+    sbpMaximumSilarum: maximumTopup,
+    sbpRoublesPerSilarum: clampNumber(input.sbpRoublesPerSilarum, 0, 1_000_000, 0),
+    sbpRecipientName: cleanText(input.sbpRecipientName, 160),
+    sbpBankName: cleanText(input.sbpBankName, 120),
+    sbpPhone: cleanText(input.sbpPhone, 40).replace(/[^+\d()\s-]/g, ''),
+    sbpPaymentUrl: cleanHttpsUrl(input.sbpPaymentUrl),
+    sbpQrImageUrl: cleanHttpsUrl(input.sbpQrImageUrl),
+    sbpInstructions: cleanText(input.sbpInstructions, 700) || DEFAULT_SETTINGS.sbpInstructions,
     withdrawalFee: clampNumber(input.withdrawalFee, 0, 100, 25),
     minimumWithdrawal: clampNumber(input.minimumWithdrawal, 0, 1_000_000, 25),
     withdrawalsEnabled: Boolean(input.withdrawalsEnabled),
@@ -183,17 +222,53 @@ async function readSettings(botToken) {
 }
 
 async function writeSettings(settings, botToken) {
-  const direct = await directSupabaseRequest('nastardamus_settings?on_conflict=key', {
+  const currentResponse = await directSupabaseRequest('nastardamus_settings?key=eq.global&select=settings&limit=1');
+  if (currentResponse) {
+    const rows = await currentResponse.json();
+    const merged = { ...(rows?.[0]?.settings || {}), ...settings };
+    await directSupabaseRequest('nastardamus_settings?key=eq.global', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify({ settings: merged, updated_at: new Date().toISOString() })
+    });
+    return true;
+  }
+  await edgeStore(botToken, 'write_settings', { settings });
+  return true;
+}
+
+async function readPayments(botToken) {
+  const direct = await directSupabaseRequest(
+    'nastardamus_sbp_topups?select=id,telegram_id,silarum_units,ruble_kopecks,payment_reference,status,reviewed_by,review_note,created_at,updated_at,paid_at,expires_at&order=created_at.desc&limit=100'
+  );
+  if (direct) return await direct.json();
+  return (await edgeStore(botToken, 'list_sbp_topups')).orders || [];
+}
+
+async function reviewPayment({ orderId, decision, adminId, note }, botToken) {
+  const direct = await directSupabaseRequest('rpc/nastardamus_review_sbp_topup', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates,return=minimal'
+      Prefer: 'return=representation'
     },
-    body: JSON.stringify({ key: 'global', settings, updated_at: new Date().toISOString() })
+    body: JSON.stringify({
+      p_order_id: orderId,
+      p_decision: decision,
+      p_admin_id: adminId,
+      p_note: note
+    })
   });
-  if (direct) return true;
-  await edgeStore(botToken, 'write_settings', { settings });
-  return true;
+  if (direct) return await direct.json();
+  return (await edgeStore(botToken, 'review_sbp_topup', {
+    orderId,
+    decision,
+    adminId,
+    note
+  })).order;
 }
 
 async function getAdminProfile(userId, botToken, telegramUser) {
@@ -290,6 +365,16 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
+      if (req.query?.payments === '1') {
+        if (!hasPermission(profile, 'finance.view') && !hasPermission(profile, 'finance.manage')) {
+          return sendJson(res, 403, { error: 'permission_denied' });
+        }
+        return sendJson(res, 200, {
+          ok: true,
+          canManage: hasPermission(profile, 'finance.manage'),
+          orders: await readPayments(botToken)
+        });
+      }
       const current = await readSettings(botToken);
       await Promise.all([
         writeAudit(userId, 'admin_opened', { role: profile.role }, botToken),
@@ -310,6 +395,24 @@ export default async function handler(req, res) {
         },
         settings: current.settings
       });
+    }
+
+    if (req.body?.paymentAction === 'review_sbp_topup') {
+      if (!hasPermission(profile, 'finance.manage')) {
+        return sendJson(res, 403, { error: 'permission_denied' });
+      }
+      const orderId = String(req.body?.orderId || '');
+      const decision = String(req.body?.decision || '');
+      const note = cleanText(req.body?.note, 500);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) {
+        return sendJson(res, 400, { error: 'invalid_order_id' });
+      }
+      if (!['paid', 'rejected'].includes(decision)) {
+        return sendJson(res, 400, { error: 'invalid_topup_decision' });
+      }
+      const order = await reviewPayment({ orderId, decision, adminId: userId, note }, botToken);
+      await writeAudit(userId, 'sbp_topup_reviewed', { orderId, decision, note }, botToken);
+      return sendJson(res, 200, { ok: true, order });
     }
 
     if (!hasPermission(profile, 'settings.manage')) {
