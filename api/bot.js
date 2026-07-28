@@ -1,5 +1,9 @@
 import { runAgent } from '../lib/ai-runtime.js';
-import { buildBotReply } from '../lib/bot-replies.js';
+import {
+    buildBotReply,
+    buildMarketingKeyboard,
+    classifyBotQuestion
+} from '../lib/bot-replies.js';
 import { getRequestHeader } from '../lib/telegram.js';
 import { unauthenticatedPreviewAllowed } from '../lib/request-security.js';
 
@@ -123,6 +127,19 @@ async function forwardToSupport(botToken, message, aiAnswer) {
 }
 
 async function answerSupportMessage(botToken, message) {
+    const webAppUrl = process.env.WEB_APP_URL || 'https://nastardamus.vercel.app';
+    const topic = classifyBotQuestion(message.text);
+    if (!topic.allowed) {
+        await callTelegram(botToken, 'sendMessage', {
+            chat_id: message.chat.id,
+            text: topic.reason === 'empty'
+                ? 'Знаки молчат без вопроса. Спросите меня о возможностях Nastardamus — Таро, фото-чтениях, гороскопе, Колесе Фортуны, SILARUM или оплате.'
+                : 'Мой путь связан только с Nastardamus. Я не отвечаю на посторонние темы, но помогу выбрать услугу, объясню оплату и проведу в нужный раздел приложения.',
+            reply_markup: buildMarketingKeyboard(webAppUrl, message.text)
+        });
+        return;
+    }
+
     await callTelegram(botToken, 'sendChatAction', {
         chat_id: message.chat.id,
         action: 'typing'
@@ -132,7 +149,12 @@ async function answerSupportMessage(botToken, message) {
         const result = await runAgent({
             botToken,
             slug: 'support-guide',
-            message: message.text,
+            message: [
+                'Ответь только в рамках приложения Nastardamus.',
+                'Будь мистическим проводником-маркетологом: мягко объясни пользу подходящей функции, не дави на пользователя и не выдумывай возможностей.',
+                'Не давай внешних советов и не уводи разговор от приложения.',
+                `Вопрос пользователя: ${message.text}`
+            ].join('\n'),
             history: []
         });
         const handoffRequested = /\[HANDOFF\]/i.test(result.answer);
@@ -147,7 +169,8 @@ async function answerSupportMessage(botToken, message) {
             : '';
         await callTelegram(botToken, 'sendMessage', {
             chat_id: message.chat.id,
-            text: `${answer}${suffix}`.slice(0, 4000)
+            text: `${answer}${suffix}`.slice(0, 4000),
+            reply_markup: buildMarketingKeyboard(webAppUrl, message.text)
         });
     } catch (error) {
         console.error('Telegram AI support failed:', error, error?.causes || null);
@@ -156,7 +179,8 @@ async function answerSupportMessage(botToken, message) {
             chat_id: message.chat.id,
             text: forwarded
                 ? 'AI-помощник временно недоступен. Ваш вопрос отправлен оператору поддержки.'
-                : 'AI-помощник временно недоступен. Попробуйте позже или откройте приложение через /start.'
+                : 'Эзотериум временно не слышит знаки. Откройте нужный раздел приложения или попробуйте позже.',
+            reply_markup: buildMarketingKeyboard(webAppUrl, message.text)
         });
     }
 }
@@ -244,9 +268,11 @@ export default async function handler(req, res) {
         if (callback?.id) {
             await callTelegram(botToken, 'answerCallbackQuery', { callback_query_id: callback.id });
             if (callback.data === 'support_help' && callback.message?.chat?.id) {
+                const webAppUrl = process.env.WEB_APP_URL || 'https://nastardamus.vercel.app';
                 await callTelegram(botToken, 'sendMessage', {
                     chat_id: callback.message.chat.id,
-                    text: 'Напишите вопрос обычным сообщением. AI-помощник объяснит, как пользоваться сервисом, а при необходимости передаст вопрос оператору.'
+                    text: 'Напишите вопрос о Nastardamus обычным сообщением. Я объясню возможности приложения и предложу подходящий раздел.',
+                    reply_markup: buildMarketingKeyboard(webAppUrl, 'поддержка')
                 });
             }
             return sendJson(res, 200, { ok: true });
