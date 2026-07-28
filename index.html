@@ -24,8 +24,9 @@
     .boot-screen__loader::after{content:"✦";display:grid;place-items:center;height:100%;font:400 14px/1 Georgia,serif}
     @keyframes boot{to{transform:rotate(360deg)}}
   </style>
-  <script defer src="/ui-kit/app.bundle.js"></script>
   <script async id="telegram-web-app-sdk" src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script defer src="/ui-kit/telegram-entry-gate.js"></script>
+  <script defer src="/ui-kit/app.bundle.js"></script>
 </head>
 <body>
   <div id="boot-screen" class="boot-screen" aria-label="Nastardamus загружается">
