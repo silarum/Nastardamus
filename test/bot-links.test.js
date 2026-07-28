@@ -10,10 +10,12 @@ test('shared bot invitation opens the requested Nastardamus section', () => {
       chat: { id: 42 },
       from: { id: 42 }
     }
-  }, 'https://nastardamus.vercel.app', { botUsername: 'BelonTip_bot' });
+  }, 'https://nastardamus.vercel.app');
 
-  const openApp = reply.payload.reply_markup.inline_keyboard[0][0];
-  assert.equal(openApp.web_app.url, 'https://nastardamus.vercel.app/?screen=photo-compat&invite=creative');
-  const openBot = reply.payload.reply_markup.inline_keyboard.flat().find((button) => button.text.includes('чат бота'));
-  assert.equal(openBot.url, 'https://t.me/BelonTip_bot?start=app');
+  const buttons = reply.payload.reply_markup.inline_keyboard.flat();
+  assert.equal(buttons.length, 1);
+  assert.equal(buttons[0].web_app.url, 'https://nastardamus.vercel.app/?screen=photo-compat&invite=creative');
+  assert.match(buttons[0].text, /Принять приглашение/u);
+  assert.equal(buttons.some((button) => button.text.includes('Админ')), false);
+  assert.equal(buttons.some((button) => button.url?.includes('t.me/')), false);
 });
