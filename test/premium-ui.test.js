@@ -65,6 +65,19 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.equal(mount.querySelectorAll('.n-app-shell').length, 1);
     assert.equal(mount.querySelectorAll('.n-balance-card').length, 0, 'Balance must not be shown on the home screen');
     assert.equal(document.body.textContent.includes('Посмотреть приветствие'), false);
+    const homeText = mount.textContent;
+    assert.ok(homeText.indexOf('Быстрый доступ') < homeText.indexOf('Спортивные знамения'));
+    assert.ok(homeText.indexOf('Спортивные знамения') < homeText.lastIndexOf('Колесо Фортуны'));
+    assert.match(
+      mount.querySelector('.premium-sports-banner > img').getAttribute('src'),
+      /sports-prophecy-banner\.png$/
+    );
+
+    click(document, 'Спортивные знамения');
+    assert.equal(mount.dataset.screen, 'sports');
+    assert.ok(document.body.textContent.includes('Символический прогноз события'));
+    click(document, 'Назад');
+    assert.equal(mount.dataset.screen, 'home');
 
     click(document, 'Услуги');
     assert.equal(mount.dataset.screen, 'services');
@@ -123,6 +136,22 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.match(document.querySelector('.n-palm-graphic--right').getAttribute('src'), /palm-right\.png$/);
     click(document, 'Творческий союз');
     assert.equal(app.state.palmGoal, 'creative');
+    assert.equal(app.suggestGenderFromName('Анна'), 'female');
+    assert.equal(app.suggestGenderFromName('Иван'), 'male');
+    assert.equal(app.suggestGenderFromName('Саша'), 'unspecified');
+    app.state.inviteFlow = 'palm';
+    app.state.inviteName = 'Анна';
+    app.state.inviteGender = 'female';
+    app.state.inviteGoal = 'creative';
+    app.navigate('invite-compose');
+    assert.equal(mount.dataset.screen, 'invite-compose');
+    assert.match(
+      document.querySelector('.premium-invitation-preview__portrait').getAttribute('src'),
+      /portrait-woman\.png$/
+    );
+    assert.equal(document.querySelectorAll('.premium-invite-gender').length, 2);
+    assert.ok(findButton(document, 'Выбрать приложение для отправки') === undefined);
+    app.navigate('palm');
     click(document, 'Продолжить ритуал');
     assert.equal(mount.dataset.screen, 'palm');
     assert.ok(document.getElementById('premium-toast').textContent.includes('Сначала загрузите фото ладони'));

@@ -33,6 +33,10 @@ test('gift wheel and primary navigation preserve their geometry', () => {
   assert.match(components, /\.n-center-magic-button\s*\{[^}]*left:\s*50%;[^}]*top:\s*-33px/s);
   assert.match(components, /\.n-center-magic-button\s*\{[^}]*transform:\s*translateX\(-50%\)/s);
   assert.match(components, /\.n-icon-button\s*\{[^}]*width:\s*44px;\s*height:\s*44px/s);
+  assert.match(
+    appSource,
+    /SectionTitle\(\{\s*text:\s*'Быстрый доступ'[\s\S]*sportsForecastPanel\(\)[\s\S]*text:\s*wallet\.freeSpins[\s\S]*wheelWrap/
+  );
 });
 
 test('PalmLink keeps the approved artwork visible and controls aligned', () => {
@@ -62,7 +66,10 @@ test('startup renders the branded elder splash without waiting for Telegram', ()
   assert.match(html, /splash-v2\.webp/);
   assert.match(html, />Nastardamus</);
   assert.doesNotMatch(html, /setTimeout\(window\.hideNastardamusBoot/);
-  assert.match(appSource, /screen:\s*requestedScreen\s*\|\|\s*'welcome'/);
+  assert.match(
+    appSource,
+    /screen:\s*requestedScreen\s*\|\|\s*\(requestedInvitationToken\s*\?\s*'invitation'\s*:\s*'welcome'\)/
+  );
   assert.match(appSource, /function hideBootScreen\(\)/);
 });
 
@@ -83,7 +90,7 @@ test('every illustrated module uses the approved PNG asset set', () => {
     'photo-palm.png', 'portrait-man.png', 'portrait-woman.png',
     'result-magic-seal.png', 'ritual-tarot-spread.png', 'silarum-coin.png',
     'shortcut-astro-orbit.png', 'shortcut-destiny-hearts.png', 'shortcut-fortune-compass.png', 'tarot-deck.png',
-    'two-photo-compatibility.png'
+    'two-photo-compatibility.png', 'sports-prophecy-banner.png'
   ];
 
   assert.deepEqual(files.sort(), expected.sort());

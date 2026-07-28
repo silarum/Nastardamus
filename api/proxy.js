@@ -9,7 +9,12 @@ import {
 } from '../lib/request-security.js';
 
 const DEFAULT_OPENAI_MODEL = 'gpt-5-mini';
-const DEEPSEEK_READING_FEATURES = new Set(['tarot', 'natal', 'daily_horoscope']);
+const DEEPSEEK_READING_FEATURES = new Set([
+    'tarot',
+    'natal',
+    'daily_horoscope',
+    'sports_forecast'
+]);
 const OPENAI_READING_FEATURES = new Set([
     'compatibility',
     'photo_energy',
@@ -41,6 +46,18 @@ function sendJson(res, status, body) {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     return res.status(status).json(body);
+}
+
+async function callTelegram(botToken, method, payload) {
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(12_000)
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.ok) throw new Error(`telegram_${method}_${response.status}`);
+    return data.result;
 }
 
 function toOpenAIInput(messages) {
@@ -93,6 +110,48 @@ async function userStore(botToken, action, payload = {}) {
         throw error;
     }
     return data;
+}
+
+function invitationAppUrl(token) {
+    const url = new URL(process.env.WEB_APP_URL || 'https://nastardamus.vercel.app');
+    url.searchParams.set('screen', 'invitation');
+    url.searchParams.set('invitation', token);
+    return url.toString();
+}
+
+async function notifyInvitationChat(botToken, chatId, text, token) {
+    if (!Number.isSafeInteger(Number(chatId)) || Number(chatId) <= 0) return;
+    await callTelegram(botToken, 'sendMessage', {
+        chat_id: Number(chatId),
+        text,
+        reply_markup: {
+            inline_keyboard: [[{
+                text: '✨ Открыть совместный ритуал',
+                web_app: { url: invitationAppUrl(token) }
+            }]]
+        }
+    });
+}
+
+function invitationStoreAction(action) {
+    return ({
+        invitation_create: 'create_joint_invitation',
+        invitation_accept: 'accept_joint_invitation',
+        invitation_refresh: 'get_joint_invitation',
+        invitation_upload: 'upload_joint_participant_image',
+        invitation_request_initiator_payment: 'request_joint_initiator_payment'
+    })[action] || '';
+}
+
+async function releaseInvitation(botToken, telegramId, context, reason) {
+    if (!context?.token || !telegramId) return;
+    await userStore(botToken, 'release_joint_invitation_processing', {
+        telegramId,
+        invitationToken: context.token,
+        reason
+    }).catch((error) => {
+        console.error('Joint invitation release failed:', error?.message || error);
+    });
 }
 
 function imageInputs(feature, payload) {
@@ -242,12 +301,92 @@ export default async function handler(req, res) {
         return sendJson(res, 401, { error: 'telegram_auth_required' });
     }
 
+    const telegramId = auth.ok ? Number(auth.user.id) : null;
+    const storeAction = invitationStoreAction(String(req.body?.action || ''));
+    if (storeAction) {
+        if (!auth.ok) return sendJson(res, 401, { error: 'telegram_auth_required' });
+        try {
+            const rateLimit = await enforceRateLimit(req, {
+                botToken,
+                telegramId,
+                scope: `invitation:${String(req.body.action).replace('invitation_', '')}`,
+                limit: req.body.action === 'invitation_create' ? 8 : 20,
+                windowSeconds: 60 * 60,
+                persistent: true
+            });
+            setRateLimitHeaders(res, rateLimit);
+            if (!rateLimit.allowed) return sendJson(res, 429, { error: 'rate_limited' });
+
+            const payload = req.body.action === 'invitation_create'
+                ? {
+                    telegramId,
+                    flow: req.body?.flow,
+                    goal: req.body?.goal,
+                    inviteeName: req.body?.inviteeName,
+                    inviteeGender: req.body?.inviteeGender,
+                    initiatorName: auth.user.first_name || 'Искатель',
+                    initiatorGender: req.body?.initiatorGender,
+                    initiatorImage: req.body?.initiatorImage,
+                    consentOwn: req.body?.consentOwn === true,
+                    adultConfirmed: req.body?.adultConfirmed === true
+                }
+                : req.body.action === 'invitation_upload'
+                    ? {
+                        telegramId,
+                        invitationToken: req.body?.invitationToken,
+                        participantImage: req.body?.participantImage,
+                        participantGender: req.body?.participantGender,
+                        consentOwn: req.body?.consentOwn === true,
+                        adultConfirmed: req.body?.adultConfirmed === true
+                    }
+                    : {
+                        telegramId,
+                        invitationToken: req.body?.invitationToken
+                    };
+            const data = await userStore(botToken, storeAction, payload);
+            const token = String(data.invitation?.token || '');
+            if (req.body.action === 'invitation_request_initiator_payment') {
+                const initiatorChat = (data.chats || []).find(
+                    (chat) => Number(chat.telegram_id) !== telegramId
+                );
+                await notifyInvitationChat(
+                    botToken,
+                    initiatorChat?.chat_id,
+                    `${data.invitation?.inviteeName || 'Приглашённый человек'} уже добавил фото. Теперь инициатор может мягко завершить оплату общего результата.`,
+                    token
+                ).catch((error) => {
+                    console.error('Invitation payment notification failed:', error?.message || error);
+                });
+            }
+            if (req.body.action === 'invitation_create') {
+                const username = String(process.env.BOT_USERNAME || 'BelonTip_bot').replace(/^@/, '');
+                return sendJson(res, 200, {
+                    ok: true,
+                    invitation: data.invitation,
+                    inviteUrl: `https://t.me/${username}?start=join_${token}`
+                });
+            }
+            return sendJson(res, 200, { ok: true, invitation: data.invitation });
+        } catch (error) {
+            const code = error?.message || 'invitation_unavailable';
+            const status = Number(error?.status) || (
+                code === 'invitation_not_found' ? 404
+                    : code === 'invitation_expired' ? 410
+                        : code === 'rate_limit_backend_failed' || code === 'invitation_image_unavailable' ? 503
+                            : code === 'invitation_unavailable' || code === 'invitation_not_ready' ? 409
+                                : 400
+            );
+            return sendJson(res, status, { error: code });
+        }
+    }
+
     const feature = String(req.body?.feature || '');
     const vision = isVisionFeature(feature);
     const provider = providerForFeature(feature);
-    const serviceId = paidServiceForFeature(feature, req.body?.payload);
     const idempotencyKey = normalizeIdempotencyKey(req.body?.idempotencyKey);
-    const telegramId = auth.ok ? Number(auth.user.id) : null;
+    let requestPayload = req.body?.payload;
+    let serviceId = paidServiceForFeature(feature, requestPayload);
+    let invitationContext = null;
     let messages;
     let policy = DEFAULT_PUBLIC_POLICY;
     try {
@@ -265,30 +404,70 @@ export default async function handler(req, res) {
         policy = auth.ok
             ? await userStore(botToken, 'get_public_config', { telegramId })
             : DEFAULT_PUBLIC_POLICY;
-        validateVisionConsent(feature, req.body?.payload, policy);
-        messages = buildReadingMessages(feature, req.body?.payload);
-        await moderateVisionInput(feature, req.body?.payload, policy);
+        const invitationToken = String(requestPayload?.invitationToken || '');
+        if (invitationToken) {
+            if (!auth.ok || feature !== 'photo_compatibility') {
+                return sendJson(res, 401, { error: 'telegram_auth_required' });
+            }
+            const claimed = await userStore(botToken, 'claim_joint_invitation_processing', {
+                telegramId,
+                invitationToken,
+                payerRole: requestPayload?.payerRole
+            });
+            invitationContext = claimed.invitation;
+            requestPayload = {
+                invitationToken: invitationContext.token,
+                concern: `Что важно понять о связи с целью «${invitationContext.goal}»?`,
+                firstName: invitationContext.firstName,
+                secondName: invitationContext.secondName,
+                firstGender: invitationContext.firstGender,
+                secondGender: invitationContext.secondGender,
+                firstImage: invitationContext.firstImage,
+                secondImage: invitationContext.secondImage,
+                consentOwn: true,
+                consentPartner: true,
+                adultConfirmed: true,
+                source: invitationContext.flow === 'palm' ? 'palmlink' : 'joint_invitation'
+            };
+            serviceId = paidServiceForFeature(feature, requestPayload);
+        }
+        validateVisionConsent(feature, requestPayload, policy);
+        messages = buildReadingMessages(feature, requestPayload);
+        await moderateVisionInput(feature, requestPayload, policy);
     } catch (error) {
         const code = error?.message || 'invalid_request';
+        await releaseInvitation(botToken, telegramId, invitationContext, code);
         if (code === 'rate_limit_backend_failed' || code === 'photo_moderation_unavailable') {
             return sendJson(res, 503, { error: code });
         }
         if (code === 'photo_requires_review') return sendJson(res, 422, { error: code });
         if (code === 'photo_blocked') return sendJson(res, 400, { error: code });
+        if (code === 'invitation_not_found') return sendJson(res, 404, { error: code });
+        if (code === 'invitation_expired') return sendJson(res, 410, { error: code });
+        if (['invitation_busy', 'invitation_not_ready', 'invitation_already_completed'].includes(code)) {
+            return sendJson(res, 409, { error: code });
+        }
+        if (code === 'invitation_payment_denied') return sendJson(res, 403, { error: code });
         return sendJson(res, 400, { error: code });
     }
 
-    if (!provider) return sendJson(res, 400, { error: 'unsupported_feature' });
+    if (!provider) {
+        await releaseInvitation(botToken, telegramId, invitationContext, 'unsupported_feature');
+        return sendJson(res, 400, { error: 'unsupported_feature' });
+    }
     if (provider === 'deepseek' && !process.env.DEEPSEEK_API_KEY) {
+        await releaseInvitation(botToken, telegramId, invitationContext, 'deepseek_not_configured');
         return sendJson(res, 503, { error: 'deepseek_not_configured' });
     }
     if (provider === 'openai' && !process.env.OPENAI_API_KEY) {
+        await releaseInvitation(botToken, telegramId, invitationContext, 'openai_not_configured');
         return sendJson(res, 503, { error: 'openai_not_configured' });
     }
 
     let charge = null;
     if (auth.ok && serviceId) {
         if (!idempotencyKey) {
+            await releaseInvitation(botToken, telegramId, invitationContext, 'invalid_idempotency_key');
             return sendJson(res, 400, { error: 'invalid_idempotency_key' });
         }
         try {
@@ -299,10 +478,12 @@ export default async function handler(req, res) {
             });
             charge = charged.charge;
             if (!charge?.charge_id || charge.status === 'refunded' || charge.status === 'fulfilled') {
+                await releaseInvitation(botToken, telegramId, invitationContext, 'payment_retry_required');
                 return sendJson(res, 409, { error: 'payment_retry_required' });
             }
         } catch (error) {
             const code = error?.message || 'payment_backend_failed';
+            await releaseInvitation(botToken, telegramId, invitationContext, code);
             if (code === 'insufficient_funds') {
                 const wallet = await userStore(botToken, 'get_wallet', { telegramId }).catch(() => null);
                 return sendJson(res, 402, {
@@ -329,7 +510,24 @@ export default async function handler(req, res) {
                 maxTokens: 1400
             })).answer
             : await requestOpenAI(messages, vision);
-        if (charge?.charge_id) {
+        let completedInvitation = null;
+        if (invitationContext && charge?.charge_id) {
+            const completed = await userStore(botToken, 'complete_joint_invitation', {
+                telegramId,
+                invitationToken: invitationContext.token,
+                result: answer,
+                chargeId: charge.charge_id
+            });
+            completedInvitation = completed.invitation;
+            await Promise.allSettled((completed.chats || []).map((chat) =>
+                notifyInvitationChat(
+                    botToken,
+                    chat.chat_id,
+                    `Совместный результат для ${completedInvitation?.inviteeName || 'двух участников'} готов. Он открыт обоим участникам.`,
+                    invitationContext.token
+                )
+            ));
+        } else if (charge?.charge_id) {
             await userStore(botToken, 'complete_service_charge', {
                 telegramId,
                 chargeId: charge.charge_id
@@ -340,7 +538,8 @@ export default async function handler(req, res) {
             ...(charge ? { payment: {
                 source: charge.payment_source,
                 amount: Number(charge.price_units || 0) / 100
-            } } : {})
+            } } : {}),
+            ...(completedInvitation ? { invitation: completedInvitation } : {})
         });
     } catch (error) {
         console.error(`${provider} reading request failed:`, error?.message || error);
@@ -353,6 +552,7 @@ export default async function handler(req, res) {
                 console.error('Automatic service refund failed:', refundError?.message || refundError);
             });
         }
+        await releaseInvitation(botToken, telegramId, invitationContext, 'provider_or_delivery_error');
         return sendJson(res, 502, {
             error: provider === 'deepseek'
                 ? 'deepseek_provider_unavailable'
