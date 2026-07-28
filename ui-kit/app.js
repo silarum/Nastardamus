@@ -273,10 +273,15 @@ function activeTab(screen = state.screen) {
   return 'magic';
 }
 
-function shell(content, { tabs = true, active = activeTab() } = {}) {
-  return AppShell({ className: 'premium-shell', children: [
-    ScreenContainer({ className: 'premium-screen premium-screen-transition', children: [h('div', { className: 'premium-stack' }, content)] }),
-    tabs ? BottomNavigation({ active, onNavigate: handleBottomNavigation }) : null
+function shell(content, { tabs = true, active = activeTab(), reading = false } = {}) {
+  const readingClass = reading ? ' premium-shell--reading' : '';
+  const screenReadingClass = reading ? ' premium-screen--reading' : '';
+  return AppShell({ className: `premium-shell${readingClass}`, children: [
+    ScreenContainer({
+      className: `premium-screen premium-screen-transition${screenReadingClass}`,
+      children: [h('div', { className: 'premium-stack' }, content)]
+    }),
+    tabs && !reading ? BottomNavigation({ active, onNavigate: handleBottomNavigation }) : null
   ] });
 }
 
@@ -418,6 +423,7 @@ function sportsForecastPanel() {
 }
 
 function sportsForecastScreen() {
+  const reading = state.busy || Boolean(state.sportsResult);
   return shell([
     screenHeader('Спортивные знамения', 'Символический прогноз события', 'home'),
     h('section', { className: 'premium-sports-hero' },
@@ -462,7 +468,7 @@ function sportsForecastScreen() {
       className: 'premium-info-note',
       text: 'Художественное чтение для развлечения. Не используйте его как основу для ставок или финансовых решений.'
     })
-  ], { active: 'home' });
+  ], { active: 'home', reading });
 }
 
 async function submitSportsForecast() {
@@ -1300,7 +1306,7 @@ function invitationScreen() {
     })
   ];
   if (invitation.status === 'completed' && invitation.result) {
-    return shell([...base, ...invitationResult(invitation)], { tabs: false });
+    return shell([...base, ...invitationResult(invitation)], { tabs: false, reading: true });
   }
 
   if (invitation.viewerRole === 'participant' && !invitation.participantPhotoReady) {
@@ -1542,7 +1548,7 @@ function compatibilityResultScreen() {
       MysticButton({ text: 'Сохранить', icon: 'save', variant: 'primary', onClick: () => saveResult(state.result) }),
       MysticButton({ text: 'Поделиться', icon: 'share', variant: 'gold', onClick: () => shareResult(state.result) })
     )
-  ]);
+  ], { tabs: false, reading: true });
 }
 
 function resultScreen({ title, subtitle, back, result, showCards = false }) {
@@ -1555,7 +1561,7 @@ function resultScreen({ title, subtitle, back, result, showCards = false }) {
       MysticButton({ text: 'Поделиться', icon: 'share', variant: 'gold', onClick: () => shareResult(result) })
     ),
     MysticButton({ text: 'Вернуться к услугам', icon: 'services', variant: 'outline', onClick: () => navigate('services') })
-  ]);
+  ], { tabs: false, reading: true });
 }
 
 function formatReading(value) {
@@ -1589,6 +1595,7 @@ function horoscopeScreen() {
     writeJSON(HOROSCOPE_KEY, state.horoscope);
   });
   const enabled = state.publicConfig.dailyHoroscopeEnabled !== false;
+  const reading = state.busy || Boolean(state.horoscope.reading);
   return shell([
     screenHeader('Гороскоп дня', 'Личное послание от Эзотериума', 'home'),
     MysticCard({ className: 'premium-horoscope-hero', children: [
@@ -1606,7 +1613,7 @@ function horoscopeScreen() {
       state.horoscope.enabled,
       (checked) => saveHoroscopePreference(checked)
     ) : null
-  ], { active: 'home' });
+  ], { active: 'home', reading });
 }
 
 async function createDailyHoroscope() {
