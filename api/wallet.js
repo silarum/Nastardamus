@@ -78,6 +78,11 @@ function serialize(data) {
       rubles: Number(entry.ruble_kopecks || 0) / 100,
       reference: entry.payment_reference,
       status: entry.status,
+      providerType: entry.provider_type || null,
+      providerPaymentId: entry.provider_payment_id || null,
+      providerStatus: entry.provider_status || null,
+      paymentUrl: entry.confirmation_url || null,
+      verificationState: entry.verification_state || 'manual',
       createdAt: entry.created_at,
       updatedAt: entry.updated_at,
       paidAt: entry.paid_at,
@@ -86,6 +91,7 @@ function serialize(data) {
     config: {
       paymentsEnabled: data.config?.paymentsEnabled !== false,
       sbpTopupsEnabled: data.config?.sbpTopupsEnabled === true,
+      sbpAutomatic: data.config?.sbpAutomatic === true,
       sbpMinimumSilarum: Number(data.config?.sbpMinimumSilarum ?? 10),
       sbpMaximumSilarum: Number(data.config?.sbpMaximumSilarum ?? 1000),
       sbpRoublesPerSilarum: Number(data.config?.sbpRoublesPerSilarum ?? 0),
@@ -136,6 +142,7 @@ export default async function handler(req, res) {
       config: {
         paymentsEnabled: true,
         sbpTopupsEnabled: false,
+        sbpAutomatic: false,
         sbpMinimumSilarum: 10,
         sbpMaximumSilarum: 1000,
         sbpRoublesPerSilarum: 0,

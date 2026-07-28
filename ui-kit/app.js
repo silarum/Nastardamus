@@ -152,7 +152,7 @@ function serviceConfig(id) {
   return state.publicConfig.serviceCatalog?.[id] || { enabled: true, price: null };
 }
 
-function serviceBadge(id, fallback = 'AI') {
+function serviceBadge(id, fallback = '') {
   const price = serviceConfig(id).price;
   return price === null || price === undefined || price === ''
     ? fallback
@@ -562,7 +562,7 @@ function photoScreen(mode) {
       maxLength: 600
     })),
     consentRow(
-      'Я согласен на обработку своей фотографии внешним AI‑провайдером для этого чтения.',
+      'Я согласен на обработку своей фотографии защищённым внешним сервисом для этого чтения.',
       state.photoConsentOwn,
       (checked) => { state.photoConsentOwn = checked; }
     ),
@@ -705,7 +705,7 @@ function ritualScreen() {
     SectionTitle({ text: 'Данные партнёра' }), partnerUpload,
     field('Имя партнёра', textInput({ value: state.partnerName, placeholder: 'Имя', onInput: (value) => { state.partnerName = value; } })),
     consentRow(
-      'Я согласен на обработку изображения своей ладони внешним AI‑провайдером.',
+      'Я согласен на обработку изображения своей ладони защищённым внешним сервисом.',
       state.palmConsentOwn,
       (checked) => { state.palmConsentOwn = checked; }
     ),
@@ -988,10 +988,10 @@ function profileScreen() {
   ], { active: 'profile' });
 }
 
-function topupStatusLabel(status) {
+function topupStatusLabel(status, verificationState = 'manual') {
   return ({
     pending: 'Ожидает оплаты',
-    awaiting_confirmation: 'Проверяется администратором',
+    awaiting_confirmation: verificationState === 'manual_review' ? 'Требует внимания' : 'Проверяется',
     paid: 'Зачислено',
     rejected: 'Отклонено',
     expired: 'Истекло',
@@ -1038,7 +1038,12 @@ function topupScreen() {
         h('small', { text: 'К оплате по СБП' }),
         h('strong', { text: `${formatMoney(rubles)} ₽` })
       ),
-      h('p', { className: 'premium-info-note', text: 'Сначала создайте заявку. SILARUM зачислятся только после фактического поступления перевода и подтверждения администратором.' })
+      h('p', {
+        className: 'premium-info-note',
+        text: config.sbpAutomatic
+          ? 'После оплаты статус сверится автоматически, и SILARUM появятся на счёте без ручного подтверждения.'
+          : 'Сначала создайте заявку. SILARUM зачислятся только после фактического поступления перевода и проверки.'
+      })
     ] }),
     activeOrder
       ? MysticButton({ text: 'Обновить статус', icon: 'coin', variant: 'outline', onClick: () => loadWallet({ force: true }) })
@@ -1047,7 +1052,7 @@ function topupScreen() {
     topups.length ? h('div', { className: 'premium-ledger' }, topups.slice(0, 5).map((order) =>
       MysticCard({ className: 'premium-ledger-row', children: [
         Icon(order.status === 'paid' ? 'coin' : 'payment', { size: 24 }),
-        h('span', {}, h('strong', { text: topupStatusLabel(order.status) }), h('small', { text: `${order.reference} · ${formatDate(order.createdAt)}` })),
+        h('span', {}, h('strong', { text: topupStatusLabel(order.status, order.verificationState) }), h('small', { text: `${order.reference} · ${formatDate(order.createdAt)}` })),
         h('b', { className: order.status === 'paid' ? 'is-positive' : '', text: `${formatMoney(order.silarum)} S` })
       ] })
     )) : null
@@ -1055,19 +1060,26 @@ function topupScreen() {
 }
 
 function topupOrderCard(order, config) {
-  const paymentLink = String(config.sbpPaymentUrl || '');
+  const paymentLink = String(order.paymentUrl || config.sbpPaymentUrl || '');
+  const automatic = Boolean(order.providerPaymentId);
   return MysticCard({ className: 'premium-topup-order', children: [
-    config.sbpQrImageUrl ? h('img', { className: 'premium-sbp-qr', attrs: { src: config.sbpQrImageUrl, alt: 'QR-код для оплаты по СБП' } }) : null,
-    h('p', { className: 'premium-kicker', text: topupStatusLabel(order.status).toUpperCase() }),
+    !automatic && config.sbpQrImageUrl ? h('img', { className: 'premium-sbp-qr', attrs: { src: config.sbpQrImageUrl, alt: 'QR-код для оплаты по СБП' } }) : null,
+    h('p', { className: 'premium-kicker', text: topupStatusLabel(order.status, order.verificationState).toUpperCase() }),
     h('h2', { text: `${formatMoney(order.rubles)} ₽` }),
     h('dl', { className: 'premium-payment-details' },
-      h('div', {}, h('dt', { text: 'Получатель' }), h('dd', { text: config.sbpRecipientName })),
-      config.sbpBankName ? h('div', {}, h('dt', { text: 'Банк' }), h('dd', { text: config.sbpBankName })) : null,
-      config.sbpPhone ? h('div', {}, h('dt', { text: 'Телефон' }), h('dd', { text: config.sbpPhone })) : null,
+      automatic ? h('div', {}, h('dt', { text: 'Способ' }), h('dd', { text: 'СБП · автоматическая сверка' })) : null,
+      !automatic ? h('div', {}, h('dt', { text: 'Получатель' }), h('dd', { text: config.sbpRecipientName })) : null,
+      !automatic && config.sbpBankName ? h('div', {}, h('dt', { text: 'Банк' }), h('dd', { text: config.sbpBankName })) : null,
+      !automatic && config.sbpPhone ? h('div', {}, h('dt', { text: 'Телефон' }), h('dd', { text: config.sbpPhone })) : null,
       h('div', {}, h('dt', { text: 'Код заявки' }), h('dd', { text: order.reference })),
       h('div', {}, h('dt', { text: 'Будет зачислено' }), h('dd', { text: `${formatMoney(order.silarum)} SILARUM` }))
     ),
-    h('p', { className: 'premium-info-note', text: config.sbpInstructions || 'Переведите точную сумму и укажите код заявки.' }),
+    h('p', {
+      className: 'premium-info-note',
+      text: automatic
+        ? 'Оплатите на защищённой странице. После возврата нажмите «Обновить статус», если зачисление ещё не появилось.'
+        : config.sbpInstructions || 'Переведите точную сумму и укажите код заявки.'
+    }),
     paymentLink && order.status === 'pending'
       ? MysticButton({
           text: 'Открыть оплату СБП',
@@ -1079,7 +1091,7 @@ function topupOrderCard(order, config) {
           }
         })
       : null,
-    order.status === 'pending'
+    order.status === 'pending' && !automatic
       ? MysticButton({ text: 'Я оплатил — отправить на проверку', icon: 'coin', variant: 'primary', onClick: () => markTopupSent(order.id) })
       : null
   ] });
@@ -1095,7 +1107,9 @@ async function submitTopup() {
     });
     state.wallet = data;
     state.walletStatus = 'ready';
-    notify('Заявка создана. Переведите точную сумму по реквизитам.');
+    notify(data.order?.paymentUrl || data.order?.confirmation_url
+      ? 'Заявка создана. Откройте оплату СБП.'
+      : 'Заявка создана. Переведите точную сумму по реквизитам.');
   } catch (error) {
     notify(apiErrorMessage(error));
   } finally {

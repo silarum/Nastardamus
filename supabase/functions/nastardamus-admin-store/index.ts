@@ -241,11 +241,118 @@ Deno.serve(async (req: Request) => {
       return json(200, { ok: true });
     }
 
+    if (action === "read_payment_provider") {
+      const response = await rest(
+        "nastardamus_payment_providers?key=eq.sbp&select=provider_type,enabled,merchant_id,secret_hint,updated_by,updated_at&limit=1"
+      );
+      const rows = await response.json();
+      return json(200, {
+        ok: true,
+        provider: rows?.[0] || {
+          provider_type: "yookassa",
+          enabled: false,
+          merchant_id: "",
+          secret_hint: null,
+          updated_by: null,
+          updated_at: null
+        }
+      });
+    }
+
+    if (action === "write_payment_provider") {
+      const provider = body.provider && typeof body.provider === "object"
+        ? body.provider as Record<string, unknown>
+        : {};
+      const adminId = Number(provider.updatedBy);
+      const merchantId = cleanText(provider.merchantId, 40);
+      const secret = cleanText(provider.secret, 300);
+      const enabled = provider.enabled === true;
+      if (!Number.isSafeInteger(adminId) || adminId <= 0) {
+        return json(400, { error: "invalid_admin_id" });
+      }
+      if (merchantId && !/^\d{3,32}$/.test(merchantId)) {
+        return json(400, { error: "invalid_payment_merchant_id" });
+      }
+      if (secret && secret.length < 16) {
+        return json(400, { error: "invalid_payment_secret" });
+      }
+
+      const existingResponse = await rest(
+        "nastardamus_payment_providers?key=eq.sbp&select=secret_ciphertext,secret_iv,secret_hint&limit=1"
+      );
+      const existingRows = await existingResponse.json();
+      const existing = existingRows?.[0] || {};
+      let encrypted = {
+        ciphertext: String(existing.secret_ciphertext || ""),
+        iv: String(existing.secret_iv || ""),
+        hint: String(existing.secret_hint || "")
+      };
+      if (secret) encrypted = await encryptSecret(secret, token);
+      if (enabled && (!merchantId || !encrypted.ciphertext || !encrypted.iv)) {
+        return json(400, { error: "payment_provider_credentials_required" });
+      }
+
+      await rest("nastardamus_payment_providers?on_conflict=key", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Prefer: "resolution=merge-duplicates,return=minimal"
+        },
+        body: JSON.stringify({
+          key: "sbp",
+          provider_type: "yookassa",
+          enabled,
+          merchant_id: merchantId,
+          secret_ciphertext: encrypted.ciphertext || null,
+          secret_iv: encrypted.iv || null,
+          secret_hint: encrypted.hint || null,
+          updated_by: adminId,
+          updated_at: new Date().toISOString()
+        })
+      });
+      return json(200, {
+        ok: true,
+        provider: {
+          provider_type: "yookassa",
+          enabled,
+          merchant_id: merchantId,
+          secret_hint: encrypted.hint || null,
+          updated_by: adminId
+        }
+      });
+    }
+
     if (action === "list_sbp_topups") {
       const response = await rest(
-        "nastardamus_sbp_topups?select=id,telegram_id,silarum_units,ruble_kopecks,payment_reference,status,reviewed_by,review_note,created_at,updated_at,paid_at,expires_at&order=created_at.desc&limit=100"
+        "nastardamus_sbp_topups?select=id,telegram_id,silarum_units,ruble_kopecks,payment_reference,status,provider_type,provider_payment_id,provider_status,verification_state,reviewed_by,review_note,created_at,updated_at,paid_at,expires_at&order=created_at.desc&limit=100"
       );
       return json(200, { ok: true, orders: await response.json() });
+    }
+
+    if (action === "credit_admin_self") {
+      const adminId = Number(body.adminId);
+      const amountUnits = Number(body.amountUnits);
+      const idempotencyKey = cleanText(body.idempotencyKey, 128);
+      if (!Number.isSafeInteger(adminId) || adminId <= 0) {
+        return json(400, { error: "invalid_admin_id" });
+      }
+      if (!Number.isSafeInteger(amountUnits) || amountUnits <= 0 || amountUnits > 100000000) {
+        return json(400, { error: "invalid_amount" });
+      }
+      if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/.test(idempotencyKey)) {
+        return json(400, { error: "invalid_idempotency_key" });
+      }
+      const response = await rest("rpc/nastardamus_credit_admin_self", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_admin_id: adminId,
+          p_amount_units: amountUnits,
+          p_idempotency_key: idempotencyKey,
+          p_note: cleanText(body.note, 300) || null
+        })
+      });
+      return json(200, { ok: true, credit: await response.json() });
     }
 
     if (action === "review_sbp_topup") {

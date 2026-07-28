@@ -15,6 +15,8 @@ const supportForm = document.getElementById('support-form');
 const providerForm = document.getElementById('provider-form');
 const agentForm = document.getElementById('agent-form');
 const moderationForm = document.getElementById('moderation-form');
+const paymentProviderForm = document.getElementById('payment-provider-form');
+const selfCreditForm = document.getElementById('self-credit-form');
 const toast = document.getElementById('toast');
 const saveState = document.getElementById('save-state');
 
@@ -43,6 +45,14 @@ const purposeLabels = {
   photo_moderation: 'Фото-модерация',
   palmlink_moderation: 'PalmLink',
   custom: 'Другое'
+};
+
+const providerTypeLabels = {
+  openai_compatible: 'Совместимый API',
+  openai: 'Responses API',
+  anthropic: 'Messages API',
+  google: 'Generative API',
+  custom: 'Другой API'
 };
 
 let toastTimer;
@@ -169,6 +179,12 @@ function formatPaymentMoney(value, fraction = 2) {
   });
 }
 
+function createActionKey(prefix) {
+  const randomPart = globalThis.crypto?.randomUUID?.()
+    || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${randomPart}`;
+}
+
 function paymentStatusLabel(status) {
   return ({
     pending: 'Создана',
@@ -178,6 +194,21 @@ function paymentStatusLabel(status) {
     cancelled: 'Отменена',
     expired: 'Истекла'
   })[status] || status;
+}
+
+function populatePaymentProvider() {
+  if (!paymentProviderForm) return;
+  const provider = state.payments?.provider || {};
+  paymentProviderForm.elements.enabled.checked = provider.enabled === true;
+  paymentProviderForm.elements.merchantId.value = provider.merchant_id || '';
+  paymentProviderForm.elements.secret.value = '';
+  const configured = Boolean(provider.merchant_id && provider.secret_hint);
+  const status = document.getElementById('payment-provider-status');
+  status.textContent = provider.enabled && configured ? 'Работает автоматически' : configured ? 'Выключено' : 'Не настроено';
+  status.classList.toggle('ok', provider.enabled && configured);
+  document.getElementById('payment-secret-hint').textContent = provider.secret_hint
+    ? `Сохранённый ключ: ${provider.secret_hint}`
+    : 'Ключ ещё не сохранён.';
 }
 
 function renderPayments() {
@@ -192,11 +223,17 @@ function renderPayments() {
     const status = escapeHtml(paymentStatusLabel(order.status));
     const pending = ['pending', 'awaiting_confirmation'].includes(order.status);
     const canManage = state.payments?.canManage === true;
+    const verification = order.verification_state === 'automatic'
+      ? 'Автоматическая сверка'
+      : order.verification_state === 'manual_review'
+        ? 'Требует внимания'
+        : 'Резервная ручная проверка';
     return `<article class="entity-card" data-payment-id="${escapeHtml(order.id)}">
       <div class="entity-main">
         <div>
           <div class="entity-title"><strong>${escapeHtml(order.payment_reference)}</strong><span class="chip ${order.status === 'paid' ? 'ok' : pending ? '' : 'off'}">${status}</span></div>
           <p>Telegram ID ${Number(order.telegram_id)} · ${formatPaymentMoney(Number(order.silarum_units) / 100)} SILARUM · ${formatPaymentMoney(Number(order.ruble_kopecks) / 100)} ₽</p>
+          <p>${escapeHtml(verification)}${order.provider_payment_id ? ` · платёж ${escapeHtml(order.provider_payment_id)}` : ''}</p>
           <p>${new Date(order.created_at).toLocaleString('ru-RU')}</p>
         </div>
         ${pending && canManage ? `<div class="entity-actions">
@@ -211,6 +248,7 @@ function renderPayments() {
 async function loadPayments() {
   try {
     state.payments = await api('/api/admin?payments=1');
+    populatePaymentProvider();
     renderPayments();
   } catch (error) {
     state.payments = null;
@@ -220,6 +258,56 @@ async function loadPayments() {
     if (list) list.innerHTML = '<p class="empty-state">Платежи временно недоступны.</p>';
   }
 }
+
+paymentProviderForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = paymentProviderForm.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const result = await api('/api/admin', 'POST', {
+      paymentAction: 'save_sbp_provider',
+      provider: {
+        enabled: paymentProviderForm.elements.enabled.checked,
+        merchantId: paymentProviderForm.elements.merchantId.value.trim(),
+        secret: paymentProviderForm.elements.secret.value
+      }
+    });
+    state.payments = { ...(state.payments || {}), provider: result.provider };
+    populatePaymentProvider();
+    notify('Подключение СБП сохранено');
+  } catch (error) {
+    notify(error.data?.error || 'Не удалось сохранить подключение');
+  } finally {
+    button.disabled = false;
+  }
+});
+
+selfCreditForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const amount = Number(selfCreditForm.elements.amount.value);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    notify('Укажите сумму начисления');
+    return;
+  }
+  if (!window.confirm(`Начислить себе ${formatPaymentMoney(amount)} SILARUM? Операция попадёт в журнал.`)) return;
+  const button = selfCreditForm.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const result = await api('/api/admin', 'POST', {
+      paymentAction: 'credit_self',
+      amount,
+      note: selfCreditForm.elements.note.value.trim(),
+      idempotencyKey: createActionKey('admin-self')
+    });
+    const balance = Number(result.credit?.balance_units || 0) / 100;
+    notify(`Начислено. Ваш баланс: ${formatPaymentMoney(balance)} SILARUM`);
+    selfCreditForm.reset();
+  } catch (error) {
+    notify(error.data?.error || 'Не удалось начислить SILARUM');
+  } finally {
+    button.disabled = false;
+  }
+});
 
 document.getElementById('refresh-payments-button')?.addEventListener('click', loadPayments);
 document.getElementById('payments-list')?.addEventListener('click', async (event) => {
@@ -483,7 +571,7 @@ function renderProviders() {
       <article class="entity-card">
         <div class="entity-main">
           <div>
-            <div class="entity-title"><strong>${escapeHtml(provider.name)}</strong><span class="chip">${escapeHtml(provider.provider_type)}</span><span class="chip ${provider.enabled ? 'ok' : 'off'}">${provider.enabled ? 'Активен' : 'Отключён'}</span></div>
+            <div class="entity-title"><strong>${escapeHtml(provider.name)}</strong><span class="chip">${escapeHtml(providerTypeLabels[provider.provider_type] || 'API')}</span><span class="chip ${provider.enabled ? 'ok' : 'off'}">${provider.enabled ? 'Активен' : 'Отключён'}</span></div>
             <p>${escapeHtml(provider.text_model || 'текстовая модель не задана')}${provider.vision_model ? ` · vision: ${escapeHtml(provider.vision_model)}` : ''} · ключ ${escapeHtml(provider.api_key_hint || 'не задан')}</p>
             <div class="entity-meta">${caps.map((cap) => `<span class="chip">${escapeHtml(cap)}</span>`).join('')}</div>
           </div>
@@ -520,7 +608,7 @@ function openProviderEditor(provider = null) {
   providerForm.querySelectorAll('input[name="providerCapability"]').forEach((field) => {
     field.checked = provider ? provider.capabilities?.[field.value] === true : field.value === 'text';
   });
-  document.getElementById('provider-form-title').textContent = provider ? 'Изменить нейросеть' : 'Новая нейросеть';
+  document.getElementById('provider-form-title').textContent = provider ? 'Изменить подключение' : 'Новое подключение';
   providerForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -534,7 +622,7 @@ document.getElementById('providers-list')?.addEventListener('click', async (even
   }
   if (deleteButton) {
     const id = deleteButton.dataset.providerDelete;
-    if (!confirm('Удалить подключение нейросети? Назначенные помощники останутся без этой модели.')) return;
+    if (!confirm('Удалить это подключение? Назначенные проводники останутся без источника ответов.')) return;
     try {
       await api('/api/admin-ai', 'POST', { action: 'delete_provider', id });
       await loadAi();
@@ -569,7 +657,7 @@ providerForm?.addEventListener('submit', async (event) => {
     await api('/api/admin-ai', 'POST', { action: 'upsert_provider', provider });
     closeEditor('provider');
     await loadAi();
-    notify('API нейросети сохранён и зашифрован');
+    notify('Подключение сохранено, ключ зашифрован');
   } catch (error) {
     notify(error.data?.error || 'Не удалось сохранить API');
   } finally {
@@ -631,7 +719,7 @@ document.getElementById('agents-list')?.addEventListener('click', async (event) 
   }
   if (deleteButton) {
     const id = deleteButton.dataset.agentDelete;
-    if (!confirm('Удалить AI-помощника?')) return;
+    if (!confirm('Удалить проводника?')) return;
     try {
       await api('/api/admin-ai', 'POST', { action: 'delete_agent', id });
       await loadAi();

@@ -89,6 +89,9 @@ test('daily horoscope is personalized by name, sign and date', () => {
   assert.match(messages[1].content, /Анна/);
   assert.match(messages[1].content, /Весы/);
   assert.match(messages[1].content, /2026-07-27/);
+  assert.match(messages[0].content, /поэтическ/i);
+  assert.match(messages[0].content, /добрый юмор/i);
+  assert.match(messages[1].content, /новую метафору, архетип, бытовой образ и ритм/i);
 });
 
 test('builds a two-photo compatibility reading', () => {
