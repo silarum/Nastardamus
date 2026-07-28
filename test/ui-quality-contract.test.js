@@ -29,10 +29,27 @@ test('gift wheel and primary navigation preserve their geometry', () => {
   assert.match(wheelComponent, /WheelPointer/);
   assert.match(components, /\.n-wheel-pointer\s*\{[^}]*left:\s*50%/s);
   assert.match(components, /\.n-bottom-navigation::before\s*\{/s);
-  assert.match(components, /\.n-bottom-nav-item\s*\{[^}]*min-height:\s*52px/s);
-  assert.match(components, /\.n-center-magic-button\s*\{[^}]*left:\s*50%;[^}]*top:\s*50%/s);
-  assert.match(components, /\.n-center-magic-button\s*\{[^}]*transform:\s*translate\(-50%,-66%\)/s);
+  assert.match(components, /\.n-bottom-nav-item\s*\{[^}]*min-height:\s*56px/s);
+  assert.match(components, /\.n-center-magic-button\s*\{[^}]*left:\s*50%;[^}]*top:\s*-33px/s);
+  assert.match(components, /\.n-center-magic-button\s*\{[^}]*transform:\s*translateX\(-50%\)/s);
   assert.match(components, /\.n-icon-button\s*\{[^}]*width:\s*44px;\s*height:\s*44px/s);
+});
+
+test('PalmLink keeps the approved artwork visible and controls aligned', () => {
+  assert.match(components, /\.n-goal-chip\s*\{[^}]*height:\s*72px/s);
+  assert.match(components, /\.n-energy-hands-scene\s*\{[^}]*overflow:\s*visible/s);
+  assert.match(components, /\.n-palm-graphic--left\s*\{[^}]*left:\s*0/s);
+  assert.match(components, /\.n-palm-graphic--right\s*\{[^}]*right:\s*0/s);
+  assert.match(app, /\.premium-screen\s*\{[^}]*calc\(154px \+ env\(safe-area-inset-bottom/s);
+  assert.match(appSource, /serviceTile\('energy-hands',\s*'Путь двух судеб'/);
+  assert.match(appSource, /serviceTile\('two-photo-compatibility',\s*'Совместимость по фото'/);
+});
+
+test('profile exposes a voluntary grammatical gender preference', () => {
+  assert.match(appSource, /female:\s*\{\s*label:\s*'Женщина'/s);
+  assert.match(appSource, /male:\s*\{\s*label:\s*'Мужчина'/s);
+  assert.match(appSource, /unspecified:\s*\{\s*label:\s*'Не указывать'/s);
+  assert.match(appSource, /не угадываем пол по имени или фотографии/i);
 });
 
 test('startup renders the branded elder splash without waiting for Telegram', () => {

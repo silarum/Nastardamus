@@ -25,14 +25,16 @@ test('/start shows only the welcome entry and never exposes admin panel', () => 
   assert.equal(reply.method, 'sendMessage');
   assert.match(reply.payload.text, /Добро пожаловать/u);
   assert.equal(reply.payload.reply_markup.inline_keyboard.length, 1);
-  assert.match(reply.payload.reply_markup.inline_keyboard[0][0].text, /Войти в Nastardamus/u);
+  assert.match(reply.payload.reply_markup.inline_keyboard[0][0].text, /Войти в Эзотериум/u);
   assert.equal(JSON.stringify(reply.payload.reply_markup).includes('Админ'), false);
 });
 
 test('/admin reveals panel only to an authorized administrator', () => {
   const denied = buildBotReply(update('/admin', 303), WEB_APP_URL, { adminIds: [101] });
-  assert.match(denied.payload.text, /не разрешён/u);
-  assert.equal(denied.payload.reply_markup, undefined);
+  assert.match(denied.payload.text, /Добро пожаловать в Эзотериум/u);
+  assert.match(denied.payload.reply_markup.inline_keyboard[0][0].text, /Войти в Эзотериум/u);
+  assert.equal(JSON.stringify(denied).toLowerCase().includes('админ'), false);
+  assert.equal(JSON.stringify(denied).includes('/admin'), false);
 
   const allowed = buildBotReply(update('/admin', 101), WEB_APP_URL, { adminIds: [101] });
   assert.match(allowed.payload.text, /Панель управления/u);

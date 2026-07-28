@@ -518,6 +518,10 @@ Deno.serve(async (req: Request) => {
       ]);
       const zodiacSign = body?.zodiacSign ? String(body.zodiacSign) : null;
       if (zodiacSign && !signs.has(zodiacSign)) return json(400, { error: "invalid_zodiac_sign" });
+      const gender = body?.gender ? String(body.gender) : "unspecified";
+      if (!["female", "male", "unspecified"].includes(gender)) {
+        return json(400, { error: "invalid_gender" });
+      }
       const payload: Record<string, unknown> = {
         telegram_id: telegramId,
         chat_id: chatId,
@@ -530,6 +534,7 @@ Deno.serve(async (req: Request) => {
         payload.zodiac_sign = zodiacSign;
         payload.daily_horoscope_enabled = body?.enabled === true;
         payload.timezone = String(body?.timezone || "Europe/Berlin").slice(0, 80);
+        payload.gender = gender;
       }
       await rest("nastardamus_users?on_conflict=telegram_id", {
         method: "POST",
@@ -543,7 +548,7 @@ Deno.serve(async (req: Request) => {
       if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
         return json(400, { error: "invalid_telegram_id" });
       }
-      const response = await rest(`nastardamus_users?telegram_id=eq.${telegramId}&select=zodiac_sign,daily_horoscope_enabled,timezone,last_horoscope_sent_on&limit=1`);
+      const response = await rest(`nastardamus_users?telegram_id=eq.${telegramId}&select=zodiac_sign,daily_horoscope_enabled,timezone,gender,last_horoscope_sent_on&limit=1`);
       const rows = await response.json();
       return json(200, { ok: true, preferences: rows?.[0] || null });
     }
@@ -557,7 +562,7 @@ Deno.serve(async (req: Request) => {
       }
       const limit = Math.max(1, Math.min(500, Number(body?.limit || 200)));
       const response = await rest(
-        `nastardamus_users?daily_horoscope_enabled=eq.true&zodiac_sign=not.is.null&or=(last_horoscope_sent_on.is.null,last_horoscope_sent_on.lt.${today})&select=telegram_id,chat_id,first_name,zodiac_sign&order=telegram_id.asc&limit=${limit}`
+        `nastardamus_users?daily_horoscope_enabled=eq.true&zodiac_sign=not.is.null&or=(last_horoscope_sent_on.is.null,last_horoscope_sent_on.lt.${today})&select=telegram_id,chat_id,first_name,zodiac_sign,gender&order=telegram_id.asc&limit=${limit}`
       );
       return json(200, { ok: true, recipients: await response.json() });
     }

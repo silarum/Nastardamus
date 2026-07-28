@@ -7,6 +7,7 @@ import {
 } from './components/index.js';
 import { h } from './core/dom.js';
 import { Icon } from './core/icon.js';
+import { premiumArtUrl } from './core/assets.js';
 
 let tg = null;
 let telegramConfigured = false;
@@ -16,12 +17,19 @@ const toast = document.getElementById('premium-toast');
 const JOURNAL_KEY = 'nastardamus-journal-v2';
 const SUPPORT_KEY = 'nastardamus-support-v4';
 const HOROSCOPE_KEY = 'nastardamus-horoscope-v1';
+const PROFILE_KEY = 'nastardamus-profile-v1';
 
 const ZODIAC_SIGNS = {
   aries: { label: 'Овен' }, taurus: { label: 'Телец' }, gemini: { label: 'Близнецы' },
   cancer: { label: 'Рак' }, leo: { label: 'Лев' }, virgo: { label: 'Дева' },
   libra: { label: 'Весы' }, scorpio: { label: 'Скорпион' }, sagittarius: { label: 'Стрелец' },
   capricorn: { label: 'Козерог' }, aquarius: { label: 'Водолей' }, pisces: { label: 'Рыбы' }
+};
+
+const GENDER_OPTIONS = {
+  female: { label: 'Женщина', art: 'portrait-woman' },
+  male: { label: 'Мужчина', art: 'portrait-man' },
+  unspecified: { label: 'Не указывать', art: 'avatar-seeker' }
 };
 
 const CARD_IMAGES = {
@@ -99,6 +107,7 @@ const state = {
   wheelRotation: 0,
   topupAmount: '',
   topupReturnScreen: 'services',
+  userGender: normalizeGender(readJSON(PROFILE_KEY, { gender: 'unspecified' }).gender),
   horoscope: readJSON(HOROSCOPE_KEY, { sign: 'aries', enabled: false, reading: '', date: '' }),
   support: readJSON(SUPPORT_KEY, []),
   supportDraft: ''
@@ -126,6 +135,14 @@ function readJSON(key, fallback) {
 
 function writeJSON(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage can be unavailable */ }
+}
+
+function normalizeGender(value) {
+  return Object.prototype.hasOwnProperty.call(GENDER_OPTIONS, value) ? value : 'unspecified';
+}
+
+function profileAvatar() {
+  return premiumArtUrl(GENDER_OPTIONS[state.userGender]?.art || 'avatar-seeker');
 }
 
 function notify(message) {
@@ -222,9 +239,11 @@ function screenHeader(title, subtitle, back = 'home') {
   return AppHeader({ title, subtitle, onBack: () => navigate(back), rightIcon: 'info', onRight: () => navigate('support') });
 }
 
-function serviceTile(icon, title, description, onClick, badge = '') {
+function serviceTile(art, title, description, onClick, badge = '') {
   return h('button', { className: 'premium-service-tile', attrs: { type: 'button' }, on: { click: onClick } },
-    h('span', { className: 'premium-service-icon' }, Icon(icon, { size: 30 })),
+    h('span', { className: 'premium-service-icon' },
+      h('img', { attrs: { src: premiumArtUrl(art), alt: '', draggable: 'false' } })
+    ),
     h('span', {}, h('strong', { text: title }), h('small', { text: description })),
     badge ? h('b', { className: 'premium-service-badge', text: badge }) : null
   );
@@ -311,7 +330,7 @@ function homeScreen() {
 
   return shell([
     header,
-    GreetingCard({ username: firstName(), message: 'Слушай знаки. Доверься интуиции.' }),
+    GreetingCard({ username: firstName(), message: 'Слушай знаки. Доверься интуиции.', avatar: profileAvatar() }),
     wheelWrap,
     SectionTitle({ text: 'Быстрый доступ' }),
     QuickAccessGrid({ items: [
@@ -333,14 +352,14 @@ function servicesScreen() {
   return shell([
     screenHeader('Услуги', 'Выберите пространство', 'home'),
     h('div', { className: 'premium-service-list' },
-      serviceTile('tarot', 'Семь раскладов Таро', 'От одной карты до Кельтского креста', () => navigate('tarot'), serviceBadge('tarot')),
-      serviceTile('orbit', 'Натальная подсказка', 'Сильные стороны и текущий ориентир', () => navigate('natal'), serviceBadge('natal')),
-      serviceTile('sparkle', 'Энергетический след', 'Фото как личный символ и точка опоры', () => navigate('photo-energy'), serviceBadge('photo_energy')),
-      serviceTile('sparkle', 'Определение порчи', 'Фото, ваша история и совет Эзотериума', () => navigate('photo-damage'), serviceBadge('photo_damage')),
-      serviceTile('users', 'Совместимость по фото', 'Два образа, диалог и точки опоры', () => openEnabledFeature(state.publicConfig.jointReadingsEnabled, 'photo-compat', 'Совместные чтения временно отключены'), serviceBadge('photo_compatibility')),
-      serviceTile('hand', 'Путь двух судеб', 'Ладони и совместный ритуал', () => openEnabledFeature(state.publicConfig.palmLinkEnabled, 'palm', 'PalmLink временно отключён'), serviceBadge('palmlink', '')),
-      serviceTile('orbit', 'Гороскоп дня', 'Личный знак и ежедневное послание', () => navigate('horoscope'), ''),
-      serviceTile('info', 'Спросить Эзотериума', 'Помощник по функциям приложения', () => navigate('support'))
+      serviceTile('tarot-deck', 'Семь раскладов Таро', 'От одной карты до Кельтского креста', () => navigate('tarot'), serviceBadge('tarot')),
+      serviceTile('astrology-forecast', 'Натальная подсказка', 'Сильные стороны и текущий ориентир', () => navigate('natal'), serviceBadge('natal')),
+      serviceTile('photo-energy-imprint', 'Энергетический след', 'Фото как личный символ и точка опоры', () => navigate('photo-energy'), serviceBadge('photo_energy')),
+      serviceTile('result-magic-seal', 'Определение порчи', 'Фото, ваша история и совет Эзотериума', () => navigate('photo-damage'), serviceBadge('photo_damage')),
+      serviceTile('two-photo-compatibility', 'Совместимость по фото', 'Два образа, диалог и точки опоры', () => openEnabledFeature(state.publicConfig.jointReadingsEnabled, 'photo-compat', 'Совместные чтения временно отключены'), serviceBadge('photo_compatibility')),
+      serviceTile('energy-hands', 'Путь двух судеб', 'Ладони и совместный ритуал', () => openEnabledFeature(state.publicConfig.palmLinkEnabled, 'palm', 'PalmLink временно отключён'), serviceBadge('palmlink', '')),
+      serviceTile('shortcut-astro-orbit', 'Гороскоп дня', 'Личный знак и ежедневное послание', () => navigate('horoscope'), ''),
+      serviceTile('brand-sun', 'Спросить Эзотериума', 'Помощник по функциям приложения', () => navigate('support'))
     )
   ], { active: 'services' });
 }
@@ -797,7 +816,10 @@ function compatibilityResultScreen() {
   } });
   return shell([
     screenHeader('Путь двух судеб', 'Совместное символическое чтение', 'ritual'),
-    CompatibilityHero({ left: { name: firstName(), birthDate: 'Ваша ладонь', gender: 'female' }, right: { name: state.partnerName || 'Партнёр', birthDate: 'Вторая ладонь', gender: 'male' } }),
+    CompatibilityHero({
+      left: { name: firstName(), birthDate: 'Ваша ладонь', gender: state.userGender },
+      right: { name: state.partnerName || 'Партнёр', birthDate: 'Вторая ладонь', gender: 'unspecified' }
+    }),
     tabs, ...panels,
     SectionTitle({ text: 'Символические аспекты' }),
     MetricsList(),
@@ -858,7 +880,7 @@ function horoscopeScreen() {
   return shell([
     screenHeader('Гороскоп дня', 'Личное послание от Эзотериума', 'home'),
     MysticCard({ className: 'premium-horoscope-hero', children: [
-      Icon('orbit', { size: 44 }),
+      h('img', { className: 'premium-horoscope-art', attrs: { src: premiumArtUrl('astrology-forecast'), alt: '', draggable: 'false' } }),
       h('p', { className: 'premium-kicker', text: 'ВАШ НЕБЕСНЫЙ ОРИЕНТИР' }),
       h('h2', { text: ZODIAC_SIGNS[state.horoscope.sign]?.label || 'Выберите знак' }),
       h('p', { text: 'Каждый день — новый образ, одна точка опоры и действие, которое можно сделать сегодня.' })
@@ -884,7 +906,8 @@ async function createDailyHoroscope() {
     const answer = await requestReading('daily_horoscope', {
       sign: ZODIAC_SIGNS[state.horoscope.sign]?.label || state.horoscope.sign,
       date,
-      name: firstName()
+      name: firstName(),
+      gender: state.userGender
     });
     state.horoscope = { ...state.horoscope, reading: answer, date };
     writeJSON(HOROSCOPE_KEY, state.horoscope);
@@ -910,7 +933,8 @@ async function saveHoroscopePreference(checked) {
       body: {
         zodiacSign: state.horoscope.sign,
         enabled: checked,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Berlin'
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Berlin',
+        gender: state.userGender
       }
     });
     notify(checked ? 'Гороскоп будет приходить каждое утро' : 'Ежедневная доставка выключена');
@@ -952,8 +976,10 @@ function profileScreen() {
     GreetingCard({
       username: firstName(),
       message: state.walletStatus === 'error' ? state.walletMessage : 'Ваш счёт и личные настройки',
-      balance: formatMoney(wallet.balance || 0)
+      balance: formatMoney(wallet.balance || 0),
+      avatar: profileAvatar()
     }),
+    genderPreferenceCard(),
     h('div', { className: 'premium-wallet-metrics' },
       MysticCard({ children: [h('small', { text: 'Доступно' }), h('strong', { text: formatMoney(wallet.available) })] }),
       MysticCard({ children: [h('small', { text: 'Заблокировано' }), h('strong', { text: formatMoney(wallet.locked) })] }),
@@ -1221,7 +1247,11 @@ async function requestReading(feature, payload, serviceId = '') {
   try {
     const data = await api('/api/proxy', {
       method: 'POST',
-      body: { feature, payload, idempotencyKey: uniqueId(`reading-${serviceId || feature}`) }
+      body: {
+        feature,
+        payload: { ...payload, gender: normalizeGender(payload?.gender || state.userGender) },
+        idempotencyKey: uniqueId(`reading-${serviceId || feature}`)
+      }
     });
     if (typeof data.answer !== 'string' || !data.answer.trim()) throw new Error('empty_response');
     loadWallet({ force: true });
@@ -1335,12 +1365,67 @@ async function loadPreferences() {
     if (preferences) {
       state.horoscope.sign = preferences.zodiac_sign || state.horoscope.sign;
       state.horoscope.enabled = preferences.daily_horoscope_enabled === true;
+      state.userGender = normalizeGender(preferences.gender || state.userGender);
       writeJSON(HOROSCOPE_KEY, state.horoscope);
+      writeJSON(PROFILE_KEY, { gender: state.userGender });
     }
   } catch {
     // Local preference remains available if the profile endpoint is temporarily unavailable.
   }
   if (state.screen === 'profile' || state.screen === 'horoscope') render();
+}
+
+function genderPreferenceCard() {
+  const description = state.userGender === 'female'
+    ? 'Эзотериум обращается к вам в женском роде.'
+    : state.userGender === 'male'
+      ? 'Эзотериум обращается к вам в мужском роде.'
+      : 'Эзотериум использует нейтральные формулировки.';
+  return MysticCard({ className: 'premium-gender-card', children: [
+    h('div', { className: 'premium-gender-card__head' },
+      h('div', {},
+        h('p', { className: 'premium-kicker', text: 'ЛИЧНЫЙ ГОЛОС ЭЗОТЕРИУМА' }),
+        h('h2', { text: 'Как к вам обращаться?' })
+      ),
+      h('img', { attrs: { src: profileAvatar(), alt: '', draggable: 'false' } })
+    ),
+    h('div', { className: 'premium-gender-options' },
+      Object.entries(GENDER_OPTIONS).map(([value, option]) =>
+        h('button', {
+          className: `premium-gender-option ${state.userGender === value ? 'is-active' : ''}`,
+          attrs: { type: 'button', 'aria-pressed': state.userGender === value ? 'true' : 'false' },
+          on: { click: () => saveGenderPreference(value) }
+        },
+        h('img', { attrs: { src: premiumArtUrl(option.art), alt: '', draggable: 'false' } }),
+        h('span', { text: option.label }))
+      )
+    ),
+    h('p', { className: 'premium-gender-card__copy', text: `${description} Мы не угадываем пол по имени или фотографии — выбор принадлежит только вам.` })
+  ] });
+}
+
+async function saveGenderPreference(value) {
+  state.userGender = normalizeGender(value);
+  writeJSON(PROFILE_KEY, { gender: state.userGender });
+  render();
+  if (!tg?.initData) {
+    notify('Обращение сохранено на этом устройстве');
+    return;
+  }
+  try {
+    await api('/api/preferences', {
+      method: 'POST',
+      body: {
+        zodiacSign: state.horoscope.sign,
+        enabled: state.horoscope.enabled,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Berlin',
+        gender: state.userGender
+      }
+    });
+    notify('Эзотериум запомнил форму обращения');
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  }
 }
 
 function shuffle(values) {

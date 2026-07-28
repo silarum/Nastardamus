@@ -1,9 +1,10 @@
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
+import { hasAdminPanelAccess } from '../lib/admin-access.js';
 
 const ADMIN_STORE_URL = process.env.ADMIN_STORE_URL
   || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-admin-store';
 
-const ROLES = new Set(['owner', 'admin', 'manager', 'support', 'moderator', 'analyst']);
+const ROLES = new Set(['owner', 'admin', 'operator']);
 const PERMISSIONS = new Set([
   'admins.manage',
   'settings.manage',
@@ -39,33 +40,10 @@ const ROLE_DEFAULTS = Object.freeze({
     'ai.view': true,
     'ai.manage': true
   },
-  manager: {
-    'services.manage': true,
-    'users.view': true,
-    'finance.view': true,
-    'content.manage': true,
-    'palmlink.moderate': true,
-    'support.view': true,
-    'support.reply': true,
-    'ai.view': true
-  },
-  support: {
+  operator: {
     'users.view': true,
     'support.view': true,
     'support.reply': true,
-    'ai.view': true
-  },
-  moderator: {
-    'users.view': true,
-    'content.manage': true,
-    'palmlink.moderate': true,
-    'support.view': true,
-    'ai.view': true
-  },
-  analyst: {
-    'users.view': true,
-    'finance.view': true,
-    'audit.view': true,
     'ai.view': true
   }
 });
@@ -143,7 +121,7 @@ async function authenticate(req) {
     profile = (await edgeStore(botToken, 'get_admin_profile', { telegramId: userId })).profile;
   }
 
-  if (!profile?.is_active) {
+  if (!hasAdminPanelAccess(profile)) {
     return { error: { status: 403, body: { error: 'admin_access_denied', userId } } };
   }
 
@@ -226,7 +204,7 @@ export default async function handler(req, res) {
 
       const input = req.body?.admin || {};
       const telegramId = Number(input.telegramId);
-      const role = ROLES.has(String(input.role)) ? String(input.role) : 'support';
+      const role = ROLES.has(String(input.role)) ? String(input.role) : 'operator';
       if (!Number.isSafeInteger(telegramId)) return sendJson(res, 400, { error: 'invalid_telegram_id' });
       if (role === 'owner' && profile.role !== 'owner') {
         return sendJson(res, 403, { error: 'owner_role_requires_owner' });

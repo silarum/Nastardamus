@@ -6,6 +6,7 @@ import {
 } from '../lib/bot-replies.js';
 import { getRequestHeader } from '../lib/telegram.js';
 import { unauthenticatedPreviewAllowed } from '../lib/request-security.js';
+import { hasAdminPanelAccess } from '../lib/admin-access.js';
 
 const ADMIN_STORE_URL = process.env.ADMIN_STORE_URL
     || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-admin-store';
@@ -92,7 +93,7 @@ async function isAdminUser(botToken, userId) {
     if (parseAdminIds(process.env.ADMIN_TELEGRAM_IDS).includes(userId)) return true;
     try {
         const data = await edgeStore(botToken, 'get_admin_profile', { telegramId: userId });
-        return Boolean(data.profile?.is_active);
+        return hasAdminPanelAccess(data.profile);
     } catch {
         return false;
     }

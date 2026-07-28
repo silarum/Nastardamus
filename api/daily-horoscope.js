@@ -28,11 +28,17 @@ async function userStore(botToken, action, payload = {}) {
   return data;
 }
 
-export async function createHoroscope(sign, date) {
+function normalizeGender(value) {
+  return ['female', 'male', 'unspecified'].includes(value) ? value : 'unspecified';
+}
+
+export async function createHoroscope(sign, date, gender = 'unspecified') {
+  const normalizedGender = normalizeGender(gender);
   const messages = buildReadingMessages('daily_horoscope', {
     sign: SIGN_LABELS[sign] || sign,
     date,
-    name: 'Искатель'
+    name: normalizedGender === 'female' ? 'Искательница' : normalizedGender === 'male' ? 'Искатель' : 'Ищущий человек',
+    gender: normalizedGender
   });
   const result = await requestDeepSeekChat({
     messages,
@@ -70,15 +76,20 @@ export default async function handler(req, res) {
   try {
     await userStore(botToken, 'authorize_cron', { cronToken });
     const { recipients = [] } = await userStore(botToken, 'list_horoscope_recipients', { today: date, limit: 200 });
-    const signs = [...new Set(recipients.map((person) => person.zodiac_sign))];
-    const readings = new Map(await Promise.all(signs.map(async (sign) => [sign, await createHoroscope(sign, date)])));
+    const horoscopeGroups = [...new Set(recipients.map((person) =>
+      `${person.zodiac_sign}:${normalizeGender(person.gender)}`
+    ))];
+    const readings = new Map(await Promise.all(horoscopeGroups.map(async (group) => {
+      const [sign, gender] = group.split(':');
+      return [group, await createHoroscope(sign, date, gender)];
+    })));
     let sent = 0;
     for (const person of recipients) {
       try {
         const greeting = person.first_name ? `${person.first_name}, ваш знак на сегодня:` : 'Ваш знак на сегодня:';
         await sendTelegram(botToken, {
           chat_id: person.chat_id,
-          text: `✦ ${greeting}\n\n${readings.get(person.zodiac_sign)}`,
+          text: `✦ ${greeting}\n\n${readings.get(`${person.zodiac_sign}:${normalizeGender(person.gender)}`)}`,
           reply_markup: { inline_keyboard: [[{ text: 'Открыть гороскоп', web_app: { url: `${webAppUrl}?screen=horoscope` } }]] }
         });
         await userStore(botToken, 'mark_horoscope_sent', { telegramId: Number(person.telegram_id), sentOn: date });

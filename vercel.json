@@ -1,7 +1,10 @@
 {
   "rewrites": [
-    { "source": "/admin", "destination": "/admin/index.html" },
-    { "source": "/admin/", "destination": "/admin/index.html" }
+    { "source": "/admin", "destination": "/api/admin?control=page" },
+    { "source": "/admin/", "destination": "/api/admin?control=page" },
+    { "source": "/admin/index.html", "destination": "/api/admin?control=page" },
+    { "source": "/admin/admin.css", "destination": "/api/admin?control=css" },
+    { "source": "/admin/admin.js", "destination": "/api/admin?control=js" }
   ],
   "headers": [
     {

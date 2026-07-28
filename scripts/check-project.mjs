@@ -20,8 +20,14 @@ for (const file of javascriptFiles) {
     execFileSync(process.execPath, ['--check', file], { stdio: 'pipe' });
 }
 
-for (const page of ['index.html', 'admin/index.html']) {
+for (const page of ['index.html']) {
     if (!existsSync(join(root, page))) throw new Error(`Missing page: ${page}`);
+}
+
+for (const privateControlFile of ['admin/index.html', 'admin/admin.css', 'admin/admin.js']) {
+    if (existsSync(join(root, privateControlFile))) {
+        throw new Error(`Protected control file must not be publicly deployable: ${privateControlFile}`);
+    }
 }
 
 const html = readFileSync(join(root, 'index.html'), 'utf8');
