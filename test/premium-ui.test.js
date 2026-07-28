@@ -133,7 +133,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
   }
 });
 
-test('bundled startup restores the elder splash and renders a pointer-free wheel', async () => {
+test('bundled startup restores the elder splash and renders a fixed wheel pointer', async () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const bundle = readFileSync(new URL('../ui-kit/app.bundle.js', import.meta.url), 'utf8');
   const dom = new JSDOM(html, {
@@ -157,7 +157,7 @@ test('bundled startup restores the elder splash and renders a pointer-free wheel
     click(dom.window.document, 'Открыть пространство');
     assert.equal(mount.dataset.screen, 'home');
     assert.equal(dom.window.location.search, '');
-    assert.equal(mount.querySelectorAll('.n-wheel-pointer').length, 0);
+    assert.equal(mount.querySelectorAll('.n-wheel-pointer').length, 1);
 
     await new Promise((resolve) => dom.window.setTimeout(resolve, 300));
     assert.equal(dom.window.document.getElementById('boot-screen'), null);

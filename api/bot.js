@@ -262,7 +262,10 @@ export default async function handler(req, res) {
         const reply = buildBotReply(
             req.body,
             process.env.WEB_APP_URL || 'https://nastardamus.vercel.app',
-            { adminIds: admin ? [userId] : [] }
+            {
+                adminIds: admin ? [userId] : [],
+                botUsername: process.env.BOT_USERNAME || 'BelonTip_bot'
+            }
         );
         if (reply) {
             await callTelegram(botToken, reply.method, reply.payload);

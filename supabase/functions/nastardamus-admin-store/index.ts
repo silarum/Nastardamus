@@ -227,12 +227,49 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "write_settings") {
+      const currentResponse = await rest("nastardamus_settings?key=eq.global&select=settings&limit=1");
+      const currentRows = await currentResponse.json();
+      const current = currentRows?.[0]?.settings && typeof currentRows[0].settings === "object"
+        ? currentRows[0].settings
+        : {};
+      const incoming = body.settings && typeof body.settings === "object" ? body.settings : {};
       await rest("nastardamus_settings?on_conflict=key", {
         method: "POST",
         headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
-        body: JSON.stringify({ key: "global", settings: body.settings || {}, updated_at: new Date().toISOString() })
+        body: JSON.stringify({ key: "global", settings: { ...current, ...incoming }, updated_at: new Date().toISOString() })
       });
       return json(200, { ok: true });
+    }
+
+    if (action === "list_sbp_topups") {
+      const response = await rest(
+        "nastardamus_sbp_topups?select=id,telegram_id,silarum_units,ruble_kopecks,payment_reference,status,reviewed_by,review_note,created_at,updated_at,paid_at,expires_at&order=created_at.desc&limit=100"
+      );
+      return json(200, { ok: true, orders: await response.json() });
+    }
+
+    if (action === "review_sbp_topup") {
+      const orderId = String(body.orderId || "");
+      const decision = String(body.decision || "");
+      const adminId = Number(body.adminId);
+      if (!isUuid(orderId)) return json(400, { error: "invalid_order_id" });
+      if (!["paid", "rejected"].includes(decision)) {
+        return json(400, { error: "invalid_topup_decision" });
+      }
+      if (!Number.isSafeInteger(adminId) || adminId <= 0) {
+        return json(400, { error: "invalid_admin_id" });
+      }
+      const response = await rest("rpc/nastardamus_review_sbp_topup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_order_id: orderId,
+          p_decision: decision,
+          p_admin_id: adminId,
+          p_note: cleanText(body.note, 500) || null
+        })
+      });
+      return json(200, { ok: true, order: await response.json() });
     }
 
     if (action === "get_admin_role") {

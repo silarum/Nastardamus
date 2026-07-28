@@ -29,6 +29,9 @@ test('accepts a one-card spread', () => {
   assert.equal(messages.length, 2);
   assert.match(messages[1].content, /Один знак/);
   assert.match(messages[1].content, /Главный знак — Шут/);
+  assert.match(messages[0].content, /Закон живого узора/);
+  assert.match(messages[0].content, /цифровой Оракул/);
+  assert.match(messages[0].content, /Не используй Markdown/);
 });
 
 test('accepts a ten-card Celtic Cross', () => {

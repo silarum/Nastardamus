@@ -40,7 +40,13 @@ body { overflow-x:hidden; }
   grid-row: 1 / 4;
   width: min(44vw, 184px);
 }
-.premium-wheel-wrap.is-spinning .n-fortune-wheel__art { animation:premium-spin 3.4s cubic-bezier(.15,.72,.12,1) both; }
+.premium-wheel-wrap .n-fortune-wheel__art { transform:rotate(var(--wheel-rotation,0deg)); }
+.premium-wheel-wrap.is-spinning .n-fortune-wheel__art { animation:premium-spin .9s linear infinite; }
+.premium-wheel-wrap.is-settling .n-fortune-wheel__art {
+  animation:none;
+  transform:rotate(var(--wheel-rotation,0deg));
+  transition:transform 1.25s cubic-bezier(.12,.72,.16,1);
+}
 .premium-wheel-action { position:absolute;inset:0;border:0;border-radius:50%;background:transparent;cursor:pointer;z-index:4; }
 .premium-wheel-result { min-height:24px;text-align:center;color:var(--n-gold-light);font:500 12px/1.2 var(--n-title-font);padding-top:4px; }
 .premium-shortcuts { margin-top:2px; }
@@ -72,7 +78,7 @@ body { overflow-x:hidden; }
 .premium-loader i:nth-child(2){animation-delay:.15s}.premium-loader i:nth-child(3){animation-delay:.3s}
 @keyframes premium-in { from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none} }
 @keyframes premium-dot { to{opacity:.2;transform:translateY(-3px)} }
-@keyframes premium-spin { from{transform:rotate(0)}to{transform:rotate(1465deg)} }
+@keyframes premium-spin { from{transform:rotate(0)}to{transform:rotate(360deg)} }
 @media (max-width:360px){.premium-screen{padding-left:9px;padding-right:9px}.n-forecast-grid,.n-quick-access-grid{gap:5px}.n-forecast-card{min-height:74px}.n-shortcut-card{min-height:85px}}
 
 button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
@@ -184,9 +190,55 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .premium-result-cards figure { width: 100px; min-width: 100px; margin: 0; scroll-snap-align: center; }
 .premium-result-cards img { display: block; width: 100%; aspect-ratio: 2 / 3.35; border: 1px solid var(--n-border-strong); border-radius: 9px; object-fit: cover; box-shadow: 0 12px 30px rgba(0,0,0,.4); }
 .premium-result-cards figcaption { margin-top: 5px; overflow: hidden; color: var(--n-gold-light); font: 500 10px/1.2 var(--n-title-font); text-align: center; text-overflow: ellipsis; white-space: nowrap; }
-.premium-result-reading { padding: 15px; color: #ddd6e2; font-size: 12px; line-height: 1.65; }
-.premium-reading-copy { display: grid; gap: 10px; }
-.premium-reading-copy p { margin: 0; white-space: pre-wrap; }
+.premium-result-reading {
+  position:relative;
+  max-height:min(68dvh,680px);
+  padding:30px 22px 28px;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  touch-action:pan-y;
+  border:1px solid #b98731;
+  border-radius:15px 15px 11px 11px;
+  background:
+    radial-gradient(circle at 18% 9%,rgba(255,251,211,.72),transparent 25%),
+    radial-gradient(circle at 83% 72%,rgba(138,82,20,.12),transparent 31%),
+    repeating-linear-gradient(7deg,rgba(113,67,16,.028) 0 1px,transparent 1px 5px),
+    linear-gradient(145deg,#f4e3ac 0%,#dec181 48%,#f1daa0 100%);
+  color:#765019;
+  font-family:"Snell Roundhand","Segoe Script","Monotype Corsiva","URW Chancery L",Georgia,"Times New Roman",serif;
+  font-size:clamp(15px,4.1vw,18px);
+  font-style:italic;
+  line-height:1.72;
+  letter-spacing:.012em;
+  text-shadow:0 1px rgba(255,248,202,.72),0 0 1px rgba(119,72,13,.24);
+  box-shadow:
+    inset 0 0 0 3px rgba(108,61,12,.12),
+    inset 0 16px 24px rgba(255,249,207,.34),
+    inset 0 -14px 24px rgba(103,59,14,.13),
+    0 16px 40px rgba(0,0,0,.42),
+    0 0 22px rgba(222,168,58,.18);
+  scrollbar-width:thin;
+  scrollbar-color:#a56c20 rgba(107,61,12,.14);
+}
+.premium-result-reading::before {
+  content:"✦  СВИТОК ЭЗОТЕРИУМА  ✦";
+  position:relative;
+  z-index:1;
+  display:block;
+  margin:-13px 0 16px;
+  color:#9b6518;
+  font:700 10px/1.2 Georgia,serif;
+  font-style:normal;
+  letter-spacing:.18em;
+  text-align:center;
+}
+.premium-result-reading::-webkit-scrollbar { width:7px; }
+.premium-result-reading::-webkit-scrollbar-track { background:rgba(107,61,12,.12); border-radius:10px; }
+.premium-result-reading::-webkit-scrollbar-thumb { background:linear-gradient(#d0a044,#8b5717); border-radius:10px; }
+.premium-result-reading .premium-reading-copy { position:relative; z-index:1; }
+.premium-reading-copy { display:grid; gap:14px; }
+.premium-reading-copy p { margin:0; white-space:pre-wrap; }
 
 .premium-upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .premium-upload-wrap { min-width: 0; }
@@ -220,6 +272,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .premium-wallet-metrics small { color: var(--n-muted); font-size: 10px; }
 .premium-wallet-metrics strong { color: var(--n-gold-light); font: 500 18px/1.2 var(--n-title-font); }
 .premium-profile-actions { display: grid; gap: 8px; }
+.premium-topup-total { display:flex; align-items:flex-end; justify-content:space-between; gap:14px; padding:12px; border:1px solid var(--n-border); border-radius:11px; background:rgba(57,25,76,.42); }
+.premium-topup-total small { color:var(--n-muted); }
+.premium-topup-total strong { color:var(--n-gold-light); font:600 24px/1 var(--n-title-font); }
+.premium-topup-order { padding:16px; display:grid; gap:12px; text-align:center; }
+.premium-topup-order h2 { margin:0; color:var(--n-gold-light); font:600 30px/1 var(--n-title-font); }
+.premium-sbp-qr { width:min(68vw,230px); aspect-ratio:1; margin:0 auto; padding:8px; border-radius:16px; background:#fff; object-fit:contain; box-shadow:0 0 28px rgba(230,183,78,.2); }
+.premium-payment-details { margin:0; display:grid; gap:7px; text-align:left; }
+.premium-payment-details div { display:grid; grid-template-columns:105px minmax(0,1fr); gap:10px; padding:8px 0; border-bottom:1px solid rgba(222,178,236,.12); }
+.premium-payment-details dt { color:var(--n-muted); font-size:10px; }
+.premium-payment-details dd { margin:0; color:var(--n-text); font-size:12px; overflow-wrap:anywhere; }
 .premium-prize-reveal,
 .premium-horoscope-hero {
   display: grid;
@@ -233,7 +295,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .premium-horoscope-hero h2 { margin: 0; color: var(--n-gold-light); font: 600 23px/1.15 var(--n-title-font); }
 .premium-prize-reveal > p:last-of-type,
 .premium-horoscope-hero > p:last-of-type { margin: 0; color: var(--n-muted); font-size: 11px; line-height: 1.5; }
-.premium-gift-box { font-size: 56px; filter: drop-shadow(0 0 18px rgba(224, 168, 65, .5)); animation: premium-gift-open .7s cubic-bezier(.2,.8,.2,1) both; }
+.premium-prize-art { position:relative; width:156px; height:156px; display:grid; place-items:center; animation:premium-gift-open .7s cubic-bezier(.2,.8,.2,1) both; }
+.premium-prize-art::before { content:""; position:absolute; inset:16%; border-radius:50%; background:radial-gradient(circle,rgba(244,200,105,.58),rgba(142,55,187,.22) 50%,transparent 72%); filter:blur(8px); }
+.premium-prize-art img { position:relative; width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 12px 24px rgba(0,0,0,.42)) drop-shadow(0 0 16px rgba(224,168,65,.34)); }
+.premium-prize-art span { position:absolute; right:4px; bottom:10px; min-width:38px; height:38px; padding:0 8px; border:1px solid rgba(248,216,139,.68); border-radius:999px; display:grid; place-items:center; color:#2a1538; background:linear-gradient(145deg,#f8dc93,#c58d36); box-shadow:0 6px 18px rgba(0,0,0,.34); font:800 15px/1 var(--n-body-font); }
 .premium-invite-panel { display: grid; gap: 8px; }
 .premium-wallet-summary { display: grid; gap: 5px; padding: 14px; }
 .premium-wallet-summary small { color: var(--n-muted); }

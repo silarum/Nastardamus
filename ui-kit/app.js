@@ -89,10 +89,16 @@ const state = {
     serviceCatalog: {},
     wheelRewards: [],
     wheelDailySpins: 1,
-    dailyHoroscopeEnabled: true
+    dailyHoroscopeEnabled: true,
+    paymentsEnabled: true,
+    sbpTopupsEnabled: false,
+    botUsername: 'BelonTip_bot'
   },
   wheelStatus: null,
   wheelPrize: null,
+  wheelRotation: 0,
+  topupAmount: '',
+  topupReturnScreen: 'services',
   horoscope: readJSON(HOROSCOPE_KEY, { sign: 'aries', enabled: false, reading: '', date: '' }),
   support: readJSON(SUPPORT_KEY, []),
   supportDraft: ''
@@ -153,6 +159,34 @@ function serviceBadge(id, fallback = 'AI') {
     : `${Number(price).toLocaleString('ru-RU')} S`;
 }
 
+function serviceEntitlement(id) {
+  return (state.wallet?.entitlements || []).find((item) => item.service_id === id && Number(item.quantity) > 0);
+}
+
+function confirmServicePayment(serviceId) {
+  if (!tg?.initData) return true;
+  const service = serviceConfig(serviceId);
+  const gift = serviceEntitlement(serviceId);
+  if (gift) {
+    return window.confirm(`Использовать подарок «${service.title || serviceId}»? Ответ откроется после подтверждения.`);
+  }
+  const price = Number(service.price);
+  if (!Number.isFinite(price) || price <= 0) {
+    notify('Администратор ещё не настроил цену этой услуги');
+    return false;
+  }
+  const available = Number(state.wallet?.wallet?.available || 0);
+  if (state.walletStatus === 'ready' && available < price) {
+    const minimum = Number(state.wallet?.config?.sbpMinimumSilarum || 10);
+    state.topupAmount = String(Math.max(minimum, Math.ceil((price - available) * 100) / 100));
+    state.topupReturnScreen = state.screen;
+    navigate('topup');
+    notify('Для ответа нужно пополнить SILARUM');
+    return false;
+  }
+  return window.confirm(`Оплатить ${formatMoney(price)} SILARUM за услугу «${service.title || serviceId}»? Ответ Эзотериума откроется только после успешного списания.`);
+}
+
 function navigate(screen, { replace = false } = {}) {
   state.screen = screen;
   const url = new URL(location.href);
@@ -160,13 +194,13 @@ function navigate(screen, { replace = false } = {}) {
   history[replace ? 'replaceState' : 'pushState']({}, '', url);
   render();
   window.scrollTo?.({ top: 0, behavior: 'auto' });
-  if (screen === 'profile') loadWallet({ force: true });
+  if (screen === 'profile' || screen === 'topup') loadWallet({ force: true });
 }
 
 function activeTab(screen = state.screen) {
   if (screen === 'home' || screen === 'wheel' || screen === 'horoscope') return 'home';
   if (screen === 'history') return 'history';
-  if (screen === 'profile' || screen === 'withdrawal') return 'profile';
+  if (screen === 'profile' || screen === 'withdrawal' || screen === 'topup') return 'profile';
   if (screen === 'services' || screen === 'support') return 'services';
   return 'magic';
 }
@@ -321,6 +355,7 @@ function wheelScreen() {
   const wrap = h('div', { className: 'premium-wheel-wrap premium-wheel-screen' }, FortuneWheelCard({ caption: 'Коробка раскроется после остановки' }),
     h('div', { className: 'premium-wheel-result', text: state.wheelPrize ? 'Подарок уже найден' : 'Коснитесь кнопки и доверьтесь знаку' })
   );
+  wrap.style.setProperty('--wheel-rotation', `${state.wheelRotation}deg`);
   const spin = MysticButton({ text: state.busy ? 'Колесо вращается…' : 'Открыть коробку', icon: 'wheel', variant: 'gold', disabled: state.busy, onClick: () => spinWheel(wrap) });
   return shell([
     screenHeader('Колесо Фортуны', 'Подарок дня от Эзотериума', 'home'), wrap, spin,
@@ -337,10 +372,18 @@ async function spinWheel(wrap) {
   try {
     const [data] = await Promise.all([
       api('/api/wheel', { method: 'POST', body: { idempotencyKey: uniqueId('wheel') } }),
-      new Promise((resolve) => setTimeout(resolve, 3400))
+      new Promise((resolve) => setTimeout(resolve, 1800))
     ]);
     state.wheelPrize = data.reward;
     wrap.classList.remove('is-spinning');
+    const rewardKey = String(data.reward?.id || data.reward?.serviceId || 'gift');
+    const boxIndex = [...rewardKey].reduce((sum, symbol) => sum + symbol.charCodeAt(0), 0) % 10;
+    state.wheelRotation = (5 * 360) + (boxIndex * 36);
+    wrap.style.setProperty('--wheel-rotation', `${state.wheelRotation}deg`);
+    wrap.classList.add('is-settling');
+    wrap.querySelector('.premium-wheel-result').textContent = 'Стрелка выбрала вашу коробку…';
+    await new Promise((resolve) => setTimeout(resolve, 1250));
+    state.wheelRotation %= 360;
     state.busy = false;
     pulse('medium');
     render();
@@ -353,11 +396,23 @@ async function spinWheel(wrap) {
 }
 
 function prizeReveal(reward) {
+  const artwork = ({
+    tarot: 'tarot-deck',
+    tarot_relationship: 'tarot-deck',
+    natal: 'astrology-forecast',
+    photo_energy: 'photo-energy-imprint',
+    photo_damage: 'result-magic-seal',
+    photo_compatibility: 'two-photo-compatibility',
+    palmlink: 'connection-heart'
+  })[reward.serviceId] || 'cosmic-card';
   return MysticCard({ className: 'premium-prize-reveal', children: [
-    h('div', { className: 'premium-gift-box', attrs: { 'aria-hidden': 'true' }, text: '🎁' }),
+    h('div', { className: 'premium-prize-art', attrs: { 'aria-hidden': 'true' } },
+      h('img', { attrs: { src: `/ui-kit/assets/art-v2/${artwork}.png`, alt: '', draggable: 'false' } }),
+      h('span', { text: reward.quantity > 1 ? `×${reward.quantity}` : '✦' })
+    ),
     h('p', { className: 'premium-kicker', text: 'КОРОБКА РАСКРЫТА' }),
     h('h2', { text: reward.title }),
-    h('p', { text: reward.quantity > 1 ? `Внутри ${reward.quantity} услуги` : 'Услуга уже добавлена в ваш профиль' }),
+    h('p', { text: reward.quantity > 1 ? `Вы выиграли ${reward.quantity} услуги` : 'Вы выиграли эту услугу — она уже добавлена в профиль' }),
     MysticButton({ text: 'Перейти к подарку', icon: 'sparkle', variant: 'primary', onClick: () => navigate(rewardScreen(reward.serviceId)) })
   ] });
 }
@@ -430,10 +485,12 @@ function selectTarotCard(name) {
 async function submitTarot() {
   if (state.busy) return;
   const spread = SPREADS[state.spread];
+  const serviceId = state.spread === 'relationship' ? 'tarot_relationship' : 'tarot';
+  if (!confirmServicePayment(serviceId)) return;
   state.busy = true;
   render();
   try {
-    const answer = await requestReading('tarot', { question: state.tarotQuestion.trim(), cards: state.tarotCards, spread: state.spread, positions: spread.positions });
+    const answer = await requestReading('tarot', { question: state.tarotQuestion.trim(), cards: state.tarotCards, spread: state.spread, positions: spread.positions }, serviceId);
     state.result = { id: uniqueId('tarot'), type: `Расклад «${spread.label}»`, title: state.tarotQuestion.trim(), body: answer, cards: [...state.tarotCards], createdAt: new Date().toISOString(), favorite: false };
     navigate('tarot-result');
   } catch (error) {
@@ -464,9 +521,10 @@ function natalScreen() {
 async function submitNatal() {
   if (!state.natalDate) return notify('Укажите дату рождения');
   if (state.busy) return;
+  if (!confirmServicePayment('natal')) return;
   state.busy = true; render();
   try {
-    const answer = await requestReading('natal', { date: state.natalDate, time: state.natalTime || '12:00' });
+    const answer = await requestReading('natal', { date: state.natalDate, time: state.natalTime || '12:00' }, 'natal');
     state.result = { id: uniqueId('natal'), type: 'Натальная подсказка', title: state.natalDate, body: answer, cards: [], createdAt: new Date().toISOString(), favorite: false };
     navigate('natal-result');
   } catch (error) { notify(apiErrorMessage(error)); }
@@ -582,9 +640,10 @@ async function submitPhoto(pair, damage = false) {
     return notify('Подтвердите совершеннолетие обоих участников');
   }
   if (state.busy) return;
+  const feature = pair ? 'photo_compatibility' : damage ? 'photo_damage' : 'photo_energy';
+  if (!confirmServicePayment(feature)) return;
   state.busy = true; render();
   try {
-    const feature = pair ? 'photo_compatibility' : damage ? 'photo_damage' : 'photo_energy';
     const payload = pair
       ? {
           concern: state.photoConcern || 'Что важно понять о динамике этих отношений?',
@@ -601,7 +660,7 @@ async function submitPhoto(pair, damage = false) {
           image: state.photoOne,
           consentOwn: true
         };
-    const answer = await requestReading(feature, payload);
+    const answer = await requestReading(feature, payload, feature);
     state.result = { id: uniqueId(feature), type: pair ? 'Совместимость по фото' : damage ? 'Разбор Эзотериума' : 'Энергетический след', title: state.photoConcern || 'Символическое фото-чтение', body: answer, cards: [], createdAt: new Date().toISOString(), favorite: false };
     navigate('photo-result');
   } catch (error) { notify(apiErrorMessage(error)); }
@@ -676,9 +735,9 @@ async function shareInvite(flow = 'palm') {
     creative: 'Давай раскроем энергию нашего творческого союза.'
   }[goal];
   const flowName = flow === 'tarot' ? 'расклад на двоих' : flow === 'photo' ? 'чтение совместимости' : 'ритуал «Путь двух судеб»';
-  const inviteUrl = new URL(location.origin);
-  inviteUrl.searchParams.set('screen', flow === 'tarot' ? 'tarot' : flow === 'photo' ? 'photo-compat' : 'palm');
-  inviteUrl.searchParams.set('invite', goal);
+  const username = String(state.publicConfig.botUsername || 'BelonTip_bot').replace(/^@/, '');
+  const inviteUrl = new URL(`https://t.me/${username}`);
+  inviteUrl.searchParams.set('start', `invite_${flow}_${goal}`);
   const text = `${copy}\n\nПрисоединяйся к ${flowName} в Nastardamus — Эзотериум проведёт нас через знаки.`;
   try {
     const image = await fetch(`/images/invites/${goal}.png`).then((response) => response.ok ? response.blob() : null).catch(() => null);
@@ -699,6 +758,7 @@ async function submitPalmCompatibility() {
     return notify('Подтвердите совершеннолетие обоих участников');
   }
   if (state.busy) return;
+  if (!confirmServicePayment('palmlink')) return;
   state.busy = true; render();
   try {
     const answer = await requestReading('photo_compatibility', {
@@ -709,7 +769,7 @@ async function submitPalmCompatibility() {
       consentPartner: true,
       adultConfirmed: state.palmAdultConfirmed,
       source: 'palmlink'
-    });
+    }, 'palmlink');
     state.result = { id: uniqueId('palm'), type: 'Путь двух судеб', title: `${firstName()} и ${state.partnerName || 'Партнёр'}`, body: answer, cards: [], createdAt: new Date().toISOString(), favorite: false };
     navigate('compatibility-result');
   } catch (error) { notify(apiErrorMessage(error)); }
@@ -900,6 +960,13 @@ function profileScreen() {
       MysticCard({ children: [h('small', { text: 'Вращения' }), h('strong', { text: String(wallet.freeSpins || 0) })] })
     ),
     h('div', { className: 'premium-profile-actions' },
+      MysticButton({
+        text: state.wallet?.config?.sbpTopupsEnabled ? 'Купить SILARUM по СБП' : 'Покупка SILARUM настраивается',
+        icon: 'coin',
+        variant: 'primary',
+        disabled: !state.wallet?.config?.sbpTopupsEnabled,
+        onClick: () => navigate('topup')
+      }),
       MysticButton({ text: state.horoscope.enabled ? 'Гороскоп приходит ежедневно' : 'Настроить ежедневный гороскоп', icon: 'orbit', variant: 'gold', onClick: () => navigate('horoscope') }),
       MysticButton({ text: 'Обновить счёт', icon: 'coin', variant: 'outline', onClick: () => loadWallet({ force: true }) }),
       MysticButton({ text: state.wallet?.config?.withdrawalsEnabled ? 'Обменять SILARUM' : 'Обмен закрыт', icon: 'payment', variant: 'gold', disabled: !state.wallet?.config?.withdrawalsEnabled, onClick: () => navigate('withdrawal') }),
@@ -919,6 +986,140 @@ function profileScreen() {
     SectionTitle({ text: 'Последние операции' }),
     ledger.length ? h('div', { className: 'premium-ledger' }, ledger.slice(0, 20).map(ledgerRow)) : MysticCard({ className: 'premium-empty-state premium-empty-state--small', children: [h('p', { text: 'Операций пока нет.' })] })
   ], { active: 'profile' });
+}
+
+function topupStatusLabel(status) {
+  return ({
+    pending: 'Ожидает оплаты',
+    awaiting_confirmation: 'Проверяется администратором',
+    paid: 'Зачислено',
+    rejected: 'Отклонено',
+    expired: 'Истекло',
+    cancelled: 'Отменено'
+  })[status] || 'Создано';
+}
+
+function topupScreen() {
+  const config = state.wallet?.config || {};
+  const topups = state.wallet?.topups || [];
+  const activeOrder = topups.find((order) => ['pending', 'awaiting_confirmation'].includes(order.status));
+  const minimum = Number(config.sbpMinimumSilarum || 10);
+  const maximum = Number(config.sbpMaximumSilarum || 1000);
+  const rate = Number(config.sbpRoublesPerSilarum || 0);
+  const amount = Number(state.topupAmount || minimum);
+  const rubles = Number.isFinite(amount) && amount > 0 ? amount * rate : 0;
+
+  if (config.sbpTopupsEnabled !== true) {
+    return shell([
+      screenHeader('Покупка SILARUM', 'Оплата по СБП', state.topupReturnScreen || 'profile'),
+      MysticCard({ className: 'premium-empty-state', children: [
+        Icon('payment', { size: 44 }),
+        h('h2', { text: 'СБП пока не настроена' }),
+        h('p', { text: 'Администратору нужно включить покупки и указать курс, получателя, банк и реквизиты. До этого заявки не создаются.' })
+      ] })
+    ], { active: 'profile' });
+  }
+
+  return shell([
+    screenHeader('Купить SILARUM', 'Безопасная заявка на оплату по СБП', state.topupReturnScreen || 'profile'),
+    MysticCard({ className: 'premium-wallet-summary', children: [
+      h('small', { text: 'Ваш доступный баланс' }),
+      h('strong', { text: `${formatMoney(state.wallet?.wallet?.available)} SILARUM` }),
+      h('p', { text: `От ${formatMoney(minimum)} до ${formatMoney(maximum)} SILARUM · 1 SILARUM = ${formatMoney(rate)} ₽` })
+    ] }),
+    activeOrder ? topupOrderCard(activeOrder, config) : MysticCard({ className: 'premium-form-card', children: [
+      field('Количество SILARUM', textInput({
+        type: 'number',
+        value: state.topupAmount || String(minimum),
+        attrs: { min: minimum, max: maximum, step: '0.01', inputmode: 'decimal' },
+        onInput: (value) => { state.topupAmount = value; }
+      })),
+      h('div', { className: 'premium-topup-total' },
+        h('small', { text: 'К оплате по СБП' }),
+        h('strong', { text: `${formatMoney(rubles)} ₽` })
+      ),
+      h('p', { className: 'premium-info-note', text: 'Сначала создайте заявку. SILARUM зачислятся только после фактического поступления перевода и подтверждения администратором.' })
+    ] }),
+    activeOrder
+      ? MysticButton({ text: 'Обновить статус', icon: 'coin', variant: 'outline', onClick: () => loadWallet({ force: true }) })
+      : MysticButton({ text: state.busy ? 'Создаём заявку…' : 'Создать заявку СБП', icon: 'payment', variant: 'primary', disabled: state.busy, onClick: submitTopup }),
+    topups.length ? SectionTitle({ text: 'Последние пополнения' }) : null,
+    topups.length ? h('div', { className: 'premium-ledger' }, topups.slice(0, 5).map((order) =>
+      MysticCard({ className: 'premium-ledger-row', children: [
+        Icon(order.status === 'paid' ? 'coin' : 'payment', { size: 24 }),
+        h('span', {}, h('strong', { text: topupStatusLabel(order.status) }), h('small', { text: `${order.reference} · ${formatDate(order.createdAt)}` })),
+        h('b', { className: order.status === 'paid' ? 'is-positive' : '', text: `${formatMoney(order.silarum)} S` })
+      ] })
+    )) : null
+  ], { active: 'profile' });
+}
+
+function topupOrderCard(order, config) {
+  const paymentLink = String(config.sbpPaymentUrl || '');
+  return MysticCard({ className: 'premium-topup-order', children: [
+    config.sbpQrImageUrl ? h('img', { className: 'premium-sbp-qr', attrs: { src: config.sbpQrImageUrl, alt: 'QR-код для оплаты по СБП' } }) : null,
+    h('p', { className: 'premium-kicker', text: topupStatusLabel(order.status).toUpperCase() }),
+    h('h2', { text: `${formatMoney(order.rubles)} ₽` }),
+    h('dl', { className: 'premium-payment-details' },
+      h('div', {}, h('dt', { text: 'Получатель' }), h('dd', { text: config.sbpRecipientName })),
+      config.sbpBankName ? h('div', {}, h('dt', { text: 'Банк' }), h('dd', { text: config.sbpBankName })) : null,
+      config.sbpPhone ? h('div', {}, h('dt', { text: 'Телефон' }), h('dd', { text: config.sbpPhone })) : null,
+      h('div', {}, h('dt', { text: 'Код заявки' }), h('dd', { text: order.reference })),
+      h('div', {}, h('dt', { text: 'Будет зачислено' }), h('dd', { text: `${formatMoney(order.silarum)} SILARUM` }))
+    ),
+    h('p', { className: 'premium-info-note', text: config.sbpInstructions || 'Переведите точную сумму и укажите код заявки.' }),
+    paymentLink && order.status === 'pending'
+      ? MysticButton({
+          text: 'Открыть оплату СБП',
+          icon: 'payment',
+          variant: 'gold',
+          onClick: () => {
+            if (tg?.openLink) tg.openLink(paymentLink);
+            else window.open(paymentLink, '_blank', 'noopener');
+          }
+        })
+      : null,
+    order.status === 'pending'
+      ? MysticButton({ text: 'Я оплатил — отправить на проверку', icon: 'coin', variant: 'primary', onClick: () => markTopupSent(order.id) })
+      : null
+  ] });
+}
+
+async function submitTopup() {
+  const amount = Number(state.topupAmount || state.wallet?.config?.sbpMinimumSilarum);
+  state.busy = true; render();
+  try {
+    const data = await api('/api/wallet', {
+      method: 'POST',
+      body: { action: 'create_sbp_topup', amount, idempotencyKey: uniqueId('topup') }
+    });
+    state.wallet = data;
+    state.walletStatus = 'ready';
+    notify('Заявка создана. Переведите точную сумму по реквизитам.');
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
+async function markTopupSent(orderId) {
+  state.busy = true; render();
+  try {
+    const data = await api('/api/wallet', {
+      method: 'POST',
+      body: { action: 'mark_sbp_topup_sent', orderId }
+    });
+    state.wallet = data;
+    state.walletStatus = 'ready';
+    notify('Платёж отправлен администратору на проверку');
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  } finally {
+    state.busy = false;
+    render();
+  }
 }
 
 function ledgerRow(entry) {
@@ -1002,10 +1203,25 @@ async function submitSupport() {
   } finally { state.busy = false; render(); }
 }
 
-async function requestReading(feature, payload) {
-  const data = await api('/api/proxy', { method: 'POST', body: { feature, payload } });
-  if (typeof data.answer !== 'string' || !data.answer.trim()) throw new Error('empty_response');
-  return data.answer.trim();
+async function requestReading(feature, payload, serviceId = '') {
+  try {
+    const data = await api('/api/proxy', {
+      method: 'POST',
+      body: { feature, payload, idempotencyKey: uniqueId(`reading-${serviceId || feature}`) }
+    });
+    if (typeof data.answer !== 'string' || !data.answer.trim()) throw new Error('empty_response');
+    loadWallet({ force: true });
+    return data.answer.trim();
+  } catch (error) {
+    if (error?.status === 402) {
+      const minimum = Number(state.wallet?.config?.sbpMinimumSilarum || 10);
+      const shortage = Number(error.data?.payment?.shortage || minimum);
+      state.topupAmount = String(Math.max(minimum, Math.ceil(shortage * 100) / 100));
+      state.topupReturnScreen = state.screen;
+      navigate('topup');
+    }
+    throw error;
+  }
 }
 
 async function api(path, { method = 'GET', body } = {}) {
@@ -1018,6 +1234,7 @@ async function api(path, { method = 'GET', body } = {}) {
   if (!response.ok) {
     const error = new Error(data.error || `http_${response.status}`);
     error.status = response.status;
+    error.data = data;
     throw error;
   }
   return data;
@@ -1046,7 +1263,20 @@ function apiErrorMessage(error) {
     wheel_rewards_exhausted: 'Подарки на сегодня разобраны. Новые коробки появятся завтра.',
     wheel_unavailable: 'Колесо временно не отвечает. Попробуйте позже.',
     withdrawals_disabled: 'Обмен сейчас закрыт.', below_minimum: 'Сумма ниже минимума.',
-    insufficient_funds: 'Недостаточно доступных SILARUM.', invalid_destination: 'Проверьте адрес кошелька.'
+    insufficient_funds: 'Недостаточно SILARUM. Открыта безопасная форма пополнения.',
+    invalid_destination: 'Проверьте адрес кошелька.',
+    payments_disabled: 'Оплата услуг временно отключена администратором.',
+    service_disabled: 'Эта услуга временно отключена.',
+    service_price_not_configured: 'Администратор ещё не настроил цену услуги.',
+    payment_backend_failed: 'Платёжный контур временно недоступен. Списание не выполнено.',
+    payment_retry_required: 'Повторите оплату новым запросом.',
+    sbp_topups_disabled: 'Пополнение по СБП сейчас закрыто.',
+    sbp_not_configured: 'Реквизиты СБП ещё не настроены.',
+    below_topup_minimum: 'Сумма ниже минимального порога СБП.',
+    above_topup_maximum: 'Сумма выше максимального порога СБП.',
+    topup_not_found: 'Заявка на пополнение не найдена.',
+    topup_not_pending: 'Эта заявка уже обработана.',
+    topup_expired: 'Срок действия заявки истёк. Создайте новую.'
   };
   return messages[error?.message] || 'Не удалось выполнить действие. Проверьте соединение и повторите.';
 }
@@ -1055,12 +1285,12 @@ async function loadWallet({ force = false } = {}) {
   if (!tg?.initData) {
     state.walletStatus = 'error';
     state.walletMessage = 'Откройте приложение внутри Telegram, чтобы увидеть лицевой счёт.';
-    if (state.screen === 'home' || state.screen === 'profile') render();
+    if (state.screen === 'home' || state.screen === 'profile' || state.screen === 'topup') render();
     return;
   }
   if (state.walletStatus === 'loading' && !force && state.wallet) return;
   state.walletStatus = 'loading';
-  if (state.screen === 'home' || state.screen === 'profile') render();
+  if (state.screen === 'home' || state.screen === 'profile' || state.screen === 'topup') render();
   try {
     state.wallet = await api('/api/wallet');
     state.walletStatus = 'ready';
@@ -1069,7 +1299,7 @@ async function loadWallet({ force = false } = {}) {
     state.walletStatus = 'error';
     state.walletMessage = apiErrorMessage(error);
   }
-  if (state.screen === 'home' || state.screen === 'profile') render();
+  if (state.screen === 'home' || state.screen === 'profile' || state.screen === 'topup') render();
 }
 
 async function loadPublicConfig() {
@@ -1080,7 +1310,7 @@ async function loadPublicConfig() {
   } catch {
     // Secure defaults remain active when configuration is unavailable.
   }
-  if (['home', 'services', 'wheel', 'palm', 'ritual'].includes(state.screen)) render();
+  if (['home', 'services', 'wheel', 'palm', 'ritual', 'profile', 'topup'].includes(state.screen)) render();
 }
 
 async function loadPreferences() {
@@ -1125,7 +1355,7 @@ function render() {
     horoscope: horoscopeScreen,
     'photo-energy': () => photoScreen('energy'), 'photo-damage': () => photoScreen('damage'), 'photo-compat': () => photoScreen('compatibility'), 'photo-result': photoResultScreen,
     palm: palmScreen, ritual: ritualScreen, 'compatibility-result': compatibilityResultScreen,
-    history: historyScreen, profile: profileScreen, withdrawal: withdrawalScreen, support: supportScreen
+    history: historyScreen, profile: profileScreen, topup: topupScreen, withdrawal: withdrawalScreen, support: supportScreen
   };
   if (!routes[state.screen]) state.screen = 'home';
   mount.dataset.screen = state.screen;

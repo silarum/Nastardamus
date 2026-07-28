@@ -20,6 +20,7 @@ const saveState = document.getElementById('save-state');
 
 const state = {
   overview: null,
+  payments: null,
   team: null,
   ai: null
 };
@@ -160,6 +161,91 @@ function collectWheelRewards() {
     weight: Number(row.querySelector('[data-reward-weight]').value)
   }));
 }
+
+function formatPaymentMoney(value, fraction = 2) {
+  return Number(value || 0).toLocaleString('ru-RU', {
+    minimumFractionDigits: fraction,
+    maximumFractionDigits: fraction
+  });
+}
+
+function paymentStatusLabel(status) {
+  return ({
+    pending: 'Создана',
+    awaiting_confirmation: 'Ожидает проверки',
+    paid: 'Подтверждена',
+    rejected: 'Отклонена',
+    cancelled: 'Отменена',
+    expired: 'Истекла'
+  })[status] || status;
+}
+
+function renderPayments() {
+  const list = document.getElementById('payments-list');
+  if (!list) return;
+  const orders = state.payments?.orders || [];
+  if (!orders.length) {
+    list.innerHTML = '<p class="empty-state">Заявок на пополнение пока нет.</p>';
+    return;
+  }
+  list.innerHTML = orders.map((order) => {
+    const status = escapeHtml(paymentStatusLabel(order.status));
+    const pending = ['pending', 'awaiting_confirmation'].includes(order.status);
+    const canManage = state.payments?.canManage === true;
+    return `<article class="entity-card" data-payment-id="${escapeHtml(order.id)}">
+      <div class="entity-main">
+        <div>
+          <div class="entity-title"><strong>${escapeHtml(order.payment_reference)}</strong><span class="chip ${order.status === 'paid' ? 'ok' : pending ? '' : 'off'}">${status}</span></div>
+          <p>Telegram ID ${Number(order.telegram_id)} · ${formatPaymentMoney(Number(order.silarum_units) / 100)} SILARUM · ${formatPaymentMoney(Number(order.ruble_kopecks) / 100)} ₽</p>
+          <p>${new Date(order.created_at).toLocaleString('ru-RU')}</p>
+        </div>
+        ${pending && canManage ? `<div class="entity-actions">
+          <button type="button" data-payment-decision="paid">Подтвердить</button>
+          <button type="button" class="danger" data-payment-decision="rejected">Отклонить</button>
+        </div>` : ''}
+      </div>
+    </article>`;
+  }).join('');
+}
+
+async function loadPayments() {
+  try {
+    state.payments = await api('/api/admin?payments=1');
+    renderPayments();
+  } catch (error) {
+    state.payments = null;
+    const tab = document.querySelector('[data-tab="payments"]');
+    if (error.status === 403 && tab) tab.hidden = true;
+    const list = document.getElementById('payments-list');
+    if (list) list.innerHTML = '<p class="empty-state">Платежи временно недоступны.</p>';
+  }
+}
+
+document.getElementById('refresh-payments-button')?.addEventListener('click', loadPayments);
+document.getElementById('payments-list')?.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-payment-decision]');
+  const card = event.target.closest('[data-payment-id]');
+  if (!button || !card) return;
+  const decision = button.dataset.paymentDecision;
+  const message = decision === 'paid'
+    ? 'Подтвердить фактическое поступление перевода и начислить SILARUM?'
+    : 'Отклонить эту заявку?';
+  if (!window.confirm(message)) return;
+  button.disabled = true;
+  try {
+    await api('/api/admin', 'POST', {
+      paymentAction: 'review_sbp_topup',
+      orderId: card.dataset.paymentId,
+      decision,
+      note: ''
+    });
+    notify(decision === 'paid' ? 'Платёж подтверждён, SILARUM начислены' : 'Заявка отклонена');
+    await loadPayments();
+  } catch (error) {
+    notify(error.data?.error || 'Не удалось обработать платёж');
+    button.disabled = false;
+  }
+});
 
 function disableForm(form, disabled) {
   if (!form) return;
@@ -727,7 +813,7 @@ async function boot() {
     applySettings(state.overview.settings);
     disableForm(settingsForm, state.overview.canManageSettings === false);
     dashboard.hidden = false;
-    await Promise.all([loadTeam(), loadAi()]);
+    await Promise.all([loadPayments(), loadTeam(), loadAi()]);
   } catch (error) {
     if (error.status === 403 && error.data?.userId) {
       setAccess('error', 'Ожидается подтверждение владельца', `Ваш Telegram ID: ${error.data.userId}. Доступ должен назначить владелец.`);

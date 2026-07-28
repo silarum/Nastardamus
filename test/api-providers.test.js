@@ -56,7 +56,7 @@ test('text readings use DeepSeek and keep its key on the server', async () => {
         assert.equal(providerRequest.url, 'https://api.deepseek.com/chat/completions');
         assert.equal(providerRequest.headers.Authorization, 'Bearer deepseek-test-key');
         assert.equal(providerRequest.body.model, 'deepseek-v4-flash');
-        assert.equal(providerRequest.body.max_tokens, 850);
+        assert.equal(providerRequest.body.max_tokens, 1400);
         assert.doesNotMatch(JSON.stringify(response.body), /deepseek-test-key|openai-vision-key/);
     } finally {
         restore();
@@ -111,7 +111,7 @@ test('photo readings use only OpenAI image inputs', async () => {
         const image = requestBody.input[1].content.find((part) => part.type === 'input_image');
         assert.equal(image.image_url, 'data:image/webp;base64,AA==');
         assert.equal(image.detail, 'low');
-        assert.equal(requestBody.max_output_tokens, 900);
+        assert.equal(requestBody.max_output_tokens, 1400);
     } finally {
         restore();
         global.fetch = previousFetch;
@@ -210,7 +210,7 @@ test('daily horoscope uses DeepSeek', async () => {
         const answer = await createHoroscope('aries', '2026-07-27');
         assert.equal(answer, 'Сегодня берегите внутренний ритм.');
         assert.equal(request.url, 'https://api.deepseek.com/chat/completions');
-        assert.equal(request.body.max_tokens, 520);
+        assert.equal(request.body.max_tokens, 700);
     } finally {
         restore();
         global.fetch = previousFetch;
