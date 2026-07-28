@@ -85,6 +85,204 @@ function base64ToBytes(value: string) {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
+const JOINT_PHOTO_BUCKET = "nastardamus-joint-photos";
+const INVITATION_SELECT = [
+  "token",
+  "flow",
+  "goal",
+  "initiator_telegram_id",
+  "initiator_name",
+  "initiator_gender",
+  "invitee_name",
+  "invitee_gender",
+  "participant_telegram_id",
+  "participant_gender",
+  "status",
+  "payer_telegram_id",
+  "payer_role",
+  "initiator_image_path",
+  "participant_image_path",
+  "result_text",
+  "participant_joined_at",
+  "completed_at",
+  "expires_at",
+  "created_at",
+  "updated_at"
+].join(",");
+
+function cleanInvitationToken(value: unknown) {
+  const token = String(value || "").trim().toLowerCase();
+  return /^[a-f0-9]{32}$/.test(token) ? token : "";
+}
+
+function cleanInvitationName(value: unknown) {
+  const name = String(value || "").trim().replace(/\s+/g, " ").slice(0, 80);
+  if (name.length < 1) throw new Error("invalid_invitee_name");
+  return name;
+}
+
+function cleanGender(value: unknown, allowUnspecified = true) {
+  const gender = String(value || "unspecified");
+  const allowed = allowUnspecified
+    ? ["female", "male", "unspecified"]
+    : ["female", "male"];
+  if (!allowed.includes(gender)) throw new Error("invalid_gender");
+  return gender;
+}
+
+function parseImageDataUrl(value: unknown) {
+  const dataUrl = String(value || "");
+  if (dataUrl.length < 30 || dataUrl.length > 1_800_000) {
+    throw new Error("invalid_invitation_image");
+  }
+  const match = dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$/);
+  if (!match) throw new Error("invalid_invitation_image");
+  const bytes = base64ToBytes(match[2].replace(/\s+/g, ""));
+  if (bytes.length < 16 || bytes.length > 2_000_000) {
+    throw new Error("invalid_invitation_image");
+  }
+  return { bytes, contentType: match[1] };
+}
+
+async function storageRequest(path: string, options: RequestInit = {}) {
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) throw new Error("supabase_env_missing");
+  return fetch(`${url}/storage/v1/${path.replace(/^\/+/, "")}`, {
+    ...options,
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      ...(options.headers || {})
+    },
+    signal: AbortSignal.timeout(15_000)
+  });
+}
+
+async function uploadJointImage(path: string, dataUrl: unknown) {
+  const image = parseImageDataUrl(dataUrl);
+  const response = await storageRequest(
+    `object/${JOINT_PHOTO_BUCKET}/${path.split("/").map(encodeURIComponent).join("/")}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": image.contentType,
+        "x-upsert": "true",
+        "Cache-Control": "no-store"
+      },
+      body: image.bytes
+    }
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`invitation_image_upload_${response.status}:${detail.slice(0, 120)}`);
+  }
+}
+
+async function downloadJointImage(path: string) {
+  const response = await storageRequest(
+    `object/${JOINT_PHOTO_BUCKET}/${path.split("/").map(encodeURIComponent).join("/")}`
+  );
+  if (!response.ok) throw new Error("invitation_image_unavailable");
+  const contentType = response.headers.get("content-type") || "image/webp";
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return `data:${contentType};base64,${btoa(binary)}`;
+}
+
+async function deleteJointImages(paths: unknown[]) {
+  const objects = paths.filter((path): path is string => typeof path === "string" && path.length > 0);
+  if (!objects.length) return;
+  await storageRequest(`object/${JOINT_PHOTO_BUCKET}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prefixes: objects })
+  }).catch(() => null);
+}
+
+async function purgeExpiredJointInvitations() {
+  const cutoff = encodeURIComponent(new Date().toISOString());
+  const response = await rest(
+    "nastardamus_joint_invitations"
+      + `?expires_at=lt.${cutoff}`
+      + "&status=not.in.(completed,cancelled,expired)"
+      + "&select=token,initiator_image_path,participant_image_path"
+      + "&limit=50"
+  );
+  const rows = await response.json();
+  if (!Array.isArray(rows) || rows.length === 0) return;
+  const tokens = rows
+    .map((row) => cleanInvitationToken(row?.token))
+    .filter(Boolean);
+  if (!tokens.length) return;
+  await rest(
+    `nastardamus_joint_invitations?token=in.(${tokens.join(",")})`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({
+        status: "expired",
+        updated_at: new Date().toISOString()
+      })
+    }
+  );
+  await deleteJointImages(rows.flatMap((row) => [
+    row?.initiator_image_path,
+    row?.participant_image_path
+  ]));
+}
+
+function invitationView(row: Record<string, unknown>, telegramId: number) {
+  const initiatorId = Number(row.initiator_telegram_id);
+  const participantId = Number(row.participant_telegram_id || 0);
+  const viewerRole = telegramId === initiatorId
+    ? "initiator"
+    : telegramId === participantId
+      ? "participant"
+      : "none";
+  return {
+    token: row.token,
+    flow: row.flow,
+    goal: row.goal,
+    initiatorName: row.initiator_name,
+    initiatorGender: row.initiator_gender,
+    inviteeName: row.invitee_name,
+    inviteeGender: row.invitee_gender,
+    participantGender: row.participant_gender || row.invitee_gender,
+    participantJoined: participantId > 0,
+    participantPhotoReady: Boolean(row.participant_image_path),
+    status: row.status,
+    payerRole: row.payer_role || null,
+    result: row.result_text || null,
+    viewerRole,
+    expiresAt: row.expires_at,
+    completedAt: row.completed_at || null
+  };
+}
+
+async function readInvitation(token: string) {
+  const response = await rest(
+    `nastardamus_joint_invitations?token=eq.${encodeURIComponent(token)}`
+      + `&select=${INVITATION_SELECT}&limit=1`
+  );
+  const rows = await response.json();
+  return rows?.[0] || null;
+}
+
+async function invitationChatIds(row: Record<string, unknown>) {
+  const ids = [row.initiator_telegram_id, row.participant_telegram_id]
+    .map(Number)
+    .filter((value) => Number.isSafeInteger(value) && value > 0);
+  if (!ids.length) return [];
+  const response = await rest(
+    `nastardamus_users?telegram_id=in.(${ids.join(",")})&select=telegram_id,chat_id`
+  );
+  return await response.json();
+}
+
 async function paymentEncryptionKey() {
   const stableSecret = Deno.env.get("NASTARDAMUS_ENCRYPTION_SECRET")
     || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
@@ -266,6 +464,307 @@ Deno.serve(async (req: Request) => {
   const telegramId = Number(body?.telegramId);
 
   try {
+    if (action === "create_joint_invitation") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      if (body?.consentOwn !== true) return json(400, { error: "photo_consent_required" });
+      if (body?.adultConfirmed !== true) return json(400, { error: "adult_confirmation_required" });
+      const flow = String(body?.flow || "");
+      const goal = String(body?.goal || "");
+      if (!["palm", "photo"].includes(flow)) {
+        return json(400, { error: "invalid_invitation_flow" });
+      }
+      if (!["love", "friendship", "business", "creative"].includes(goal)) {
+        return json(400, { error: "invalid_invitation_goal" });
+      }
+      const inviteeName = cleanInvitationName(body?.inviteeName);
+      const inviteeGender = cleanGender(body?.inviteeGender, false);
+      const initiatorName = cleanInvitationName(body?.initiatorName || "Искатель");
+      const initiatorGender = cleanGender(body?.initiatorGender);
+      const token = crypto.randomUUID().replaceAll("-", "");
+      const imagePath = `${token}/initiator`;
+
+      await purgeExpiredJointInvitations().catch((error) => {
+        console.error(
+          "Expired invitation cleanup failed",
+          error instanceof Error ? error.message : error
+        );
+      });
+      await uploadJointImage(imagePath, body?.initiatorImage);
+      try {
+        const response = await rest("nastardamus_joint_invitations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Prefer: "return=representation"
+          },
+          body: JSON.stringify({
+            token,
+            flow,
+            goal,
+            initiator_telegram_id: telegramId,
+            initiator_name: initiatorName,
+            initiator_gender: initiatorGender,
+            invitee_name: inviteeName,
+            invitee_gender: inviteeGender,
+            initiator_image_path: imagePath
+          })
+        });
+        const rows = await response.json();
+        return json(200, {
+          ok: true,
+          invitation: invitationView(rows[0], telegramId)
+        });
+      } catch (error) {
+        await deleteJointImages([imagePath]);
+        throw error;
+      }
+    }
+
+    if (action === "accept_joint_invitation" || action === "get_joint_invitation") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const invitationToken = cleanInvitationToken(body?.invitationToken);
+      if (!invitationToken) return json(400, { error: "invalid_invitation_token" });
+      let invitation = await readInvitation(invitationToken);
+      if (!invitation) return json(404, { error: "invitation_not_found" });
+
+      if (
+        invitation.status !== "completed"
+        && new Date(String(invitation.expires_at)).getTime() <= Date.now()
+      ) {
+        await rest(
+          `nastardamus_joint_invitations?token=eq.${encodeURIComponent(invitationToken)}`
+            + "&status=not.in.(completed,cancelled,expired)",
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+            body: JSON.stringify({ status: "expired", updated_at: new Date().toISOString() })
+          }
+        );
+        await deleteJointImages([
+          invitation.initiator_image_path,
+          invitation.participant_image_path
+        ]);
+        return json(410, { error: "invitation_expired" });
+      }
+
+      const initiatorId = Number(invitation.initiator_telegram_id);
+      const participantId = Number(invitation.participant_telegram_id || 0);
+      if (
+        action === "accept_joint_invitation"
+        && telegramId !== initiatorId
+        && participantId === 0
+        && invitation.status === "awaiting_participant"
+      ) {
+        const response = await rest(
+          `nastardamus_joint_invitations?token=eq.${encodeURIComponent(invitationToken)}`
+            + "&participant_telegram_id=is.null&status=eq.awaiting_participant",
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Prefer: "return=representation"
+            },
+            body: JSON.stringify({
+              participant_telegram_id: telegramId,
+              participant_gender: invitation.invitee_gender,
+              participant_joined_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+          }
+        );
+        const rows = await response.json();
+        invitation = rows?.[0] || await readInvitation(invitationToken);
+      }
+
+      const view = invitationView(invitation, telegramId);
+      if (view.viewerRole === "none") {
+        return json(404, { error: "invitation_not_found" });
+      }
+      return json(200, { ok: true, invitation: view });
+    }
+
+    if (action === "upload_joint_participant_image") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const invitationToken = cleanInvitationToken(body?.invitationToken);
+      if (!invitationToken) return json(400, { error: "invalid_invitation_token" });
+      if (body?.consentOwn !== true) return json(400, { error: "photo_consent_required" });
+      if (body?.adultConfirmed !== true) return json(400, { error: "adult_confirmation_required" });
+      const participantGender = cleanGender(body?.participantGender);
+      const invitation = await readInvitation(invitationToken);
+      if (!invitation || Number(invitation.participant_telegram_id) !== telegramId) {
+        return json(404, { error: "invitation_not_found" });
+      }
+      if (["completed", "cancelled", "expired"].includes(String(invitation.status))) {
+        return json(409, { error: "invitation_unavailable" });
+      }
+      const imagePath = `${invitationToken}/participant`;
+      await uploadJointImage(imagePath, body?.participantImage);
+      const response = await rest(
+        `nastardamus_joint_invitations?token=eq.${encodeURIComponent(invitationToken)}`
+          + `&participant_telegram_id=eq.${telegramId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Prefer: "return=representation"
+          },
+          body: JSON.stringify({
+            participant_image_path: imagePath,
+            participant_gender: participantGender,
+            status: "ready",
+            payer_telegram_id: null,
+            payer_role: null,
+            last_error: null,
+            updated_at: new Date().toISOString()
+          })
+        }
+      );
+      const rows = await response.json();
+      return json(200, {
+        ok: true,
+        invitation: invitationView(rows[0], telegramId)
+      });
+    }
+
+    if (action === "request_joint_initiator_payment") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const invitationToken = cleanInvitationToken(body?.invitationToken);
+      if (!invitationToken) return json(400, { error: "invalid_invitation_token" });
+      const invitation = await readInvitation(invitationToken);
+      if (
+        !invitation
+        || Number(invitation.participant_telegram_id) !== telegramId
+        || !invitation.participant_image_path
+      ) {
+        return json(404, { error: "invitation_not_found" });
+      }
+      if (!["ready", "awaiting_initiator_payment"].includes(String(invitation.status))) {
+        return json(409, { error: "invitation_not_ready" });
+      }
+      const response = await rest(
+        `nastardamus_joint_invitations?token=eq.${encodeURIComponent(invitationToken)}`
+          + `&participant_telegram_id=eq.${telegramId}`
+          + "&status=in.(ready,awaiting_initiator_payment)",
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Prefer: "return=representation"
+          },
+          body: JSON.stringify({
+            status: "awaiting_initiator_payment",
+            payer_telegram_id: invitation.initiator_telegram_id,
+            payer_role: "initiator",
+            updated_at: new Date().toISOString()
+          })
+        }
+      );
+      const rows = await response.json();
+      const updated = rows[0];
+      return json(200, {
+        ok: true,
+        invitation: invitationView(updated, telegramId),
+        chats: await invitationChatIds(updated)
+      });
+    }
+
+    if (action === "claim_joint_invitation_processing") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const invitationToken = cleanInvitationToken(body?.invitationToken);
+      if (!invitationToken) return json(400, { error: "invalid_invitation_token" });
+      const payerRole = String(body?.payerRole || "");
+      const response = await rest("rpc/nastardamus_claim_joint_invitation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_token: invitationToken,
+          p_telegram_id: telegramId,
+          p_payer_role: payerRole
+        })
+      });
+      const invitation = await response.json();
+      const [firstImage, secondImage] = await Promise.all([
+        downloadJointImage(String(invitation.initiator_image_path)),
+        downloadJointImage(String(invitation.participant_image_path))
+      ]);
+      return json(200, {
+        ok: true,
+        invitation: {
+          token: invitation.token,
+          flow: invitation.flow,
+          goal: invitation.goal,
+          firstName: invitation.initiator_name,
+          secondName: invitation.invitee_name,
+          firstGender: invitation.initiator_gender,
+          secondGender: invitation.participant_gender,
+          firstImage,
+          secondImage,
+          payerRole: invitation.payer_role
+        }
+      });
+    }
+
+    if (action === "release_joint_invitation_processing") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const invitationToken = cleanInvitationToken(body?.invitationToken);
+      if (!invitationToken) return json(400, { error: "invalid_invitation_token" });
+      const response = await rest("rpc/nastardamus_release_joint_invitation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_token: invitationToken,
+          p_telegram_id: telegramId,
+          p_reason: String(body?.reason || "reading_failed").slice(0, 160)
+        })
+      });
+      return json(200, { ok: true, invitation: await response.json() });
+    }
+
+    if (action === "complete_joint_invitation") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const invitationToken = cleanInvitationToken(body?.invitationToken);
+      if (!invitationToken) return json(400, { error: "invalid_invitation_token" });
+      const chargeId = String(body?.chargeId || "");
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(chargeId)) {
+        return json(400, { error: "invalid_charge_id" });
+      }
+      const response = await rest("rpc/nastardamus_complete_joint_invitation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_token: invitationToken,
+          p_telegram_id: telegramId,
+          p_result_text: String(body?.result || ""),
+          p_service_charge_id: chargeId
+        })
+      });
+      const completed = await response.json();
+      await deleteJointImages([
+        completed.initiator_image_path,
+        completed.participant_image_path
+      ]);
+      const invitation = await readInvitation(invitationToken);
+      return json(200, {
+        ok: true,
+        invitation: invitationView(invitation, telegramId),
+        chats: await invitationChatIds(invitation)
+      });
+    }
+
     if (action === "get_wallet") {
       if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
         return json(400, { error: "invalid_telegram_id" });
@@ -694,6 +1193,27 @@ Deno.serve(async (req: Request) => {
     if (message.includes("wheel_disabled")) return json(403, { error: "wheel_disabled" });
     if (message.includes("wheel_daily_limit")) return json(409, { error: "wheel_daily_limit" });
     if (message.includes("wheel_rewards_exhausted")) return json(409, { error: "wheel_rewards_exhausted" });
+    if (message.includes("invalid_invitation_token")) return json(400, { error: "invalid_invitation_token" });
+    if (message.includes("invalid_invitee_name")) return json(400, { error: "invalid_invitee_name" });
+    if (message.includes("invalid_invitation_image")) return json(400, { error: "invalid_invitation_image" });
+    if (message.includes("invalid_invitation_flow")) return json(400, { error: "invalid_invitation_flow" });
+    if (message.includes("invalid_invitation_goal")) return json(400, { error: "invalid_invitation_goal" });
+    if (message.includes("invalid_gender")) return json(400, { error: "invalid_gender" });
+    if (message.includes("invitation_not_found")) return json(404, { error: "invitation_not_found" });
+    if (message.includes("invitation_expired")) return json(410, { error: "invitation_expired" });
+    if (message.includes("invitation_unavailable")) return json(409, { error: "invitation_unavailable" });
+    if (message.includes("invitation_not_ready")) return json(409, { error: "invitation_not_ready" });
+    if (message.includes("invitation_busy")) return json(409, { error: "invitation_busy" });
+    if (message.includes("invitation_already_completed")) return json(409, { error: "invitation_already_completed" });
+    if (message.includes("invitation_payer_mismatch") || message.includes("initiator_payment_not_requested")) {
+      return json(403, { error: "invitation_payment_denied" });
+    }
+    if (message.includes("invitation_processing_not_found")) {
+      return json(409, { error: "invitation_processing_not_found" });
+    }
+    if (message.includes("invitation_image_unavailable") || message.includes("invitation_image_upload_")) {
+      return json(503, { error: "invitation_image_unavailable" });
+    }
     return json(502, { error: "wallet_store_failed" });
   }
 });

@@ -107,6 +107,18 @@ test('does not infer gender when the user did not specify it', () => {
   assert.match(messages[0].content, /нейтральные формулировки/i);
 });
 
+test('sports forecast stays symbolic and never becomes betting advice', () => {
+  const messages = buildReadingMessages('sports_forecast', {
+    event: 'Финал: команда А — команда Б',
+    context: 'Интересен возможный перелом темпа.',
+    gender: 'unspecified'
+  });
+
+  assert.match(messages[0].content, /не подталкивай к ставкам/i);
+  assert.match(messages[1].content, /не выдумывай текущую статистику/i);
+  assert.match(messages[1].content, /не основа для ставки/i);
+});
+
 test('builds a two-photo compatibility reading', () => {
   const messages = buildReadingMessages('photo_compatibility', {
     concern: 'Что важно проговорить?',

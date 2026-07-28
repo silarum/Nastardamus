@@ -55,11 +55,14 @@ const SPREADS = {
 
 const params = new URLSearchParams(location.search);
 const requestedScreen = params.get('screen');
+const requestedInvitationToken = /^[a-f0-9]{32}$/.test(params.get('invitation') || '')
+  ? params.get('invitation')
+  : '';
 const requestedInviteGoal = ['love', 'friendship', 'business', 'creative'].includes(params.get('invite'))
   ? params.get('invite')
   : 'love';
 const state = {
-  screen: requestedScreen || 'welcome',
+  screen: requestedScreen || (requestedInvitationToken ? 'invitation' : 'welcome'),
   wallet: null,
   walletStatus: 'loading',
   walletMessage: '',
@@ -69,6 +72,9 @@ const state = {
   tarotDeck: [],
   tarotCards: [],
   result: null,
+  sportsEvent: '',
+  sportsContext: '',
+  sportsResult: '',
   natalDate: '',
   natalTime: '12:00',
   photoMode: 'energy',
@@ -84,6 +90,20 @@ const state = {
   palmTwo: '',
   palmGoal: requestedInviteGoal,
   inviteGoal: requestedInviteGoal,
+  inviteFlow: 'palm',
+  inviteName: '',
+  inviteGender: 'unspecified',
+  inviteGenderTouched: false,
+  preparedInvite: null,
+  preparedInviteFile: null,
+  invitationToken: requestedInvitationToken,
+  invitation: null,
+  invitationStatus: requestedInvitationToken ? 'idle' : 'empty',
+  invitationError: '',
+  invitationPhoto: '',
+  invitationGender: 'unspecified',
+  invitationConsentOwn: false,
+  invitationAdultConfirmed: false,
   partnerName: '',
   palmConsentOwn: false,
   palmConsentPartner: false,
@@ -139,6 +159,37 @@ function writeJSON(key, value) {
 
 function normalizeGender(value) {
   return Object.prototype.hasOwnProperty.call(GENDER_OPTIONS, value) ? value : 'unspecified';
+}
+
+const FEMALE_NAME_HINTS = new Set([
+  'александра', 'алёна', 'алена', 'алина', 'алла', 'альбина', 'анастасия', 'анна',
+  'валентина', 'валерия', 'вера', 'виктория', 'галина', 'дарья', 'диана', 'евгения',
+  'екатерина', 'елена', 'елизавета', 'жанна', 'инна', 'ирина', 'карина', 'кристина',
+  'ксения', 'лариса', 'лидия', 'любовь', 'людмила', 'маргарита', 'марина', 'мария',
+  'надежда', 'наталья', 'нина', 'оксана', 'ольга', 'полина', 'светлана', 'софия',
+  'тамара', 'татьяна', 'юлия', 'яна'
+]);
+const MALE_NAME_HINTS = new Set([
+  'александр', 'алексей', 'анатолий', 'андрей', 'антон', 'артём', 'артем', 'борис',
+  'вадим', 'валентин', 'валерий', 'василий', 'виктор', 'виталий', 'владимир',
+  'владислав', 'геннадий', 'георгий', 'глеб', 'даниил', 'денис', 'дмитрий', 'евгений',
+  'егор', 'илья', 'иван', 'игорь', 'кирилл', 'константин', 'лев', 'леонид', 'максим',
+  'михаил', 'никита', 'николай', 'олег', 'павел', 'пётр', 'петр', 'роман', 'руслан',
+  'сергей', 'станислав', 'степан', 'тимур', 'фёдор', 'федор', 'юрий', 'ярослав'
+]);
+const AMBIGUOUS_NAME_HINTS = new Set([
+  'саша', 'женя', 'валя', 'слава', 'шура'
+]);
+
+function suggestGenderFromName(value) {
+  const name = String(value || '').trim().toLocaleLowerCase('ru-RU').split(/[\s-]+/)[0];
+  if (!name) return 'unspecified';
+  if (AMBIGUOUS_NAME_HINTS.has(name)) return 'unspecified';
+  if (FEMALE_NAME_HINTS.has(name)) return 'female';
+  if (MALE_NAME_HINTS.has(name)) return 'male';
+  if (/[ая]$/u.test(name) && !/^(никита|илья|лука|кузьма|фома|савва)$/u.test(name)) return 'female';
+  if (/[йбвгджзклмнпрстфхцчшщ]$/u.test(name)) return 'male';
+  return 'unspecified';
 }
 
 function profileAvatar() {
@@ -331,15 +382,107 @@ function homeScreen() {
   return shell([
     header,
     GreetingCard({ username: firstName(), message: 'Слушай знаки. Доверься интуиции.', avatar: profileAvatar() }),
-    wheelWrap,
     SectionTitle({ text: 'Быстрый доступ' }),
     QuickAccessGrid({ items: [
       { art: 'shortcut-destiny-hearts', title: 'Путь двух судеб', onClick: () => openEnabledFeature(state.publicConfig.palmLinkEnabled, 'palm', 'PalmLink временно отключён') },
       { art: 'tarot-deck', title: 'Таро расклад', onClick: () => navigate('tarot') },
       { art: 'shortcut-astro-orbit', title: 'Гороскоп дня', onClick: () => navigate('horoscope') },
-      { art: 'shortcut-fortune-compass', title: 'Колесо Фортуны', badge: wallet.freeSpins ? `+${wallet.freeSpins}` : '', onClick: () => openEnabledFeature(wheelEnabled, 'wheel', 'Колесо отключено администратором') }
-    ] })
+      { art: 'photo-energy-imprint', title: 'След по фото', onClick: () => navigate('photo-energy') }
+    ] }),
+    sportsForecastPanel(),
+    SectionTitle({ text: wallet.freeSpins ? `Колесо Фортуны · ${wallet.freeSpins} подарок` : 'Колесо Фортуны' }),
+    wheelWrap
   ], { active: 'home' });
+}
+
+function sportsForecastPanel() {
+  return h('button', {
+    className: 'premium-sports-banner',
+    attrs: { type: 'button', 'aria-label': 'Открыть спортивные знамения Эзотериума' },
+    on: { click: () => navigate('sports') }
+  },
+  h('img', {
+    attrs: {
+      src: premiumArtUrl('sports-prophecy-banner'),
+      alt: '',
+      draggable: 'false'
+    }
+  }),
+  h('span', { className: 'premium-sports-banner__scrim' }),
+  h('span', { className: 'premium-sports-banner__copy' },
+    h('small', { text: 'ПРЕДСКАЗАНИЯ СОБЫТИЙ' }),
+    h('strong', { text: 'Спортивные знамения' }),
+    h('span', { text: 'Назовите встречу — Эзотериум раскроет её символический рисунок.' }),
+    h('b', { text: 'Открыть прогноз →' })
+  ));
+}
+
+function sportsForecastScreen() {
+  return shell([
+    screenHeader('Спортивные знамения', 'Символический прогноз события', 'home'),
+    h('section', { className: 'premium-sports-hero' },
+      h('img', {
+        attrs: {
+          src: premiumArtUrl('sports-prophecy-banner'),
+          alt: '',
+          draggable: 'false'
+        }
+      }),
+      h('p', { text: 'У каждого состязания есть ритм, напряжение и миг, когда рисунок меняется.' })
+    ),
+    MysticCard({ className: 'premium-form-card', children: [
+      field('Событие или команды', textInput({
+        value: state.sportsEvent,
+        placeholder: 'Например: финал, команда А — команда Б',
+        attrs: { maxlength: 160 },
+        onInput: (value) => { state.sportsEvent = value; }
+      })),
+      field('Что особенно интересно?', textarea({
+        value: state.sportsContext,
+        placeholder: 'Темп, возможный перелом, настроение встречи…',
+        onInput: (value) => { state.sportsContext = value; },
+        maxLength: 500
+      }), 'Можно оставить пустым.')
+    ] }),
+    MysticButton({
+      text: state.busy ? 'Эзотериум слушает арену…' : 'Открыть символический прогноз',
+      icon: 'sparkle',
+      variant: 'primary',
+      disabled: state.busy,
+      onClick: submitSportsForecast
+    }),
+    state.busy ? loadingCard('Собираем знаки события…') : null,
+    state.sportsResult
+      ? MysticCard({
+          className: 'premium-result-reading',
+          children: [formatReading(state.sportsResult)]
+        })
+      : null,
+    h('p', {
+      className: 'premium-info-note',
+      text: 'Художественное чтение для развлечения. Не используйте его как основу для ставок или финансовых решений.'
+    })
+  ], { active: 'home' });
+}
+
+async function submitSportsForecast() {
+  const event = state.sportsEvent.trim().replace(/\s+/g, ' ');
+  if (!event) return notify('Укажите спортивное событие или команды');
+  if (state.busy) return;
+  state.busy = true;
+  render();
+  try {
+    state.sportsResult = await requestReading('sports_forecast', {
+      event,
+      context: state.sportsContext.trim()
+    });
+    pulse('medium');
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  } finally {
+    state.busy = false;
+    render();
+  }
 }
 
 function walletStatusText() {
@@ -703,10 +846,22 @@ function palmScreen() {
   return shell([
     screenHeader('Путь двух судеб', 'Найди связь через символы ладоней', 'services'),
     upload,
+    consentRow(
+      'Я согласен на закрытую обработку изображения своей ладони для совместного чтения.',
+      state.palmConsentOwn,
+      (checked) => { state.palmConsentOwn = checked; }
+    ),
+    state.publicConfig.adultOnly !== false ? consentRow(
+      'Мне исполнилось 18 лет.',
+      state.palmAdultConfirmed,
+      (checked) => { state.palmAdultConfirmed = checked; }
+    ) : null,
     SectionTitle({ text: 'Цель поиска' }), selector,
     EnergyHandsScene(),
-    MysticButton({ text: 'Пригласить человека', icon: 'send', variant: 'gold', onClick: () => shareInvite('palm') }),
-    MysticButton({ text: 'Продолжить ритуал', icon: 'heart', variant: 'primary', onClick: () => state.palmOne ? navigate('ritual') : notify('Сначала загрузите фото ладони') }),
+    h('div', { className: 'premium-palm-actions' },
+      MysticButton({ text: 'Пригласить человека', icon: 'send', variant: 'gold', onClick: () => shareInvite('palm') }),
+      MysticButton({ text: 'Продолжить ритуал', icon: 'heart', variant: 'primary', onClick: () => state.palmOne ? navigate('ritual') : notify('Сначала загрузите фото ладони') })
+    ),
     PriceLine({ price: serviceConfig('palmlink').price })
   ]);
 }
@@ -714,7 +869,7 @@ function palmScreen() {
 function ritualScreen() {
   const partnerUpload = imageUpload({ title: 'Добавьте ладонь партнёра', image: state.palmTwo, onImage: (image) => { state.palmTwo = image; render(); } });
   const actions = ActionGroup({ actions: [
-    { text: 'Отправить приглашение', icon: 'send', variant: 'gold', onClick: shareInvite },
+    { text: 'Отправить приглашение', icon: 'send', variant: 'gold', onClick: () => shareInvite('palm') },
     { text: 'Вернуться к своей ладони', icon: 'arrow-left', variant: 'outline', onClick: () => navigate('palm') }
   ] });
   return shell([
@@ -745,7 +900,32 @@ function ritualScreen() {
   ]);
 }
 
-async function shareInvite(flow = 'palm') {
+function shareInvite(flow = 'palm') {
+  if (flow === 'tarot') return shareLegacyInvite(flow);
+  const ownImage = flow === 'photo' ? state.photoOne : state.palmOne;
+  if (!ownImage) {
+    return notify(flow === 'photo'
+      ? 'Сначала загрузите своё фото'
+      : 'Сначала загрузите фото своей ладони');
+  }
+  const consentOwn = flow === 'photo' ? state.photoConsentOwn : state.palmConsentOwn;
+  const adultConfirmed = flow === 'photo' ? state.photoAdultConfirmed : state.palmAdultConfirmed;
+  if (!consentOwn) return notify('Подтвердите согласие на обработку своей фотографии');
+  if (state.publicConfig.adultOnly !== false && !adultConfirmed) {
+    return notify('Подтвердите, что вам исполнилось 18 лет');
+  }
+  if (!tg?.initData) return notify('Откройте приложение внутри Telegram, чтобы создать личное приглашение');
+  state.inviteFlow = flow;
+  state.inviteGoal = flow === 'palm' ? state.palmGoal : state.inviteGoal;
+  state.inviteName = '';
+  state.inviteGender = 'unspecified';
+  state.inviteGenderTouched = false;
+  state.preparedInvite = null;
+  state.preparedInviteFile = null;
+  navigate('invite-compose');
+}
+
+async function shareLegacyInvite(flow = 'tarot') {
   const goal = flow === 'palm' ? state.palmGoal : state.inviteGoal;
   const copy = {
     love: 'Хочу бережно посмотреть на то, что соединяет наши сердца.',
@@ -767,6 +947,538 @@ async function shareInvite(flow = 'palm') {
     else await navigator.clipboard.writeText(`${text}\n${inviteUrl}`);
     notify('Приглашение готово');
   } catch (error) { if (error?.name !== 'AbortError') notify('Не удалось поделиться'); }
+}
+
+function invitationPreview({ name, gender, goal, compact = false }) {
+  const selectedGender = gender === 'male' ? 'male' : gender === 'female' ? 'female' : 'unspecified';
+  const portrait = selectedGender === 'male'
+    ? 'portrait-man'
+    : selectedGender === 'female'
+      ? 'portrait-woman'
+      : 'partner-invite-emblem';
+  return h('div', {
+    className: `premium-invitation-preview premium-invitation-preview--${selectedGender} ${compact ? 'is-compact' : ''}`
+  },
+  h('img', {
+    className: 'premium-invitation-preview__background',
+    attrs: { src: `/images/invites/${goal}.png`, alt: '', draggable: 'false' }
+  }),
+  h('div', { className: 'premium-invitation-preview__scrim' }),
+  h('img', {
+    className: 'premium-invitation-preview__portrait',
+    attrs: { src: premiumArtUrl(portrait), alt: '', draggable: 'false' }
+  }),
+  h('div', { className: 'premium-invitation-preview__copy' },
+    h('small', { text: 'ЛИЧНОЕ ПРИГЛАШЕНИЕ' }),
+    h('strong', { text: name ? `Для ${name}` : 'Укажите имя' }),
+    h('span', { text: goalLabel(goal) })
+  ));
+}
+
+function inviteGenderOptions(value, onSelect) {
+  return h('div', { className: 'premium-invite-genders' },
+    ['female', 'male'].map((gender) =>
+      h('button', {
+        className: `premium-invite-gender ${value === gender ? 'is-active' : ''}`,
+        attrs: { type: 'button', 'aria-pressed': value === gender ? 'true' : 'false' },
+        on: { click: () => onSelect(gender) }
+      },
+      h('img', { attrs: { src: premiumArtUrl(GENDER_OPTIONS[gender].art), alt: '', draggable: 'false' } }),
+      h('span', { text: gender === 'female' ? 'Для женщины' : 'Для мужчины' }))
+    )
+  );
+}
+
+function inviteComposerScreen() {
+  const suggestion = suggestGenderFromName(state.inviteName);
+  const hint = !state.inviteName.trim()
+    ? 'Введите имя — приложение предложит подходящий вариант открытки.'
+    : suggestion === 'unspecified'
+      ? 'Имя неоднозначное. Выберите вариант открытки вручную.'
+      : `По имени предложена открытка ${suggestion === 'female' ? 'для женщины' : 'для мужчины'}. Проверьте выбор перед отправкой.`;
+  return shell([
+    screenHeader('Личное приглашение', 'Имя, открытка и системное меню телефона', state.inviteFlow === 'photo' ? 'photo-compat' : 'palm'),
+    invitationPreview({
+      name: state.inviteName.trim(),
+      gender: state.inviteGender,
+      goal: state.inviteGoal
+    }),
+    MysticCard({ className: 'premium-form-card premium-invite-form', children: [
+      field('Кого вы приглашаете?', textInput({
+        value: state.inviteName,
+        placeholder: 'Введите имя',
+        attrs: { maxlength: 80, autocomplete: 'name' },
+        onInput: (value) => {
+          state.inviteName = value;
+          if (!state.inviteGenderTouched) state.inviteGender = suggestGenderFromName(value);
+          state.preparedInvite = null;
+          state.preparedInviteFile = null;
+          render();
+        }
+      }), hint),
+      h('div', {},
+        h('span', { className: 'premium-field-label', text: 'Какую открытку отправить?' }),
+        inviteGenderOptions(state.inviteGender, (gender) => {
+          state.inviteGender = gender;
+          state.inviteGenderTouched = true;
+          state.preparedInvite = null;
+          state.preparedInviteFile = null;
+          render();
+        })
+      )
+    ] }),
+    state.preparedInvite
+      ? MysticCard({ className: 'premium-invite-ready', children: [
+          Icon('share', { size: 27 }),
+          h('div', {},
+            h('strong', { text: 'Приглашение готово' }),
+            h('small', { text: 'Нажмите ниже — телефон покажет Telegram, WhatsApp, SMS и другие установленные приложения.' })
+          )
+        ] })
+      : null,
+    state.preparedInvite
+      ? MysticButton({ text: 'Выбрать приложение для отправки', icon: 'share', variant: 'primary', onClick: nativeSharePreparedInvite })
+      : MysticButton({
+          text: state.busy ? 'Создаём приглашение…' : 'Подготовить приглашение',
+          icon: 'send',
+          variant: 'primary',
+          disabled: state.busy,
+          onClick: preparePersonalInvitation
+        }),
+    h('p', {
+      className: 'premium-info-note',
+      text: 'Имя используется только как подсказка для открытки. Перед отправкой вариант всегда подтверждает инициатор.'
+    })
+  ], { tabs: false });
+}
+
+async function preparePersonalInvitation() {
+  const name = state.inviteName.trim().replace(/\s+/g, ' ');
+  if (!name) return notify('Введите имя человека');
+  if (!['female', 'male'].includes(state.inviteGender)) {
+    return notify('Выберите открытку для женщины или мужчины');
+  }
+  if (state.busy) return;
+  const ownImage = state.inviteFlow === 'photo' ? state.photoOne : state.palmOne;
+  if (!ownImage) return notify('Ваше фото больше не доступно — вернитесь на предыдущий экран');
+  state.busy = true;
+  render();
+  try {
+    const data = await api('/api/proxy', {
+      method: 'POST',
+      body: {
+        action: 'invitation_create',
+        flow: state.inviteFlow,
+        goal: state.inviteGoal,
+        inviteeName: name,
+        inviteeGender: state.inviteGender,
+        initiatorGender: state.userGender,
+        initiatorImage: ownImage,
+        consentOwn: true,
+        adultConfirmed: true
+      }
+    });
+    state.preparedInvite = {
+      ...data.invitation,
+      inviteUrl: data.inviteUrl,
+      text: invitationShareText(name, state.inviteGoal)
+    };
+    state.preparedInviteFile = await buildInvitationCardFile({
+      name,
+      gender: state.inviteGender,
+      goal: state.inviteGoal
+    }).catch(() => null);
+    pulse('medium');
+    render();
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
+function invitationShareText(name, goal) {
+  const line = {
+    love: 'Хочу бережно посмотреть на то, что соединяет наши сердца.',
+    friendship: 'Давай узнаем, в чём сила нашей дружбы и как её беречь.',
+    business: 'Предлагаю увидеть сильные стороны нашего делового союза.',
+    creative: 'Давай раскроем энергию нашего творческого союза.'
+  }[goal];
+  return `${name}, ${line}\n\nОткрой личное приглашение в Nastardamus, добавь своё фото и выбери, кто завершит оплату общего результата.`;
+}
+
+async function buildInvitationCardFile({ name, gender, goal }) {
+  const [background, portrait] = await Promise.all([
+    loadImage(`/images/invites/${goal}.png`),
+    loadImage(premiumArtUrl(gender === 'male' ? 'portrait-man' : 'portrait-woman'))
+  ]);
+  const canvas = document.createElement('canvas');
+  canvas.width = 720;
+  canvas.height = 720;
+  const context = canvas.getContext('2d');
+  context.drawImage(background, 0, 0, 720, 720);
+  const gradient = context.createLinearGradient(0, 420, 0, 720);
+  gradient.addColorStop(0, 'rgba(4, 5, 15, 0)');
+  gradient.addColorStop(1, 'rgba(7, 5, 18, .96)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 360, 720, 360);
+  context.save();
+  context.beginPath();
+  context.arc(590, 568, 84, 0, Math.PI * 2);
+  context.clip();
+  context.fillStyle = gender === 'male' ? '#24134c' : '#4b173f';
+  context.fillRect(506, 484, 168, 168);
+  context.drawImage(portrait, 506, 484, 168, 168);
+  context.restore();
+  context.strokeStyle = gender === 'male' ? '#8e77ff' : '#f0a1d1';
+  context.lineWidth = 5;
+  context.beginPath();
+  context.arc(590, 568, 86, 0, Math.PI * 2);
+  context.stroke();
+  context.fillStyle = '#f6cf72';
+  context.font = '700 20px system-ui, sans-serif';
+  context.fillText('ЛИЧНОЕ ПРИГЛАШЕНИЕ', 44, 545);
+  context.fillStyle = '#fff8ea';
+  context.font = '700 38px Georgia, serif';
+  context.fillText(`Для ${name}`.slice(0, 30), 44, 594);
+  context.fillStyle = '#d5c8e3';
+  context.font = '500 22px system-ui, sans-serif';
+  context.fillText('Nastardamus · Путь двух судеб', 44, 638);
+  const blob = await new Promise((resolve, reject) =>
+    canvas.toBlob((value) => value ? resolve(value) : reject(new Error('invite_card_failed')), 'image/png')
+  );
+  return new File([blob], `nastardamus-${gender}-${goal}.png`, { type: 'image/png' });
+}
+
+async function nativeSharePreparedInvite() {
+  const invitation = state.preparedInvite;
+  if (!invitation?.inviteUrl) return notify('Сначала подготовьте приглашение');
+  const shareData = {
+    title: `Приглашение для ${state.inviteName.trim()}`,
+    text: invitation.text,
+    url: invitation.inviteUrl
+  };
+  if (state.preparedInviteFile && navigator.canShare?.({ files: [state.preparedInviteFile] })) {
+    shareData.files = [state.preparedInviteFile];
+  }
+  try {
+    if (navigator.share) {
+      await navigator.share(shareData);
+    } else if (tg?.openTelegramLink) {
+      const fallback = new URL('https://t.me/share/url');
+      fallback.searchParams.set('url', invitation.inviteUrl);
+      fallback.searchParams.set('text', invitation.text);
+      tg.openTelegramLink(fallback.toString());
+    } else {
+      await navigator.clipboard.writeText(`${invitation.text}\n${invitation.inviteUrl}`);
+      notify('Ссылка скопирована');
+      return;
+    }
+    notify('Приглашение отправлено');
+  } catch (error) {
+    if (error?.name !== 'AbortError') notify('Не удалось открыть меню отправки');
+  }
+}
+
+async function loadActiveInvitation({ accept = false } = {}) {
+  if (!state.invitationToken || !tg?.initData || state.invitationStatus === 'loading') return;
+  state.invitationStatus = 'loading';
+  if (state.screen === 'invitation') render();
+  try {
+    const data = await api('/api/proxy', {
+      method: 'POST',
+      body: {
+        action: accept ? 'invitation_accept' : 'invitation_refresh',
+        invitationToken: state.invitationToken
+      }
+    });
+    state.invitation = data.invitation;
+    state.invitationGender = normalizeGender(
+      data.invitation?.participantGender || data.invitation?.inviteeGender
+    );
+    state.invitationStatus = 'ready';
+    state.invitationError = '';
+  } catch (error) {
+    state.invitationStatus = 'error';
+    state.invitationError = apiErrorMessage(error);
+  }
+  if (state.screen === 'invitation') render();
+}
+
+function invitationServiceId(invitation = state.invitation) {
+  return invitation?.flow === 'palm' ? 'palmlink' : 'photo_compatibility';
+}
+
+function invitationStatusCard(invitation) {
+  const status = {
+    awaiting_participant: {
+      title: 'Приглашение доставлено',
+      copy: `Ждём, когда ${invitation.inviteeName} откроет ссылку и добавит фото.`
+    },
+    ready: {
+      title: 'Оба образа готовы',
+      copy: 'Приглашённый участник выбирает: оплатить общий результат сейчас или передать оплату инициатору.'
+    },
+    awaiting_initiator_payment: {
+      title: 'Оплата передана инициатору',
+      copy: 'Фото уже загружены. После оплаты общий результат одновременно откроется обоим.'
+    },
+    processing: {
+      title: 'Эзотериум соединяет образы',
+      copy: 'Результат формируется. Не закрывайте приложение несколько секунд.'
+    }
+  }[invitation.status] || {
+    title: 'Совместное пространство',
+    copy: 'Обновите статус приглашения.'
+  };
+  return MysticCard({ className: 'premium-invitation-status', children: [
+    h('img', { attrs: { src: premiumArtUrl('connection-heart'), alt: '', draggable: 'false' } }),
+    h('div', {}, h('strong', { text: status.title }), h('small', { text: status.copy }))
+  ] });
+}
+
+function invitationResult(invitation) {
+  return [
+    CompatibilityHero({
+      left: {
+        name: invitation.initiatorName,
+        birthDate: 'Первый образ',
+        gender: invitation.initiatorGender
+      },
+      right: {
+        name: invitation.inviteeName,
+        birthDate: 'Второй образ',
+        gender: invitation.participantGender || invitation.inviteeGender
+      }
+    }),
+    MysticCard({ className: 'premium-result-reading', children: [formatReading(invitation.result)] }),
+    h('p', {
+      className: 'premium-info-note',
+      text: 'Этот общий результат доступен инициатору и приглашённому участнику по личной ссылке.'
+    })
+  ];
+}
+
+function invitationScreen() {
+  if (!tg?.initData) {
+    return shell([
+      screenHeader('Личное приглашение', 'Откройте внутри Telegram', 'home'),
+      MysticCard({ className: 'premium-empty-state', children: [
+        h('img', { attrs: { src: premiumArtUrl('partner-invite-emblem'), alt: '', draggable: 'false' } }),
+        h('p', { text: 'Личная ссылка открывается только внутри Telegram, чтобы результат получили именно два участника.' })
+      ] })
+    ], { tabs: false });
+  }
+  if (state.invitationStatus === 'idle') {
+    queueMicrotask(() => loadActiveInvitation({ accept: true }));
+  }
+  if (state.invitationStatus === 'loading' || state.invitationStatus === 'idle') {
+    return shell([
+      screenHeader('Личное приглашение', 'Проверяем участников', 'home'),
+      loadingCard('Открываем совместное пространство…')
+    ], { tabs: false });
+  }
+  if (state.invitationStatus === 'error' || !state.invitation) {
+    return shell([
+      screenHeader('Личное приглашение', 'Ссылка недоступна', 'home'),
+      MysticCard({ className: 'premium-empty-state', children: [
+        h('img', { attrs: { src: premiumArtUrl('partner-invite-emblem'), alt: '', draggable: 'false' } }),
+        h('p', { text: state.invitationError || 'Не удалось открыть приглашение.' })
+      ] })
+    ], { tabs: false });
+  }
+
+  const invitation = state.invitation;
+  const base = [
+    screenHeader('Путь двух судеб', 'Личное пространство двух участников', 'home'),
+    invitationPreview({
+      name: invitation.inviteeName,
+      gender: invitation.inviteeGender,
+      goal: invitation.goal,
+      compact: true
+    })
+  ];
+  if (invitation.status === 'completed' && invitation.result) {
+    return shell([...base, ...invitationResult(invitation)], { tabs: false });
+  }
+
+  if (invitation.viewerRole === 'participant' && !invitation.participantPhotoReady) {
+    const upload = imageUpload({
+      title: invitation.flow === 'palm' ? 'Загрузите фото своей ладони' : 'Загрузите свою фотографию',
+      image: state.invitationPhoto,
+      onImage: (image) => { state.invitationPhoto = image; render(); }
+    });
+    return shell([
+      ...base,
+      MysticCard({ className: 'premium-invitation-welcome', children: [
+        h('strong', { text: `${invitation.inviteeName}, приглашение адресовано вам` }),
+        h('p', { text: `${invitation.initiatorName} уже добавил свой образ. Теперь нужен ваш — он будет храниться закрыто и удалится после готовности результата.` })
+      ] }),
+      upload,
+      h('div', {},
+        h('span', { className: 'premium-field-label', text: 'Как Эзотериуму обращаться к вам?' }),
+        inviteGenderOptions(state.invitationGender, (gender) => {
+          state.invitationGender = gender;
+          render();
+        })
+      ),
+      consentRow(
+        'Я согласен на обработку своего изображения для этого совместного чтения.',
+        state.invitationConsentOwn,
+        (checked) => { state.invitationConsentOwn = checked; }
+      ),
+      consentRow(
+        'Я подтверждаю, что мне исполнилось 18 лет.',
+        state.invitationAdultConfirmed,
+        (checked) => { state.invitationAdultConfirmed = checked; }
+      ),
+      MysticButton({
+        text: state.busy ? 'Сохраняем образ…' : 'Добавить фото и продолжить',
+        icon: 'upload-cloud',
+        variant: 'primary',
+        disabled: state.busy,
+        onClick: uploadInvitationPhoto
+      })
+    ], { tabs: false });
+  }
+
+  const content = [...base, invitationStatusCard(invitation)];
+  if (invitation.status === 'processing') {
+    content.push(loadingCard('Соединяем два образа…'));
+  } else if (
+    invitation.viewerRole === 'participant'
+    && invitation.status === 'ready'
+  ) {
+    const gentleman = (invitation.participantGender || invitation.inviteeGender) === 'male';
+    content.push(
+      MysticCard({ className: 'premium-gentle-hint', children: [
+        h('img', { attrs: { src: premiumArtUrl(gentleman ? 'portrait-man' : 'portrait-woman'), alt: '', draggable: 'false' } }),
+        h('p', {
+          text: gentleman
+            ? 'Можно поступить по-джентльменски и оплатить общий ритуал за двоих. Если сейчас неудобно, инициатор спокойно завершит оплату.'
+            : 'Можно сделать красивый жест и оплатить общий ритуал за двоих. Если сейчас неудобно, инициатор спокойно завершит оплату.'
+        })
+      ] }),
+      MysticButton({
+        text: state.busy ? 'Открываем результат…' : 'Оплатить общий результат',
+        icon: 'heart',
+        variant: 'primary',
+        disabled: state.busy,
+        onClick: () => completeJointInvitation('participant')
+      }),
+      MysticButton({
+        text: 'Пусть оплатит инициатор',
+        icon: 'send',
+        variant: 'outline',
+        disabled: state.busy,
+        onClick: requestInitiatorPayment
+      }),
+      PriceLine({ label: 'Одна оплата за двоих:', price: serviceConfig(invitationServiceId(invitation)).price })
+    );
+  } else if (
+    invitation.viewerRole === 'initiator'
+    && invitation.status === 'awaiting_initiator_payment'
+  ) {
+    content.push(
+      MysticButton({
+        text: state.busy ? 'Открываем результат…' : 'Оплатить за двоих',
+        icon: 'heart',
+        variant: 'primary',
+        disabled: state.busy,
+        onClick: () => completeJointInvitation('initiator')
+      }),
+      PriceLine({ label: 'Одна оплата за двоих:', price: serviceConfig(invitationServiceId(invitation)).price })
+    );
+  } else {
+    content.push(MysticButton({
+      text: 'Обновить статус',
+      icon: 'history',
+      variant: 'outline',
+      disabled: state.busy,
+      onClick: () => loadActiveInvitation()
+    }));
+  }
+  return shell(content, { tabs: false });
+}
+
+async function uploadInvitationPhoto() {
+  if (!state.invitationPhoto) return notify('Загрузите фотографию');
+  if (!state.invitationConsentOwn) return notify('Подтвердите согласие на обработку фотографии');
+  if (!state.invitationAdultConfirmed) return notify('Подтвердите совершеннолетие');
+  if (state.invitationGender === 'unspecified') return notify('Выберите форму обращения');
+  if (state.busy) return;
+  state.busy = true;
+  render();
+  try {
+    const data = await api('/api/proxy', {
+      method: 'POST',
+      body: {
+        action: 'invitation_upload',
+        invitationToken: state.invitationToken,
+        participantImage: state.invitationPhoto,
+        participantGender: state.invitationGender,
+        consentOwn: true,
+        adultConfirmed: true
+      }
+    });
+    state.invitation = data.invitation;
+    state.invitationStatus = 'ready';
+    pulse('medium');
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
+async function requestInitiatorPayment() {
+  if (state.busy) return;
+  state.busy = true;
+  render();
+  try {
+    const data = await api('/api/proxy', {
+      method: 'POST',
+      body: {
+        action: 'invitation_request_initiator_payment',
+        invitationToken: state.invitationToken
+      }
+    });
+    state.invitation = data.invitation;
+    notify('Инициатор получил деликатное уведомление');
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
+async function completeJointInvitation(payerRole) {
+  const serviceId = invitationServiceId();
+  if (!confirmServicePayment(serviceId)) return;
+  if (state.busy) return;
+  state.busy = true;
+  render();
+  try {
+    const answer = await requestReading('photo_compatibility', {
+      invitationToken: state.invitationToken,
+      payerRole
+    }, serviceId);
+    state.invitation = {
+      ...state.invitation,
+      status: 'completed',
+      result: answer
+    };
+    pulse('medium');
+  } catch (error) {
+    notify(apiErrorMessage(error));
+    await loadActiveInvitation();
+  } finally {
+    state.busy = false;
+    render();
+  }
 }
 
 async function submitPalmCompatibility() {
@@ -1254,6 +1966,10 @@ async function requestReading(feature, payload, serviceId = '') {
       }
     });
     if (typeof data.answer !== 'string' || !data.answer.trim()) throw new Error('empty_response');
+    if (data.invitation) {
+      state.invitation = data.invitation;
+      state.invitationStatus = 'ready';
+    }
     loadWallet({ force: true });
     return data.answer.trim();
   } catch (error) {
@@ -1289,6 +2005,7 @@ function apiErrorMessage(error) {
   const messages = {
     service_not_configured: 'Сервис ответов ещё не настроен.',
     assistant_unavailable: 'Помощник временно недоступен.',
+    deepseek_provider_unavailable: 'Эзотериум временно не отвечает. Попробуйте немного позже.',
     vision_provider_unavailable: 'Фото-чтение временно недоступно.',
     reading_provider_unavailable: 'Толкование временно недоступно.',
     photo_consent_required: 'Подтвердите согласие на обработку фотографии.',
@@ -1320,7 +2037,19 @@ function apiErrorMessage(error) {
     above_topup_maximum: 'Сумма выше максимального порога СБП.',
     topup_not_found: 'Заявка на пополнение не найдена.',
     topup_not_pending: 'Эта заявка уже обработана.',
-    topup_expired: 'Срок действия заявки истёк. Создайте новую.'
+    topup_expired: 'Срок действия заявки истёк. Создайте новую.',
+    invalid_invitee_name: 'Введите имя приглашённого человека.',
+    invalid_gender: 'Выберите вариант обращения.',
+    invalid_invitation_image: 'Не удалось подготовить изображение. Загрузите фото ещё раз.',
+    invitation_not_found: 'Это приглашение не найдено.',
+    invitation_expired: 'Срок действия приглашения истёк.',
+    invitation_unavailable: 'Это приглашение больше недоступно.',
+    invitation_not_ready: 'Для общего результата нужны фотографии обоих участников.',
+    invitation_busy: 'Результат уже формируется. Обновите статус через несколько секунд.',
+    invitation_already_completed: 'Общий результат уже готов.',
+    invitation_payment_denied: 'Оплатить результат может только один из двух участников.',
+    invitation_image_unavailable: 'Фото участника временно недоступно. Попробуйте открыть приглашение снова.',
+    invitation_processing_not_found: 'Состояние приглашения изменилось. Обновите страницу.'
   };
   return messages[error?.message] || 'Не удалось выполнить действие. Проверьте соединение и повторите.';
 }
@@ -1452,8 +2181,10 @@ function render() {
     wheel: wheelScreen, tarot: tarotScreen, 'tarot-draw': tarotDrawScreen, 'tarot-result': tarotResultScreen,
     natal: natalScreen, 'natal-result': natalResultScreen,
     horoscope: horoscopeScreen,
+    sports: sportsForecastScreen,
     'photo-energy': () => photoScreen('energy'), 'photo-damage': () => photoScreen('damage'), 'photo-compat': () => photoScreen('compatibility'), 'photo-result': photoResultScreen,
     palm: palmScreen, ritual: ritualScreen, 'compatibility-result': compatibilityResultScreen,
+    'invite-compose': inviteComposerScreen, invitation: invitationScreen,
     history: historyScreen, profile: profileScreen, topup: topupScreen, withdrawal: withdrawalScreen, support: supportScreen
   };
   if (!routes[state.screen]) state.screen = 'home';
@@ -1478,6 +2209,7 @@ function loadTelegramData({ force = false } = {}) {
   loadPublicConfig();
   loadWallet({ force });
   loadPreferences();
+  if (state.invitationToken) loadActiveInvitation({ accept: true });
   return true;
 }
 
@@ -1491,4 +2223,4 @@ if (!loadTelegramData()) {
   );
 }
 
-export { navigate, render, state };
+export { navigate, render, state, suggestGenderFromName };
