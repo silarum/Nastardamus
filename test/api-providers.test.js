@@ -211,13 +211,16 @@ test('daily horoscope uses DeepSeek', async () => {
         assert.equal(answer, 'Сегодня берегите внутренний ритм.');
         assert.equal(request.url, 'https://api.deepseek.com/chat/completions');
         assert.equal(request.body.max_tokens, 700);
+        assert.match(request.body.messages[0].content, /поэтическ/i);
+        assert.match(request.body.messages[0].content, /юмор/i);
+        assert.match(request.body.messages[1].content, /юмор должен поддерживать/i);
     } finally {
         restore();
         global.fetch = previousFetch;
     }
 });
 
-test('bot health reports both providers without exposing secrets', async () => {
+test('bot health uses neutral public service labels without exposing secrets', async () => {
     const restore = preserveEnvironment(['BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'DEEPSEEK_API_KEY', 'DEEPSEEK_MODEL', 'OPENAI_API_KEY', 'OPENAI_MODEL', 'OPENROUTER_API_KEY']);
     process.env.BOT_TOKEN = 'telegram-test-token';
     process.env.TELEGRAM_WEBHOOK_SECRET = 'webhook-test-secret';
@@ -231,11 +234,14 @@ test('bot health reports both providers without exposing secrets', async () => {
         await botHandler({ method: 'GET', headers: {}, query: {} }, response);
         assert.equal(response.statusCode, 200);
         assert.equal(response.body.services.readings, true);
-        assert.equal(response.body.services.aiSupport, true);
-        assert.equal(response.body.services.deepSeek, true);
-        assert.equal(response.body.services.openAi, true);
-        assert.equal(response.body.services.openRouterFallback, true);
-        assert.doesNotMatch(JSON.stringify(response.body), /test-key|test-secret/);
+        assert.equal(response.body.services.supportGuide, true);
+        assert.equal(response.body.services.textReadings, true);
+        assert.equal(response.body.services.photoReadings, true);
+        assert.equal(response.body.services.fallbackReady, true);
+        assert.doesNotMatch(
+          JSON.stringify(response.body),
+          /test-key|test-secret|OpenAI|DeepSeek|нейросет|\bAI\b/i
+        );
     } finally {
         restore();
     }

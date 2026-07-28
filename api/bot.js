@@ -113,7 +113,7 @@ async function forwardToSupport(botToken, message, aiAnswer) {
             '',
             `Вопрос: ${message.text}`,
             '',
-            `Ответ AI: ${aiAnswer || 'не сформирован'}`
+            `Ответ Эзотериума: ${aiAnswer || 'не сформирован'}`
         ].filter((line) => line !== null).join('\n');
         await callTelegram(botToken, 'sendMessage', {
             chat_id: support.support_chat_id,
@@ -173,12 +173,12 @@ async function answerSupportMessage(botToken, message) {
             reply_markup: buildMarketingKeyboard(webAppUrl, message.text)
         });
     } catch (error) {
-        console.error('Telegram AI support failed:', error, error?.causes || null);
-        const forwarded = await forwardToSupport(botToken, message, 'AI-помощник недоступен');
+        console.error('Telegram support guide failed:', error, error?.causes || null);
+        const forwarded = await forwardToSupport(botToken, message, 'Эзотериум временно недоступен');
         await callTelegram(botToken, 'sendMessage', {
             chat_id: message.chat.id,
             text: forwarded
-                ? 'AI-помощник временно недоступен. Ваш вопрос отправлен оператору поддержки.'
+                ? 'Эзотериум временно не отвечает. Ваш вопрос отправлен оператору поддержки.'
                 : 'Эзотериум временно не слышит знаки. Откройте нужный раздел приложения или попробуйте позже.',
             reply_markup: buildMarketingKeyboard(webAppUrl, message.text)
         });
@@ -231,13 +231,10 @@ export default async function handler(req, res) {
                 bot: Boolean(botToken),
                 webhookSecret: Boolean(webhookSecret),
                 readings: Boolean(process.env.DEEPSEEK_API_KEY && process.env.OPENAI_API_KEY),
-                aiSupport: Boolean(process.env.DEEPSEEK_API_KEY),
-                deepSeek: Boolean(process.env.DEEPSEEK_API_KEY),
-                deepSeekModel: Boolean(process.env.DEEPSEEK_MODEL),
-                openAi: Boolean(process.env.OPENAI_API_KEY),
-                openAiModel: Boolean(process.env.OPENAI_MODEL),
-                openRouterFallback: Boolean(process.env.OPENROUTER_API_KEY),
-                openRouterModel: Boolean(process.env.OPENROUTER_MODEL),
+                supportGuide: Boolean(process.env.DEEPSEEK_API_KEY),
+                textReadings: Boolean(process.env.DEEPSEEK_API_KEY),
+                photoReadings: Boolean(process.env.OPENAI_API_KEY),
+                fallbackReady: Boolean(process.env.OPENROUTER_API_KEY),
                 webAppUrl: Boolean(process.env.WEB_APP_URL),
                 authenticatedPreviewOnly: !unauthenticatedPreviewAllowed()
             }

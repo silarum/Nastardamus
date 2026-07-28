@@ -172,3 +172,26 @@ test('payment migration keeps tables private and mutations service-role only', (
   assert.match(sql, /unique \(telegram_id, idempotency_key\)/);
   assert.match(sql, /nastardamus_refund_service_charge/);
 });
+
+test('automatic SBP migration verifies bank facts and keeps self-credit owner-only', () => {
+  const sql = readFileSync(
+    new URL('../supabase/migrations/20260728090515_add_automatic_sbp_and_admin_self_credit.sql', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(sql, /create table if not exists public\.nastardamus_payment_providers/);
+  assert.match(sql, /alter table public\.nastardamus_payment_providers enable row level security/);
+  assert.match(sql, /revoke all on table public\.nastardamus_payment_providers from public, anon, authenticated/);
+  assert.match(sql, /p_ruble_kopecks = v_order\.ruble_kopecks/);
+  assert.match(sql, /upper\(coalesce\(p_currency, ''\)\) = 'RUB'/);
+  assert.match(sql, /lower\(coalesce\(p_payment_method, ''\)\) = 'sbp'/);
+  assert.match(sql, /verification_state = 'manual_review'/);
+  assert.match(sql, /'sbp-provider:' \|\| v_order\.provider_payment_id/);
+  assert.match(sql, /create or replace function public\.nastardamus_credit_admin_self/);
+  assert.match(sql, /where telegram_id = p_admin_id/);
+  assert.match(sql, /grant execute on function public\.nastardamus_credit_admin_self[\s\S]*to service_role/);
+  assert.doesNotMatch(
+    sql,
+    /grant execute on function public\.nastardamus_credit_admin_self[\s\S]{0,300}to (?:anon|authenticated)/
+  );
+});

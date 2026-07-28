@@ -43,7 +43,7 @@
     <div id="dashboard" hidden>
       <section class="status-grid" aria-label="Состояние системы">
         <article class="card stat"><span>Бот</span><strong id="status-bot">—</strong></article>
-        <article class="card stat"><span>AI-центр</span><strong id="status-ai">—</strong></article>
+        <article class="card stat"><span>Центр ответов</span><strong id="status-ai">—</strong></article>
         <article class="card stat"><span>Приложение</span><strong id="status-app">—</strong></article>
         <article class="card stat"><span>Ваша роль</span><strong id="status-access">—</strong></article>
       </section>
@@ -53,16 +53,17 @@
         <button type="button" data-tab="payments">Платежи</button>
         <button type="button" data-tab="team">Команда</button>
         <button type="button" data-tab="support">Поддержка</button>
-        <button type="button" data-tab="ai">AI-центр</button>
+        <button type="button" data-tab="ai">Центр ответов</button>
       </nav>
 
       <section class="tab-panel active" data-panel="overview">
         <form id="settings-form">
           <section class="card panel">
-            <div class="panel-head"><div><p class="eyebrow">Оплата</p><h2>СБП и покупка SILARUM</h2></div><span class="badge">Ручная проверка</span></div>
-            <p class="panel-copy">Пользователь переводит точную сумму по СБП и сообщает об оплате. SILARUM начисляются только после подтверждения администратором.</p>
+            <div class="panel-head"><div><p class="eyebrow">Оплата</p><h2>СБП и покупка SILARUM</h2></div><span class="badge">Автопроверка</span></div>
+            <p class="panel-copy">Подтверждённые провайдером платежи начисляются автоматически. Расхождения и резервные ручные переводы остаются в очереди администратора.</p>
             <label class="switch-row"><span><strong>Платные услуги включены</strong><small>Полный ответ выдаётся после списания цены услуги</small></span><input name="paymentsEnabled" type="checkbox" checked></label>
             <label class="switch-row"><span><strong>Пополнение по СБП</strong><small>Включайте только после заполнения реквизитов и курса</small></span><input name="sbpTopupsEnabled" type="checkbox"></label>
+            <label class="switch-row"><span><strong>Автоматическая проверка оплаты</strong><small>Зачисление только после подтверждённого статуса платёжного провайдера</small></span><input name="sbpAutomationEnabled" type="checkbox" checked></label>
             <div class="two-cols">
               <label>Минимум, SILARUM<input name="sbpMinimumSilarum" type="number" min="0.01" max="1000000" step="0.01" value="10"></label>
               <label>Максимум, SILARUM<input name="sbpMaximumSilarum" type="number" min="0.01" max="1000000" step="0.01" value="1000"></label>
@@ -164,8 +165,28 @@
         <section class="card panel intro-panel">
           <p class="eyebrow">СБП</p>
           <h2>Заявки на пополнение</h2>
-          <p>Подтверждайте только те переводы, которые реально поступили на указанный счёт. Повторное подтверждение не начислит средства второй раз.</p>
+          <p>Обычные платежи сверяются автоматически. Вручную подтверждайте только резервные переводы и заявки с пометкой «Требует внимания».</p>
         </section>
+        <form id="payment-provider-form" class="card panel">
+          <div class="panel-head"><div><p class="eyebrow">Автопроверка</p><h2>Подключение ЮKassa</h2></div><span class="badge" id="payment-provider-status">Не настроено</span></div>
+          <p class="panel-copy">Секретный ключ шифруется и после сохранения больше не показывается. Для мгновенного зачисления укажите в кабинете ЮKassa адрес уведомлений: <strong>https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-sbp-webhook</strong></p>
+          <label class="switch-row"><span><strong>Автоматические платежи включены</strong><small>Доступно после ввода Shop ID и секретного ключа</small></span><input name="enabled" type="checkbox"></label>
+          <div class="two-cols">
+            <label>Shop ID<input name="merchantId" inputmode="numeric" pattern="[0-9]{3,32}" maxlength="32" placeholder="Идентификатор магазина"></label>
+            <label>Секретный ключ<input name="secret" type="password" minlength="16" maxlength="300" autocomplete="new-password" placeholder="Оставьте пустым, чтобы не менять"></label>
+          </div>
+          <p id="payment-secret-hint" class="panel-copy">Ключ ещё не сохранён.</p>
+          <div class="form-actions"><button type="submit">Сохранить подключение</button></div>
+        </form>
+        <form id="self-credit-form" class="card panel">
+          <div class="panel-head"><div><p class="eyebrow">Мой счёт</p><h2>Начислить себе SILARUM</h2></div><span class="badge violet">Только ваш Telegram ID</span></div>
+          <p class="panel-copy">Начисление попадёт в финансовый журнал. Эта форма не может изменить баланс другого пользователя.</p>
+          <div class="two-cols">
+            <label>Количество SILARUM<input name="amount" type="number" min="0.01" max="1000000" step="0.01" required placeholder="100"></label>
+            <label>Комментарий<input name="note" maxlength="300" placeholder="Например: тестирование услуг"></label>
+          </div>
+          <div class="form-actions"><button type="submit">Начислить на мой счёт</button></div>
+        </form>
         <section class="card panel">
           <div class="panel-head"><div><p class="eyebrow">Очередь</p><h2>Последние заявки</h2></div><button type="button" class="mini-button" id="refresh-payments-button">Обновить</button></div>
           <div id="payments-list" class="entity-list"><p class="empty-state">Загрузка платежей…</p></div>
@@ -217,8 +238,8 @@
             <label><input type="checkbox" name="permission" value="support.view"> Просмотр поддержки</label>
             <label><input type="checkbox" name="permission" value="support.reply"> Ответы пользователям</label>
             <label><input type="checkbox" name="permission" value="support.manage"> Настройки поддержки</label>
-            <label><input type="checkbox" name="permission" value="ai.view"> Просмотр AI-центра</label>
-            <label><input type="checkbox" name="permission" value="ai.manage"> Управление AI и ключами</label>
+            <label><input type="checkbox" name="permission" value="ai.view"> Просмотр центра ответов</label>
+            <label><input type="checkbox" name="permission" value="ai.manage"> Управление подключениями и ключами</label>
             <label><input type="checkbox" name="permission" value="audit.view"> Журнал действий</label>
           </fieldset>
           <div class="form-actions"><button type="button" class="secondary-button" data-close-editor="admin">Отмена</button><button type="submit">Сохранить администратора</button></div>
@@ -258,24 +279,24 @@
 
       <section class="tab-panel" data-panel="ai" hidden>
         <section class="card panel intro-panel">
-          <p class="eyebrow">Оркестратор нейросетей</p>
-          <h2>AI-центр</h2>
-          <p>Подключайте несколько API и распределяйте их между помощниками. Ключи шифруются, обратно показывается только маска. Для каждого помощника можно задать резервную нейросеть.</p>
+          <p class="eyebrow">Мастерская Эзотериума</p>
+          <h2>Центр ответов</h2>
+          <p>Подключайте несколько API и распределяйте их между проводниками. Ключи шифруются, обратно показывается только маска. Для каждого проводника можно задать резервное подключение.</p>
         </section>
 
         <section class="card panel">
-          <div class="panel-head"><div><p class="eyebrow">Подключения</p><h2>Нейросети</h2></div><button type="button" class="mini-button" id="new-provider-button">Добавить API</button></div>
+          <div class="panel-head"><div><p class="eyebrow">Подключения</p><h2>Источники ответов</h2></div><button type="button" class="mini-button" id="new-provider-button">Добавить API</button></div>
           <div id="providers-list" class="entity-list"><p class="empty-state">Загрузка провайдеров…</p></div>
         </section>
 
         <form id="provider-form" class="card panel editor" hidden>
           <input type="hidden" name="id">
-          <div class="panel-head"><div><p class="eyebrow">Безопасное подключение</p><h2 id="provider-form-title">Новая нейросеть</h2></div><button type="button" class="icon-button" data-close-editor="provider">×</button></div>
+          <div class="panel-head"><div><p class="eyebrow">Безопасное подключение</p><h2 id="provider-form-title">Новое подключение</h2></div><button type="button" class="icon-button" data-close-editor="provider">×</button></div>
           <div class="two-cols">
-            <label>Название<input name="name" required placeholder="Основная нейросеть"></label>
+            <label>Название<input name="name" required placeholder="Основной источник"></label>
             <label>Тип<select name="providerType">
-              <option value="openai_compatible">OpenAI-совместимый API</option>
-              <option value="openai">OpenAI</option>
+              <option value="openai_compatible">Совместимый текстовый API</option>
+              <option value="openai">Responses API</option>
               <option value="anthropic">Anthropic</option>
               <option value="google">Google</option>
               <option value="custom">Другой API</option>
@@ -300,7 +321,7 @@
         </form>
 
         <section class="card panel">
-          <div class="panel-head"><div><p class="eyebrow">Специализация</p><h2>AI-помощники</h2></div><button type="button" class="mini-button" id="new-agent-button">Новый помощник</button></div>
+          <div class="panel-head"><div><p class="eyebrow">Специализация</p><h2>Проводники</h2></div><button type="button" class="mini-button" id="new-agent-button">Новый проводник</button></div>
           <div id="agents-list" class="entity-list"><p class="empty-state">Загрузка помощников…</p></div>
         </section>
 
@@ -322,8 +343,8 @@
             <option value="custom">Другое направление</option>
           </select></label>
           <div class="two-cols">
-            <label>Основная нейросеть<select name="providerId"><option value="">Не назначена</option></select></label>
-            <label>Резервная нейросеть<select name="fallbackProviderId"><option value="">Нет</option></select></label>
+            <label>Основное подключение<select name="providerId"><option value="">Не назначено</option></select></label>
+            <label>Резервное подключение<select name="fallbackProviderId"><option value="">Нет</option></select></label>
           </div>
           <label>Отдельная модель<input name="modelOverride" placeholder="необязательно"></label>
           <label>Инструкция помощнику<textarea name="instructions" rows="8" maxlength="12000" placeholder="Опишите роль, ограничения и стиль ответов"></textarea></label>
@@ -341,7 +362,7 @@
         </form>
 
         <form id="moderation-form" class="card panel">
-          <div class="panel-head"><div><p class="eyebrow">Безопасность изображений</p><h2>Фото-модерация</h2></div><span class="badge rose">AI + человек</span></div>
+          <div class="panel-head"><div><p class="eyebrow">Безопасность изображений</p><h2>Фото-модерация</h2></div><span class="badge rose">Автопроверка + человек</span></div>
           <label class="switch-row"><span><strong>Автоматическая проверка включена</strong><small>Высокий риск блокируется, средний уходит модератору</small></span><input name="enabled" type="checkbox" checked></label>
           <fieldset class="permission-grid moderation-rules"><legend>Что проверять</legend>
             <label><input type="checkbox" name="moderationRule" value="nudity" checked> Нагота</label>

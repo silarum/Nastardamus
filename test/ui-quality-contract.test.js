@@ -49,6 +49,12 @@ test('startup renders the branded elder splash without waiting for Telegram', ()
   assert.match(appSource, /function hideBootScreen\(\)/);
 });
 
+test('public services use neutral badges and language', () => {
+  assert.match(appSource, /function serviceBadge\(id, fallback = ''\)/);
+  assert.doesNotMatch(appSource, /[«"'`\s>]AI[»"'`<\s]/);
+  assert.doesNotMatch(appSource, /нейросет|искусственн(?:ый|ого) интеллект/i);
+});
+
 test('every illustrated module uses the approved PNG asset set', () => {
   const files = readdirSync(artV2);
   const expected = [

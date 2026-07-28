@@ -29,6 +29,7 @@ const DEFAULT_WHEEL_REWARDS = Object.freeze([
 const DEFAULT_SETTINGS = Object.freeze({
   paymentsEnabled: true,
   sbpTopupsEnabled: false,
+  sbpAutomationEnabled: true,
   sbpMinimumSilarum: 10,
   sbpMaximumSilarum: 1000,
   sbpRoublesPerSilarum: 0,
@@ -137,6 +138,7 @@ function sanitizeSettings(input = {}) {
   return {
     paymentsEnabled: input.paymentsEnabled !== false,
     sbpTopupsEnabled: Boolean(input.sbpTopupsEnabled),
+    sbpAutomationEnabled: input.sbpAutomationEnabled !== false,
     sbpMinimumSilarum: minimumTopup,
     sbpMaximumSilarum: maximumTopup,
     sbpRoublesPerSilarum: clampNumber(input.sbpRoublesPerSilarum, 0, 1_000_000, 0),
@@ -242,10 +244,48 @@ async function writeSettings(settings, botToken) {
 
 async function readPayments(botToken) {
   const direct = await directSupabaseRequest(
-    'nastardamus_sbp_topups?select=id,telegram_id,silarum_units,ruble_kopecks,payment_reference,status,reviewed_by,review_note,created_at,updated_at,paid_at,expires_at&order=created_at.desc&limit=100'
+    'nastardamus_sbp_topups?select=id,telegram_id,silarum_units,ruble_kopecks,payment_reference,status,provider_type,provider_payment_id,provider_status,verification_state,reviewed_by,review_note,created_at,updated_at,paid_at,expires_at&order=created_at.desc&limit=100'
   );
   if (direct) return await direct.json();
   return (await edgeStore(botToken, 'list_sbp_topups')).orders || [];
+}
+
+async function readPaymentProvider(botToken) {
+  return (await edgeStore(botToken, 'read_payment_provider')).provider;
+}
+
+async function writePaymentProvider(provider, adminId, botToken) {
+  return (await edgeStore(botToken, 'write_payment_provider', {
+    provider: {
+      merchantId: cleanText(provider?.merchantId, 40),
+      secret: cleanText(provider?.secret, 300),
+      enabled: provider?.enabled === true,
+      updatedBy: adminId
+    }
+  })).provider;
+}
+
+async function creditAdminSelf({ adminId, amountUnits, idempotencyKey, note }, botToken) {
+  const direct = await directSupabaseRequest('rpc/nastardamus_credit_admin_self', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation'
+    },
+    body: JSON.stringify({
+      p_admin_id: adminId,
+      p_amount_units: amountUnits,
+      p_idempotency_key: idempotencyKey,
+      p_note: note
+    })
+  });
+  if (direct) return await direct.json();
+  return (await edgeStore(botToken, 'credit_admin_self', {
+    adminId,
+    amountUnits,
+    idempotencyKey,
+    note
+  })).credit;
 }
 
 async function reviewPayment({ orderId, decision, adminId, note }, botToken) {
@@ -372,7 +412,8 @@ export default async function handler(req, res) {
         return sendJson(res, 200, {
           ok: true,
           canManage: hasPermission(profile, 'finance.manage'),
-          orders: await readPayments(botToken)
+          orders: await readPayments(botToken),
+          provider: await readPaymentProvider(botToken)
         });
       }
       const current = await readSettings(botToken);
@@ -413,6 +454,45 @@ export default async function handler(req, res) {
       const order = await reviewPayment({ orderId, decision, adminId: userId, note }, botToken);
       await writeAudit(userId, 'sbp_topup_reviewed', { orderId, decision, note }, botToken);
       return sendJson(res, 200, { ok: true, order });
+    }
+
+    if (req.body?.paymentAction === 'save_sbp_provider') {
+      if (!hasPermission(profile, 'finance.manage')) {
+        return sendJson(res, 403, { error: 'permission_denied' });
+      }
+      const provider = await writePaymentProvider(req.body?.provider, userId, botToken);
+      await writeAudit(userId, 'sbp_provider_updated', {
+        enabled: provider?.enabled === true,
+        merchantId: provider?.merchant_id || null,
+        secretChanged: Boolean(req.body?.provider?.secret)
+      }, botToken);
+      return sendJson(res, 200, { ok: true, provider });
+    }
+
+    if (req.body?.paymentAction === 'credit_self') {
+      if (!hasPermission(profile, 'finance.manage')) {
+        return sendJson(res, 403, { error: 'permission_denied' });
+      }
+      const amount = Number(req.body?.amount);
+      const amountUnits = Math.round(amount * 100);
+      const idempotencyKey = cleanText(req.body?.idempotencyKey, 128);
+      const note = cleanText(req.body?.note, 300);
+      if (
+        !Number.isFinite(amount)
+        || amount <= 0
+        || amount > 1_000_000
+        || !Number.isSafeInteger(amountUnits)
+        || amountUnits <= 0
+        || Math.abs(amount * 100 - amountUnits) > 1e-7
+      ) {
+        return sendJson(res, 400, { error: 'invalid_amount' });
+      }
+      if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/.test(idempotencyKey)) {
+        return sendJson(res, 400, { error: 'invalid_idempotency_key' });
+      }
+      const credit = await creditAdminSelf({ adminId: userId, amountUnits, idempotencyKey, note }, botToken);
+      await writeAudit(userId, 'admin_self_credited', { amountUnits, note }, botToken);
+      return sendJson(res, 200, { ok: true, credit });
     }
 
     if (!hasPermission(profile, 'settings.manage')) {

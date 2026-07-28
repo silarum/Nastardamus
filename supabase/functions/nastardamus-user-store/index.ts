@@ -80,6 +80,180 @@ async function sha256Hex(value: string) {
     .join("");
 }
 
+function base64ToBytes(value: string) {
+  const binary = atob(value);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+async function paymentEncryptionKey() {
+  const stableSecret = Deno.env.get("NASTARDAMUS_ENCRYPTION_SECRET")
+    || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
+    || "";
+  if (!stableSecret) throw new Error("payment_encryption_secret_missing");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(stableSecret));
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["decrypt"]);
+}
+
+async function decryptPaymentSecret(ciphertext: string, iv: string) {
+  const key = await paymentEncryptionKey();
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64ToBytes(iv) },
+    key,
+    base64ToBytes(ciphertext)
+  );
+  return new TextDecoder().decode(decrypted);
+}
+
+type SbpProvider = {
+  merchantId: string;
+  secret: string;
+};
+
+async function readSbpProvider(): Promise<SbpProvider | null> {
+  const response = await rest(
+    "nastardamus_payment_providers?key=eq.sbp&enabled=eq.true&select=merchant_id,secret_ciphertext,secret_iv&limit=1"
+  );
+  const rows = await response.json();
+  const row = rows?.[0];
+  if (!row?.merchant_id || !row?.secret_ciphertext || !row?.secret_iv) return null;
+  return {
+    merchantId: String(row.merchant_id),
+    secret: await decryptPaymentSecret(String(row.secret_ciphertext), String(row.secret_iv))
+  };
+}
+
+function rublesToKopecks(value: unknown) {
+  const normalized = String(value || "");
+  if (!/^\d{1,9}\.\d{2}$/.test(normalized)) return null;
+  const [rubles, kopecks] = normalized.split(".");
+  const amount = Number(rubles) * 100 + Number(kopecks);
+  return Number.isSafeInteger(amount) && amount > 0 ? amount : null;
+}
+
+async function yookassaRequest(
+  provider: SbpProvider,
+  path: string,
+  options: { method?: string; idempotencyKey?: string; body?: unknown } = {}
+) {
+  const response = await fetch(`https://api.yookassa.ru/v3/${path.replace(/^\/+/, "")}`, {
+    method: options.method || "GET",
+    headers: {
+      Authorization: `Basic ${btoa(`${provider.merchantId}:${provider.secret}`)}`,
+      "Content-Type": "application/json",
+      ...(options.idempotencyKey ? { "Idempotence-Key": options.idempotencyKey } : {})
+    },
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: AbortSignal.timeout(15_000)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    console.error("SBP provider request failed", response.status, data?.type || data?.code || "unknown");
+    throw new Error(`payment_provider_${response.status}`);
+  }
+  return data;
+}
+
+async function settleProviderPayment(payment: Record<string, unknown>) {
+  const amount = payment.amount && typeof payment.amount === "object"
+    ? payment.amount as Record<string, unknown>
+    : {};
+  const method = payment.payment_method && typeof payment.payment_method === "object"
+    ? payment.payment_method as Record<string, unknown>
+    : {};
+  const response = await rest("rpc/nastardamus_settle_sbp_provider_payment", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      p_provider_payment_id: String(payment.id || ""),
+      p_provider_status: String(payment.status || ""),
+      p_ruble_kopecks: rublesToKopecks(amount.value) || 0,
+      p_currency: String(amount.currency || ""),
+      p_payment_method: String(method.type || "")
+    })
+  });
+  return await response.json();
+}
+
+async function createProviderPayment(
+  telegramId: number,
+  order: Record<string, unknown>,
+  idempotencyKey: string
+) {
+  const provider = await readSbpProvider();
+  if (!provider) return order;
+  const rubleKopecks = Number(order.ruble_kopecks);
+  const orderId = String(order.id || "");
+  const reference = String(order.payment_reference || "");
+  if (!Number.isSafeInteger(rubleKopecks) || rubleKopecks <= 0 || !orderId) return order;
+
+  const origin = String(Deno.env.get("NASTARDAMUS_ALLOWED_ORIGIN") || "https://nastardamus.vercel.app")
+    .replace(/\/$/, "");
+  const payment = await yookassaRequest(provider, "payments", {
+    method: "POST",
+    idempotencyKey: `nastardamus-${idempotencyKey}`.slice(0, 64),
+    body: {
+      amount: { value: (rubleKopecks / 100).toFixed(2), currency: "RUB" },
+      payment_method_data: { type: "sbp" },
+      confirmation: { type: "redirect", return_url: `${origin}/?screen=topup` },
+      capture: true,
+      description: `Nastardamus ${reference}`.slice(0, 128),
+      metadata: { order_id: orderId, reference }
+    }
+  });
+  const paymentAmount = payment.amount && typeof payment.amount === "object"
+    ? payment.amount as Record<string, unknown>
+    : {};
+  const paymentMethod = payment.payment_method && typeof payment.payment_method === "object"
+    ? payment.payment_method as Record<string, unknown>
+    : { type: "sbp" };
+  const confirmation = payment.confirmation && typeof payment.confirmation === "object"
+    ? payment.confirmation as Record<string, unknown>
+    : {};
+  if (
+    !/^[A-Za-z0-9-]{8,96}$/.test(String(payment.id || ""))
+    || rublesToKopecks(paymentAmount.value) !== rubleKopecks
+    || String(paymentAmount.currency || "") !== "RUB"
+    || String(paymentMethod.type || "sbp") !== "sbp"
+    || !String(confirmation.confirmation_url || "").startsWith("https://")
+  ) {
+    throw new Error("invalid_payment_provider_response");
+  }
+
+  const attachedResponse = await rest("rpc/nastardamus_attach_sbp_provider_payment", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      p_telegram_id: telegramId,
+      p_order_id: orderId,
+      p_provider_type: "yookassa",
+      p_provider_payment_id: String(payment.id),
+      p_confirmation_url: String(confirmation.confirmation_url),
+      p_provider_status: String(payment.status || "pending")
+    })
+  });
+  const attached = await attachedResponse.json();
+  return { ...order, ...attached };
+}
+
+async function reconcileLatestProviderPayment(telegramId: number) {
+  const settings = await readSettings();
+  if (settings.sbpAutomationEnabled === false) return;
+  const response = await rest(
+    `nastardamus_sbp_topups?telegram_id=eq.${telegramId}`
+      + "&provider_payment_id=not.is.null&status=in.(pending,awaiting_confirmation)"
+      + "&select=provider_payment_id,provider_checked_at&order=created_at.desc&limit=1"
+  );
+  const rows = await response.json();
+  const order = rows?.[0];
+  if (!order?.provider_payment_id) return;
+  const checkedAt = Date.parse(String(order.provider_checked_at || ""));
+  if (Number.isFinite(checkedAt) && Date.now() - checkedAt < 5_000) return;
+  const provider = await readSbpProvider();
+  if (!provider) return;
+  const payment = await yookassaRequest(provider, `payments/${encodeURIComponent(order.provider_payment_id)}`);
+  await settleProviderPayment(payment);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
@@ -97,19 +271,26 @@ Deno.serve(async (req: Request) => {
         return json(400, { error: "invalid_telegram_id" });
       }
       await ensureWallet(telegramId);
-      const [walletResponse, ledgerResponse, withdrawalResponse, entitlementResponse, topupResponse, settings] = await Promise.all([
+      await reconcileLatestProviderPayment(telegramId).catch((error) => {
+        console.error("SBP reconciliation failed", error instanceof Error ? error.message : error);
+      });
+      const [walletResponse, ledgerResponse, withdrawalResponse, entitlementResponse, topupResponse, settings, providerResponse] = await Promise.all([
         rest(`nastardamus_wallets?telegram_id=eq.${telegramId}&select=telegram_id,balance_units,locked_units,free_spins,updated_at&limit=1`),
         rest(`nastardamus_wallet_ledger?telegram_id=eq.${telegramId}&select=id,entry_type,amount_units,balance_after_units,locked_after_units,metadata,created_at&order=created_at.desc&limit=30`),
         rest(`nastardamus_withdrawal_requests?telegram_id=eq.${telegramId}&select=id,gross_units,fee_units,net_units,destination,status,created_at,updated_at&order=created_at.desc&limit=20`),
         rest(`nastardamus_service_entitlements?telegram_id=eq.${telegramId}&quantity=gt.0&select=service_id,quantity,updated_at&order=updated_at.desc`),
-        rest(`nastardamus_sbp_topups?telegram_id=eq.${telegramId}&select=id,silarum_units,ruble_kopecks,payment_reference,status,created_at,updated_at,paid_at,expires_at&order=created_at.desc&limit=20`),
-        readSettings()
+        rest(`nastardamus_sbp_topups?telegram_id=eq.${telegramId}&select=id,silarum_units,ruble_kopecks,payment_reference,status,provider_type,provider_payment_id,provider_status,confirmation_url,verification_state,created_at,updated_at,paid_at,expires_at&order=created_at.desc&limit=20`),
+        readSettings(),
+        rest("nastardamus_payment_providers?key=eq.sbp&enabled=eq.true&select=merchant_id,secret_ciphertext,secret_iv&limit=1")
       ]);
       const wallets = await walletResponse.json();
       const ledger = await ledgerResponse.json();
       const withdrawals = await withdrawalResponse.json();
       const entitlements = await entitlementResponse.json();
       const topups = await topupResponse.json();
+      const providers = await providerResponse.json();
+      const automaticSbpReady = settings.sbpAutomationEnabled !== false
+        && Boolean(providers?.[0]?.merchant_id && providers?.[0]?.secret_ciphertext && providers?.[0]?.secret_iv);
       return json(200, {
         ok: true,
         wallet: wallets?.[0] || null,
@@ -120,6 +301,7 @@ Deno.serve(async (req: Request) => {
         config: {
           paymentsEnabled: settings.paymentsEnabled !== false,
           sbpTopupsEnabled: settings.sbpTopupsEnabled === true,
+          sbpAutomatic: automaticSbpReady,
           sbpMinimumSilarum: Number(settings.sbpMinimumSilarum ?? 10),
           sbpMaximumSilarum: Number(settings.sbpMaximumSilarum ?? 1000),
           sbpRoublesPerSilarum: Number(settings.sbpRoublesPerSilarum ?? 0),
@@ -224,7 +406,30 @@ Deno.serve(async (req: Request) => {
           p_idempotency_key: idempotencyKey
         })
       });
-      return json(200, { ok: true, order: await response.json() });
+      let order = await response.json();
+      const settings = await readSettings();
+      if (settings.sbpAutomationEnabled !== false) {
+        try {
+          order = await createProviderPayment(telegramId, order, idempotencyKey);
+        } catch (error) {
+          console.error("Automatic SBP payment creation failed", error instanceof Error ? error.message : error);
+          await rest(
+            `nastardamus_sbp_topups?id=eq.${encodeURIComponent(String(order?.id || ""))}`
+              + `&telegram_id=eq.${telegramId}&provider_payment_id=is.null&status=eq.pending`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+              body: JSON.stringify({
+                status: "cancelled",
+                provider_status: "creation_failed",
+                updated_at: new Date().toISOString()
+              })
+            }
+          ).catch(() => null);
+          throw new Error("payment_provider_unavailable");
+        }
+      }
+      return json(200, { ok: true, order });
     }
 
     if (action === "mark_sbp_topup_sent") {
@@ -470,6 +675,9 @@ Deno.serve(async (req: Request) => {
     if (message.includes("above_topup_maximum")) return json(400, { error: "above_topup_maximum" });
     if (message.includes("sbp_rate_not_configured") || message.includes("sbp_recipient_not_configured") || message.includes("sbp_destination_not_configured")) {
       return json(503, { error: "sbp_not_configured" });
+    }
+    if (message.includes("payment_provider_unavailable")) {
+      return json(503, { error: "payment_provider_unavailable" });
     }
     if (message.includes("service_price_not_configured")) return json(503, { error: "service_price_not_configured" });
     if (message.includes("service_disabled")) return json(403, { error: "service_disabled" });
