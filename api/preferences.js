@@ -48,7 +48,8 @@ export default async function handler(req, res) {
         chatId: telegramId,
         zodiacSign: req.body?.zodiacSign,
         enabled: req.body?.enabled === true,
-        timezone: req.body?.timezone || 'Europe/Berlin'
+        timezone: req.body?.timezone || 'Europe/Berlin',
+        gender: req.body?.gender
       });
     }
     const data = await userStore(botToken, 'get_user_preferences', { telegramId });

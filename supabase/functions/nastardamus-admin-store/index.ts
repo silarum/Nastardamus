@@ -3,7 +3,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 const ADMIN_BOT_ID = Number(Deno.env.get("NASTARDAMUS_ADMIN_BOT_ID") || 7213010066);
 const TOKEN_CACHE_TTL_MS = 10 * 60 * 1000;
 const verifiedTokens = new Map<string, number>();
-const ALLOWED_ROLES = new Set(["owner", "admin", "manager", "support", "moderator", "analyst"]);
+const ALLOWED_ROLES = new Set(["owner", "admin", "operator"]);
 const ALLOWED_PERMISSIONS = new Set([
   "admins.manage", "settings.manage", "finance.view", "finance.manage",
   "services.manage", "users.view", "users.manage", "content.manage",
@@ -414,7 +414,7 @@ Deno.serve(async (req: Request) => {
     if (action === "upsert_admin") {
       const input = body.admin && typeof body.admin === "object" ? body.admin : {};
       const telegramId = Number(input.telegramId);
-      const role = ALLOWED_ROLES.has(String(input.role)) ? String(input.role) : "support";
+      const role = ALLOWED_ROLES.has(String(input.role)) ? String(input.role) : "operator";
       if (!Number.isSafeInteger(telegramId)) return json(400, { error: "invalid_telegram_id" });
       await rest("nastardamus_admins?on_conflict=telegram_id", {
         method: "POST",

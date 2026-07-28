@@ -207,12 +207,14 @@ test('daily horoscope uses DeepSeek', async () => {
     };
 
     try {
-        const answer = await createHoroscope('aries', '2026-07-27');
+        const answer = await createHoroscope('aries', '2026-07-27', 'female');
         assert.equal(answer, 'Сегодня берегите внутренний ритм.');
         assert.equal(request.url, 'https://api.deepseek.com/chat/completions');
         assert.equal(request.body.max_tokens, 700);
         assert.match(request.body.messages[0].content, /поэтическ/i);
         assert.match(request.body.messages[0].content, /юмор/i);
+        assert.match(request.body.messages[0].content, /женском роде/i);
+        assert.match(request.body.messages[1].content, /Искательница/i);
         assert.match(request.body.messages[1].content, /юмор должен поддерживать/i);
     } finally {
         restore();

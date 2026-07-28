@@ -89,6 +89,12 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(mount.dataset.screen, 'profile');
     assert.ok(document.body.textContent.includes('Откройте приложение внутри Telegram'));
+    click(document, 'Женщина');
+    assert.equal(app.state.userGender, 'female');
+    assert.equal(
+      dom.window.localStorage.getItem('nastardamus-profile-v1'),
+      JSON.stringify({ gender: 'female' })
+    );
 
     click(document, 'Главная');
     assert.equal(mount.dataset.screen, 'home');
@@ -112,6 +118,9 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     click(document, 'Назад');
     click(document, 'Путь двух судеб');
     assert.equal(mount.dataset.screen, 'palm');
+    assert.equal(document.querySelectorAll('.n-palm-graphic').length, 2);
+    assert.match(document.querySelector('.n-palm-graphic--left').getAttribute('src'), /palm-left\.png$/);
+    assert.match(document.querySelector('.n-palm-graphic--right').getAttribute('src'), /palm-right\.png$/);
     click(document, 'Творческий союз');
     assert.equal(app.state.palmGoal, 'creative');
     click(document, 'Продолжить ритуал');

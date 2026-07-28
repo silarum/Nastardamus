@@ -1,4 +1,5 @@
 import { getRequestHeader } from '../lib/telegram.js';
+import { hasAdminPanelAccess, readAdminProfile } from '../lib/admin-access.js';
 
 const ADMIN_STORE_URL = process.env.ADMIN_STORE_URL
   || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-admin-store';
@@ -46,21 +47,31 @@ function adminPanelUrl() {
   return new URL('/admin/', base).toString();
 }
 
-function adminReply(update) {
+function ezoteriumReply(message) {
+  const base = process.env.WEB_APP_URL || 'https://nastardamus.vercel.app';
+  return {
+    method: 'sendMessage',
+    payload: {
+      chat_id: message.chat.id,
+      text: 'Добро пожаловать в Эзотериум. Откройте обычное пространство приложения кнопкой ниже.',
+      reply_markup: {
+        inline_keyboard: [[{
+          text: '🔮 Войти в Эзотериум',
+          web_app: { url: base }
+        }]]
+      }
+    }
+  };
+}
+
+export function adminReply(update, { authorized = false } = {}) {
   const message = update?.message;
   if (!message?.chat?.id || !message?.from?.id) return null;
 
   const text = String(message.text || '').trim();
-  const isCommand = /^\/(start|admin|id)(?:@[A-Za-z0-9_]+)?(?:\s|$)/i.test(text);
-  if (!isCommand && text) {
-    return {
-      method: 'sendMessage',
-      payload: {
-        chat_id: message.chat.id,
-        text: 'Для открытия панели используйте /admin.'
-      }
-    };
-  }
+  const requestsControl = /^\/admin(?:@[A-Za-z0-9_]+)?(?:\s|$)/i.test(text)
+    || /^\/start(?:@[A-Za-z0-9_]+)?\s+admin(?:\s|$)/i.test(text);
+  if (!authorized || !requestsControl) return ezoteriumReply(message);
 
   console.info('Nastardamus admin bot user', {
     telegramId: Number(message.from.id),
@@ -114,8 +125,7 @@ export default async function handler(req, res) {
           id: bot.id,
           username: bot.username,
           firstName: bot.first_name
-        },
-        adminUrl: adminPanelUrl()
+        }
       });
     } catch (error) {
       console.error('Admin bot GET failed:', error);
@@ -150,7 +160,17 @@ export default async function handler(req, res) {
       });
     }
 
-    const reply = adminReply(req.body);
+    const userId = Number(req.body?.message?.from?.id);
+    const profile = Number.isSafeInteger(userId)
+      ? await readAdminProfile({
+          userId,
+          botToken,
+          telegramUser: req.body?.message?.from
+        }).catch(() => null)
+      : null;
+    const reply = adminReply(req.body, {
+      authorized: hasAdminPanelAccess(profile)
+    });
     if (reply) await callTelegram(botToken, reply.method, reply.payload);
     return sendJson(res, 200, { ok: true });
   } catch (error) {

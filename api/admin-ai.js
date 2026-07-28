@@ -1,5 +1,6 @@
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 import { validateProviderBaseUrl } from '../lib/request-security.js';
+import { hasAdminPanelAccess } from '../lib/admin-access.js';
 
 const ADMIN_STORE_URL = process.env.ADMIN_STORE_URL
   || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-admin-store';
@@ -60,7 +61,7 @@ async function authenticate(req) {
     profile = (await edgeStore(botToken, 'get_admin_profile', { telegramId: userId })).profile;
   }
 
-  if (!profile?.is_active) {
+  if (!hasAdminPanelAccess(profile)) {
     return { error: { status: 403, body: { error: 'admin_access_denied', userId } } };
   }
   return { botToken, userId, profile };
