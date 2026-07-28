@@ -64,6 +64,7 @@ test('direct web entry is gated before the application bundle starts', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const gate = readFileSync(new URL('../ui-kit/telegram-entry-gate.js', import.meta.url), 'utf8');
   assert.ok(html.indexOf('/ui-kit/telegram-entry-gate.js') < html.indexOf('/ui-kit/app.bundle.js'));
+  assert.ok(html.indexOf('/ui-kit/app.bundle.js') < html.indexOf('telegram-web-app.js'));
   assert.match(gate, /WebApp\?\.initData/u);
   assert.match(gate, /Вход только через Telegram/u);
   assert.match(gate, /BelonTip_bot/u);
