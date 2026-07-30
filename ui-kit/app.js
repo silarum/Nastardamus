@@ -964,7 +964,7 @@ async function startTarot() {
   navigate('tarot-draw');
   if (!tg?.initData) return;
   try {
-    const data = await api('/api/readings', {
+    const data = await api('/api/proxy', {
       method: 'POST',
       body: {
         action: 'create_tarot_session',
@@ -1068,7 +1068,7 @@ async function selectTarotCard(slotIndex) {
   let name = '';
   try {
     if (tg?.initData && state.tarotSessionId) {
-      const data = await api('/api/readings', {
+      const data = await api('/api/proxy', {
         method: 'POST',
         body: { action: 'draw_tarot_card', readingId: state.tarotSessionId }
       });
@@ -1628,7 +1628,7 @@ async function startPalmDialogue() {
   render();
   if (!tg?.initData) return;
   try {
-    const created = await api('/api/readings', {
+    const created = await api('/api/proxy', {
       method: 'POST',
       body: {
         action: 'create_dialogue_session',
@@ -1640,7 +1640,7 @@ async function startPalmDialogue() {
     });
     dialogue.sessionId = created.sessionId || '';
     if (dialogue.sessionId) {
-      await api('/api/readings', {
+      await api('/api/proxy', {
         method: 'POST',
         body: { action: 'append_dialogue_message', readingId: dialogue.sessionId, role: 'assistant', content: PALM_QUESTIONS[0] }
       });
@@ -1659,7 +1659,7 @@ async function submitPalmDialogueAnswer() {
   dialogue.messages.push({ role: 'user', content: answer });
   dialogue.draft = '';
   if (dialogue.sessionId) {
-    api('/api/readings', {
+    api('/api/proxy', {
       method: 'POST',
       body: { action: 'append_dialogue_message', readingId: dialogue.sessionId, role: 'user', content: answer }
     }).catch(() => {});
@@ -1673,7 +1673,7 @@ async function submitPalmDialogueAnswer() {
     const nextQuestion = PALM_QUESTIONS[dialogue.answers.length];
     dialogue.messages.push({ role: 'assistant', content: `${acknowledgement} ${nextQuestion}` });
     if (dialogue.sessionId) {
-      api('/api/readings', {
+      api('/api/proxy', {
         method: 'POST',
         body: { action: 'append_dialogue_message', readingId: dialogue.sessionId, role: 'assistant', content: `${acknowledgement} ${nextQuestion}` }
       }).catch(() => {});
@@ -2837,7 +2837,7 @@ async function saveCloudReading(result, {
     return result;
   }
   try {
-    const data = await api('/api/readings', {
+    const data = await api('/api/proxy', {
       method: 'POST',
       body: {
         action: 'save_reading',
@@ -2923,7 +2923,7 @@ async function loadCloudReadings({ force = false } = {}) {
   state.cloudReadingsStatus = 'loading';
   if (state.screen === 'history') render();
   try {
-    const data = await api('/api/readings', {
+    const data = await api('/api/proxy', {
       method: 'POST',
       body: { action: 'list_readings' }
     });
@@ -2945,7 +2945,7 @@ function toggleFavorite(id) {
   writeJSON(JOURNAL_KEY, entries);
   if (cloud) {
     cloud.favorite = next;
-    api('/api/readings', {
+    api('/api/proxy', {
       method: 'POST',
       body: { action: 'update_reading', readingId: id, favorite: next }
     }).catch(() => notify('Не удалось синхронизировать избранное'));
@@ -3133,7 +3133,7 @@ function renameHistoryEntry(id) {
   writeJSON(JOURNAL_KEY, entries);
   if (cloud) {
     cloud.title = clean;
-    api('/api/readings', {
+    api('/api/proxy', {
       method: 'POST',
       body: { action: 'update_reading', readingId: id, title: clean }
     }).catch(() => notify('Не удалось синхронизировать название'));
@@ -3152,7 +3152,7 @@ function softDeleteHistoryEntry(id) {
   writeJSON(JOURNAL_KEY, entries);
   if (cloud) {
     state.cloudReadings = state.cloudReadings.filter((item) => item.id !== id);
-    api('/api/readings', {
+    api('/api/proxy', {
       method: 'POST',
       body: { action: 'delete_reading', readingId: id }
     }).catch(() => notify('Не удалось удалить запись из облака'));
@@ -3684,7 +3684,7 @@ async function loadReadingCatalog() {
   if (!tg?.initData || state.readingCatalogStatus === 'loading') return;
   state.readingCatalogStatus = 'loading';
   try {
-    const data = await api('/api/readings', {
+    const data = await api('/api/proxy', {
       method: 'POST',
       body: { action: 'get_reading_catalog' }
     });

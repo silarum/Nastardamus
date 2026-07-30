@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
 import { structuredSchemaForFeature } from '../lib/readings.js';
@@ -16,6 +16,7 @@ const store = readFileSync(
   'utf8'
 );
 const admin = readFileSync(new URL('../api/admin.js', import.meta.url), 'utf8');
+const proxy = readFileSync(new URL('../api/proxy.js', import.meta.url), 'utf8');
 const vercel = readFileSync(new URL('../vercel.json', import.meta.url), 'utf8');
 
 test('Tarot uses one unique 78-card deck with a real asset for every card', () => {
@@ -82,6 +83,16 @@ test('cloud history preserves complete results and supports cloud-only controls'
   assert.match(app, /\['compatibility', 'amur'\]\.includes\(historyKind\(entry\)\)/);
   assert.match(store, /action === "save_reading"/);
   assert.match(store, /action === "update_reading" \|\| action === "delete_reading"/);
+});
+
+test('reading storage shares the proxy function and stays within the Hobby deployment limit', () => {
+  const apiFiles = readdirSync(new URL('../api/', import.meta.url))
+    .filter((name) => name.endsWith('.js'));
+  assert.ok(apiFiles.length <= 12, `Vercel Hobby supports 12 functions, found ${apiFiles.length}`);
+  assert.match(proxy, /const READING_STORE_ACTIONS = new Set/);
+  assert.match(proxy, /READING_STORE_ACTIONS\.has\(action\)/);
+  assert.match(proxy, /sizeLimit:\s*'8mb'/);
+  assert.doesNotMatch(app, /\/api\/readings/);
 });
 
 test('administrators can manage every Tarot and compatibility catalog entry', () => {

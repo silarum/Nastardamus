@@ -24,6 +24,19 @@ const OPENAI_READING_FEATURES = new Set([
     'daily_horoscope',
     'sports_forecast'
 ]);
+const READING_STORE_ACTIONS = new Set([
+    'get_reading_catalog',
+    'create_tarot_session',
+    'draw_tarot_card',
+    'save_reading',
+    'list_readings',
+    'get_reading',
+    'update_reading',
+    'delete_reading',
+    'create_dialogue_session',
+    'append_dialogue_message',
+    'get_active_dialogue'
+]);
 const USER_STORE_URL = process.env.USER_STORE_URL
     || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-user-store';
 const DEFAULT_PUBLIC_POLICY = Object.freeze({
@@ -42,7 +55,7 @@ const DEFAULT_PUBLIC_POLICY = Object.freeze({
 });
 
 export const config = {
-    api: { bodyParser: { sizeLimit: '4mb' } }
+    api: { bodyParser: { sizeLimit: '8mb' } }
 };
 
 function sendJson(res, status, body) {
@@ -432,7 +445,25 @@ export default async function handler(req, res) {
     }
 
     const telegramId = auth.ok ? Number(auth.user.id) : null;
-    const storeAction = invitationStoreAction(String(req.body?.action || ''));
+    const action = String(req.body?.action || '');
+    if (READING_STORE_ACTIONS.has(action)) {
+        if (!auth.ok) return sendJson(res, 401, { error: 'telegram_auth_required' });
+        try {
+            const data = await userStore(botToken, action, {
+                ...req.body,
+                action: undefined,
+                telegramId
+            });
+            return sendJson(res, 200, data);
+        } catch (error) {
+            console.error('Reading store action failed:', error?.message || error);
+            return sendJson(res, Number(error?.status) || 503, {
+                error: error?.message || 'reading_store_unavailable'
+            });
+        }
+    }
+
+    const storeAction = invitationStoreAction(action);
     if (storeAction) {
         if (!auth.ok) return sendJson(res, 401, { error: 'telegram_auth_required' });
         try {
