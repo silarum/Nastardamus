@@ -2846,7 +2846,19 @@ async function saveCloudReading(result, {
         subtype: subtype || result.mode || result.kind || 'reading',
         title: result.title || result.type || 'Символическое чтение',
         input,
-        result: result.result || {},
+        result: {
+          ...(result.result || {}),
+          ui: {
+            type: result.type || '',
+            mode: result.mode || '',
+            spread: result.spread || '',
+            cards: Array.isArray(result.cards) ? result.cards : [],
+            positions: Array.isArray(result.positions) ? result.positions : [],
+            participants: Array.isArray(result.participants) ? result.participants : [],
+            score: Number.isFinite(Number(result.score)) ? Number(result.score) : null,
+            aspects: Array.isArray(result.aspects) ? result.aspects : []
+          }
+        },
         resultText: result.body,
         favorite: result.favorite === true,
         media
@@ -2870,11 +2882,13 @@ async function saveCloudReading(result, {
 }
 
 function normalizeCloudReading(reading) {
+  const result = reading.result || {};
+  const ui = result.ui && typeof result.ui === 'object' ? result.ui : {};
   return {
     id: reading.id,
     kind: reading.kind,
-    mode: reading.subtype,
-    type: ({
+    mode: ui.mode || reading.subtype,
+    type: ui.type || ({
       tarot: 'Таро',
       compatibility: 'Совместимость',
       palm: 'Чтение по ладони',
@@ -2887,7 +2901,15 @@ function normalizeCloudReading(reading) {
     })[reading.kind] || 'Символическое чтение',
     title: reading.title,
     body: reading.body,
-    result: reading.result || {},
+    result,
+    spread: ui.spread || reading.subtype,
+    cards: Array.isArray(ui.cards) ? ui.cards : [],
+    positions: Array.isArray(ui.positions) ? ui.positions : [],
+    participants: Array.isArray(ui.participants) ? ui.participants : [],
+    score: Number.isFinite(Number(ui.score ?? result.score)) ? Number(ui.score ?? result.score) : null,
+    aspects: Array.isArray(ui.aspects) && ui.aspects.length
+      ? ui.aspects
+      : Array.isArray(result.aspects) ? result.aspects : [],
     media: reading.media || [],
     favorite: reading.favorite === true,
     createdAt: reading.createdAt || reading.completedAt,
@@ -3083,7 +3105,7 @@ function historyKind(entry) {
 function openHistoryEntry(entry) {
   state.result = { ...entry };
   if (historyKind(entry) === 'tarot') return navigate('tarot-result');
-  if (historyKind(entry) === 'compatibility') return navigate('compatibility-data-result');
+  if (['compatibility', 'amur'].includes(historyKind(entry))) return navigate('compatibility-data-result');
   if (historyKind(entry) === 'palm') {
     state.palmDialogue.result = entry.result;
     state.palmDialogue.stage = 'result';
@@ -3099,15 +3121,16 @@ function openHistoryEntry(entry) {
 function renameHistoryEntry(id) {
   const entries = readJSON(JOURNAL_KEY, []);
   const entry = entries.find((item) => item.id === id);
-  if (!entry) return;
-  const title = window.prompt('Новое название результата', entry.title || '');
+  const cloud = state.cloudReadings.find((item) => item.id === id);
+  const target = cloud || entry;
+  if (!target) return;
+  const title = window.prompt('Новое название результата', target.title || '');
   if (title === null) return;
   const clean = title.trim().slice(0, 120);
   if (!clean) return notify('Название не может быть пустым');
-  entry.title = clean;
+  if (entry) entry.title = clean;
   if (state.result?.id === id) state.result.title = clean;
   writeJSON(JOURNAL_KEY, entries);
-  const cloud = state.cloudReadings.find((item) => item.id === id);
   if (cloud) {
     cloud.title = clean;
     api('/api/readings', {
@@ -3123,10 +3146,11 @@ function softDeleteHistoryEntry(id) {
   if (!window.confirm('Скрыть этот результат из истории? Финансовая операция останется сохранённой.')) return;
   const entries = readJSON(JOURNAL_KEY, []);
   const entry = entries.find((item) => item.id === id);
-  if (!entry) return;
-  entry.deletedAt = new Date().toISOString();
+  const cloud = state.cloudReadings.find((item) => item.id === id);
+  if (!entry && !cloud) return;
+  if (entry) entry.deletedAt = new Date().toISOString();
   writeJSON(JOURNAL_KEY, entries);
-  if (state.cloudReadings.some((item) => item.id === id)) {
+  if (cloud) {
     state.cloudReadings = state.cloudReadings.filter((item) => item.id !== id);
     api('/api/readings', {
       method: 'POST',

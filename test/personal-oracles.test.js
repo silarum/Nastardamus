@@ -74,6 +74,16 @@ test('palm dialogue and Amur invitation state are stored privately on the server
   assert.match(app, /invitation_start/);
 });
 
+test('cloud history preserves complete results and supports cloud-only controls', () => {
+  assert.match(app, /participants:\s*Array\.isArray\(result\.participants\)/);
+  assert.match(app, /cards:\s*Array\.isArray\(ui\.cards\)/);
+  assert.match(app, /const target = cloud \|\| entry/);
+  assert.match(app, /if \(!entry && !cloud\) return/);
+  assert.match(app, /\['compatibility', 'amur'\]\.includes\(historyKind\(entry\)\)/);
+  assert.match(store, /action === "save_reading"/);
+  assert.match(store, /action === "update_reading" \|\| action === "delete_reading"/);
+});
+
 test('administrators can manage every Tarot and compatibility catalog entry', () => {
   assert.match(admin, /data-tab=\\"content\\"/);
   assert.match(admin, /Таро и практики/);
