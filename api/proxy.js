@@ -260,6 +260,7 @@ function paidServiceForFeature(feature, payload) {
     if (feature === 'tarot') {
         return payload?.spread === 'relationship' ? 'tarot_relationship' : 'tarot';
     }
+    if (feature === 'compatibility') return 'photo_compatibility';
     if (feature === 'natal') return 'natal';
     if (feature === 'photo_energy') return 'photo_energy';
     if (feature === 'photo_damage') return 'photo_damage';

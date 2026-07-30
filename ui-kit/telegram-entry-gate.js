@@ -2,6 +2,27 @@ const BOT_USERNAME = 'BelonTip_bot';
 const GATE_ID = 'telegram-entry-gate';
 const TELEGRAM_WAIT_MS = 1800;
 const TELEGRAM_LATE_READY_MS = 12_000;
+const BOOT_RECOVERY_MS = 4_500;
+
+function announceTelegramReady() {
+  const webApp = window.Telegram?.WebApp;
+  if (!webApp) return false;
+  webApp.ready?.();
+  webApp.expand?.();
+  return true;
+}
+
+function recoverBootScreen() {
+  const boot = document.getElementById('boot-screen');
+  if (!boot || boot.classList.contains('is-hidden')) return;
+  boot.classList.add('is-hidden');
+  window.setTimeout(() => boot.remove(), 260);
+}
+
+if (!announceTelegramReady()) {
+  document.getElementById('telegram-web-app-sdk')?.addEventListener('load', announceTelegramReady, { once: true });
+}
+window.setTimeout(recoverBootScreen, BOOT_RECOVERY_MS);
 
 function hasSignedTelegramLaunch() {
   return Boolean(window.Telegram?.WebApp?.initData);
@@ -83,7 +104,7 @@ function createGate() {
 function allowEntry(gate) {
   document.documentElement.dataset.telegramEntry = 'allowed';
   gate.remove();
-  window.Telegram?.WebApp?.ready?.();
+  announceTelegramReady();
 }
 
 function denyDirectEntry(parts) {
@@ -96,6 +117,7 @@ function denyDirectEntry(parts) {
 function startEntryGate() {
   if (hasSignedTelegramLaunch()) {
     document.documentElement.dataset.telegramEntry = 'allowed';
+    announceTelegramReady();
     return;
   }
 

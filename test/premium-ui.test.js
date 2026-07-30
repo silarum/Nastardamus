@@ -39,6 +39,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   }
   dom.window.scrollTo = () => {};
+  dom.window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
   let fetchCalls = 0;
   globalThis.fetch = async () => {
     fetchCalls += 1;
@@ -90,21 +91,27 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     click(document, 'Услуги');
     assert.equal(mount.dataset.screen, 'services');
 
-    click(document, 'Семь раскладов Таро');
+    click(document, 'Двенадцать раскладов Таро');
     assert.equal(mount.dataset.screen, 'tarot');
+    assert.equal(document.querySelectorAll('.premium-spread-card').length, 12);
+    click(document, 'Три пути');
+    assert.equal(mount.dataset.screen, 'tarot-question');
 
     const question = document.querySelector('textarea');
     question.value = 'Что поможет мне сделать следующий шаг?';
     question.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-    click(document, 'Перейти к выбору карт');
+    click(document, 'Войти в ритуал');
     assert.equal(mount.dataset.screen, 'tarot-draw');
+    click(document, 'Перемешать колоду');
 
     for (let index = 0; index < 3; index += 1) {
       const card = document.querySelector('.premium-tarot-card:not(:disabled)');
       assert.ok(card, `Selectable card ${index + 1} is missing`);
       card.click();
+      assert.ok(document.querySelector('.premium-card-reveal'));
+      await new Promise((resolve) => setTimeout(resolve, 340));
     }
-    assert.ok(findButton(document, 'Получить толкование'));
+    assert.ok(findButton(document, 'Узнать толкование'));
 
     app.state.result = {
       id: 'reading-test',
@@ -152,7 +159,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.equal(document.querySelectorAll('.n-upload-card').length, 2);
 
     click(document, 'Назад');
-    click(document, 'Путь двух судеб');
+    click(document, 'По ладоням');
     assert.equal(mount.dataset.screen, 'palm');
     assert.equal(document.querySelectorAll('.n-palm-graphic').length, 2);
     assert.match(document.querySelector('.n-palm-graphic--left').getAttribute('src'), /palm-left\.png$/);

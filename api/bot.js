@@ -205,7 +205,14 @@ export default async function handler(req, res) {
                     allowed_updates: ['message', 'callback_query'],
                     drop_pending_updates: false
                 });
-                return sendJson(res, 200, { status: 'ok', webhook: 'configured' });
+                await callTelegram(botToken, 'setChatMenuButton', {
+                    menu_button: {
+                        type: 'web_app',
+                        text: 'Открыть Nastardamus',
+                        web_app: { url: webAppUrl }
+                    }
+                });
+                return sendJson(res, 200, { status: 'ok', webhook: 'configured', menuButton: 'configured' });
             } catch (error) {
                 console.error('Telegram webhook setup failed:', error);
                 return sendJson(res, 502, { error: 'webhook_setup_failed' });
@@ -278,6 +285,18 @@ export default async function handler(req, res) {
 
         const message = req.body.message;
         if (!message?.text || !message.chat?.id) return sendJson(res, 200, { ok: true });
+        if (/^\/start(?:@\w+)?(?:\s|$)/u.test(message.text)) {
+            const webAppUrl = process.env.WEB_APP_URL || 'https://nastardamus.vercel.app';
+            await callTelegram(botToken, 'setChatMenuButton', {
+                menu_button: {
+                    type: 'web_app',
+                    text: 'Открыть Nastardamus',
+                    web_app: { url: webAppUrl }
+                }
+            }).catch((error) => {
+                console.error('Telegram menu button self-repair failed:', error);
+            });
+        }
         await registerUser(botToken, message).catch((error) => {
             console.error('Telegram user registration failed:', error);
         });
