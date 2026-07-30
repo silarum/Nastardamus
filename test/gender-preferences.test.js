@@ -27,7 +27,9 @@ test('preferences API and user store validate and persist gender', () => {
   assert.match(store, /select=zodiac_sign,daily_horoscope_enabled,timezone,gender/);
 });
 
-test('scheduled horoscopes are grouped by zodiac sign and grammatical gender', () => {
-  assert.match(horoscopeApi, /person\.zodiac_sign\}:\$\{normalizeGender\(person\.gender\)\}/);
-  assert.match(horoscopeApi, /createHoroscope\(sign, date, gender\)/);
+test('scheduled horoscopes are grouped by sign, gender, age and city', () => {
+  assert.match(horoscopeApi, /person\.zodiac_sign,[\s\S]*normalizeGender\(person\.gender\)/);
+  assert.match(horoscopeApi, /person\.birth_year/);
+  assert.match(horoscopeApi, /person\.city/);
+  assert.match(horoscopeApi, /createHoroscope\(sign, date, gender, Number\(age\), cityParts\.join\(':'\)\)/);
 });

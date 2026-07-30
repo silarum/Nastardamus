@@ -1,4 +1,4 @@
-import { buildReadingMessages, isVisionFeature } from '../lib/readings.js';
+import { buildReadingMessages, isVisionFeature, structuredSchemaForFeature } from '../lib/readings.js';
 import { requestDeepSeekChat } from '../lib/deepseek.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 import {
@@ -8,18 +8,21 @@ import {
     unauthenticatedPreviewAllowed
 } from '../lib/request-security.js';
 
-const DEFAULT_OPENAI_MODEL = 'gpt-5-mini';
+const DEFAULT_OPENAI_MODEL = 'gpt-5.6';
 const DEEPSEEK_READING_FEATURES = new Set([
     'tarot',
-    'natal',
-    'daily_horoscope',
-    'sports_forecast'
+    'natal'
 ]);
 const OPENAI_READING_FEATURES = new Set([
     'compatibility',
     'photo_energy',
     'photo_damage',
-    'photo_compatibility'
+    'photo_compatibility',
+    'palm_reading',
+    'rune_reading',
+    'amur_compatibility',
+    'daily_horoscope',
+    'sports_forecast'
 ]);
 const USER_STORE_URL = process.env.USER_STORE_URL
     || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-user-store';
@@ -73,7 +76,7 @@ function toOpenAIInput(messages) {
                     return {
                         type: 'input_image',
                         image_url: part.image_url.url,
-                        detail: 'low'
+                        detail: 'high'
                     };
                 }
                 throw new TypeError('unsupported message content');
@@ -139,7 +142,8 @@ function invitationStoreAction(action) {
         invitation_accept: 'accept_joint_invitation',
         invitation_refresh: 'get_joint_invitation',
         invitation_upload: 'upload_joint_participant_image',
-        invitation_request_initiator_payment: 'request_joint_initiator_payment'
+        invitation_request_initiator_payment: 'request_joint_initiator_payment',
+        invitation_start: 'request_joint_analysis'
     })[action] || '';
 }
 
@@ -156,6 +160,7 @@ async function releaseInvitation(botToken, telegramId, context, reason) {
 
 function imageInputs(feature, payload) {
     if (feature === 'photo_energy' || feature === 'photo_damage') return [payload?.image];
+    if (feature === 'palm_reading') return [payload?.image];
     if (feature === 'photo_compatibility') return [payload?.firstImage, payload?.secondImage];
     return [];
 }
@@ -226,19 +231,60 @@ async function moderateVisionInput(feature, payload, policy) {
     }
 }
 
-async function requestOpenAI(messages, vision) {
+function answerFromStructured(feature, result) {
+    if (!result || typeof result !== 'object') return '';
+    if (feature === 'daily_horoscope') {
+        return [
+            result.headline,
+            result.focus,
+            `Отношения: ${result.relationships}`,
+            `Дела и деньги: ${result.workMoney}`,
+            `Самочувствие: ${result.wellbeing}`,
+            `Совет: ${result.advice}`,
+            `Сегодня лучше не: ${result.avoid}`,
+            result.mantra
+        ].filter(Boolean).join('\n\n');
+    }
+    if (feature === 'sports_forecast') {
+        const probabilities = Array.isArray(result.probabilities)
+            ? result.probabilities.map((item) => `${item.outcome} — ${item.percent}%`).join('; ')
+            : '';
+        return [
+            `Основной прогноз: ${result.prediction}`,
+            `Альтернативный сценарий: ${result.alternative}`,
+            probabilities ? `Вероятности: ${probabilities}` : '',
+            `Уверенность: ${result.confidence}. Ключевой фактор: ${result.keyFactor}`,
+            result.missingData ? `Чего не хватает для точности: ${result.missingData}` : '',
+            result.advice
+        ].filter(Boolean).join('\n\n');
+    }
+    return String(result.narrative || result.summary || result.headline || '').trim();
+}
+
+async function requestOpenAI(messages, vision, structured = null) {
+    const body = {
+        model: process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL,
+        input: toOpenAIInput(messages),
+        max_output_tokens: vision ? 1800 : 1500,
+        store: false
+    };
+    if (structured) {
+        body.text = {
+            format: {
+                type: 'json_schema',
+                name: structured.name,
+                strict: true,
+                schema: structured.schema
+            }
+        };
+    }
     const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
         },
-        body: JSON.stringify({
-            model: process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL,
-            input: toOpenAIInput(messages),
-            max_output_tokens: vision ? 1400 : 1200,
-            store: false
-        }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(vision ? 45_000 : 30_000)
     });
     const data = await response.json().catch(() => null);
@@ -247,7 +293,14 @@ async function requestOpenAI(messages, vision) {
     }
     const answer = extractOpenAIText(data);
     if (!answer) throw new Error('empty_openai_response');
-    return answer;
+    if (!structured) return { answer, result: null };
+    let result;
+    try {
+        result = JSON.parse(answer);
+    } catch {
+        throw new Error('invalid_structured_response');
+    }
+    return { answer: answerFromStructured(structured.feature, result), result };
 }
 
 function providerForFeature(feature) {
@@ -284,6 +337,82 @@ function paymentDetails(policy, walletData, serviceId) {
         shortage: Math.max(0, priceUnits - available) / 100,
         sbpTopupsEnabled: policy?.settings?.sbpTopupsEnabled === true
     };
+}
+
+async function autoCompleteJointInvitation(botToken, {
+    invitationToken,
+    initiatorTelegramId
+}) {
+    let claimed = null;
+    let charge = null;
+    try {
+        const claim = await userStore(botToken, 'claim_joint_invitation_processing', {
+            telegramId: initiatorTelegramId,
+            invitationToken,
+            payerRole: 'initiator'
+        });
+        claimed = claim.invitation;
+        const payload = {
+            invitationToken: claimed.token,
+            concern: `Что важно понять о связи с целью «${claimed.goal}»?`,
+            firstName: claimed.firstName,
+            secondName: claimed.secondName,
+            firstGender: claimed.firstGender,
+            secondGender: claimed.secondGender,
+            firstProfile: claimed.firstProfile,
+            secondProfile: claimed.secondProfile,
+            firstImage: claimed.firstImage,
+            secondImage: claimed.secondImage,
+            consentOwn: true,
+            consentPartner: true,
+            adultConfirmed: true,
+            source: claimed.flow === 'palm' ? 'palmlink' : 'joint_invitation'
+        };
+        const serviceId = paidServiceForFeature('photo_compatibility', payload);
+        const policy = await userStore(botToken, 'get_public_config', { telegramId: initiatorTelegramId });
+        validateVisionConsent('photo_compatibility', payload, policy);
+        await moderateVisionInput('photo_compatibility', payload, policy);
+        const charged = await userStore(botToken, 'charge_service', {
+            telegramId: initiatorTelegramId,
+            serviceId,
+            idempotencyKey: `joint-${invitationToken}`
+        });
+        charge = charged.charge;
+        if (!charge?.charge_id || charge.status === 'refunded' || charge.status === 'fulfilled') {
+            throw new Error('payment_retry_required');
+        }
+        const messages = buildReadingMessages('photo_compatibility', payload);
+        const schema = structuredSchemaForFeature('photo_compatibility');
+        const generated = await requestOpenAI(messages, true, { ...schema, feature: 'photo_compatibility' });
+        const completed = await userStore(botToken, 'complete_joint_invitation', {
+            telegramId: initiatorTelegramId,
+            invitationToken,
+            result: generated.answer,
+            resultPayload: generated.result || {},
+            chargeId: charge.charge_id
+        });
+        await Promise.allSettled((completed.chats || []).map((chat) =>
+            notifyInvitationChat(
+                botToken,
+                chat.chat_id,
+                `Совместный прогноз для ${completed.invitation?.inviteeName || 'двух участников'} готов и открыт обоим.`,
+                invitationToken
+            )
+        ));
+        return completed.invitation;
+    } catch (error) {
+        if (charge?.charge_id) {
+            await userStore(botToken, 'refund_service_charge', {
+                telegramId: initiatorTelegramId,
+                chargeId: charge.charge_id,
+                reason: 'automatic_invitation_delivery_error'
+            }).catch(() => null);
+        }
+        if (claimed) {
+            await releaseInvitation(botToken, initiatorTelegramId, { token: invitationToken }, error?.message || 'automatic_invitation_failed');
+        }
+        throw error;
+    }
 }
 
 export default async function handler(req, res) {
@@ -328,6 +457,7 @@ export default async function handler(req, res) {
                     initiatorName: auth.user.first_name || 'Искатель',
                     initiatorGender: req.body?.initiatorGender,
                     initiatorImage: req.body?.initiatorImage,
+                    initiatorProfile: req.body?.initiatorProfile,
                     consentOwn: req.body?.consentOwn === true,
                     adultConfirmed: req.body?.adultConfirmed === true
                 }
@@ -337,6 +467,7 @@ export default async function handler(req, res) {
                         invitationToken: req.body?.invitationToken,
                         participantImage: req.body?.participantImage,
                         participantGender: req.body?.participantGender,
+                        participantProfile: req.body?.participantProfile,
                         consentOwn: req.body?.consentOwn === true,
                         adultConfirmed: req.body?.adultConfirmed === true
                     }
@@ -346,6 +477,33 @@ export default async function handler(req, res) {
                     };
             const data = await userStore(botToken, storeAction, payload);
             const token = String(data.invitation?.token || '');
+            if (
+                (req.body.action === 'invitation_upload' && data.autoProcess === true)
+                || (req.body.action === 'invitation_start' && data.invitation?.status === 'ready')
+            ) {
+                const initiatorTelegramId = req.body.action === 'invitation_start'
+                    ? telegramId
+                    : Number(data.initiatorTelegramId);
+                try {
+                    const completedInvitation = await autoCompleteJointInvitation(botToken, {
+                        invitationToken: token,
+                        initiatorTelegramId
+                    });
+                    return sendJson(res, 200, { ok: true, invitation: completedInvitation });
+                } catch (error) {
+                    const initiatorChat = (data.chats || []).find(
+                        (chat) => Number(chat.telegram_id) === initiatorTelegramId
+                    );
+                    await notifyInvitationChat(
+                        botToken,
+                        initiatorChat?.chat_id,
+                        error?.message === 'insufficient_funds'
+                            ? 'Данные приглашённого получены. Для запуска прогноза пополните баланс и откройте приглашение.'
+                            : 'Данные приглашённого получены, но прогноз временно не завершён. Откройте приглашение и повторите.',
+                        token
+                    ).catch(() => null);
+                }
+            }
             if (req.body.action === 'invitation_request_initiator_payment') {
                 const initiatorChat = (data.chats || []).find(
                     (chat) => Number(chat.telegram_id) !== telegramId
@@ -423,6 +581,8 @@ export default async function handler(req, res) {
                 secondName: invitationContext.secondName,
                 firstGender: invitationContext.firstGender,
                 secondGender: invitationContext.secondGender,
+                firstProfile: invitationContext.firstProfile,
+                secondProfile: invitationContext.secondProfile,
                 firstImage: invitationContext.firstImage,
                 secondImage: invitationContext.secondImage,
                 consentOwn: true,
@@ -504,19 +664,26 @@ export default async function handler(req, res) {
     }
 
     try {
-        const answer = provider === 'deepseek'
-            ? (await requestDeepSeekChat({
+        const schema = structuredSchemaForFeature(feature);
+        const generated = provider === 'deepseek'
+            ? { answer: (await requestDeepSeekChat({
                 messages,
                 temperature: 0.84,
                 maxTokens: 1400
-            })).answer
-            : await requestOpenAI(messages, vision);
+            })).answer, result: null }
+            : await requestOpenAI(
+                messages,
+                vision,
+                schema ? { ...schema, feature } : null
+            );
+        const answer = generated.answer;
         let completedInvitation = null;
         if (invitationContext && charge?.charge_id) {
             const completed = await userStore(botToken, 'complete_joint_invitation', {
                 telegramId,
                 invitationToken: invitationContext.token,
                 result: answer,
+                resultPayload: generated.result || {},
                 chargeId: charge.charge_id
             });
             completedInvitation = completed.invitation;
@@ -536,6 +703,7 @@ export default async function handler(req, res) {
         }
         return sendJson(res, 200, {
             answer,
+            ...(generated.result ? { result: generated.result } : {}),
             ...(charge ? { payment: {
                 source: charge.payment_source,
                 amount: Number(charge.price_units || 0) / 100

@@ -110,8 +110,8 @@ test('photo readings use only OpenAI image inputs', async () => {
         ]);
         const image = requestBody.input[1].content.find((part) => part.type === 'input_image');
         assert.equal(image.image_url, 'data:image/webp;base64,AA==');
-        assert.equal(image.detail, 'low');
-        assert.equal(requestBody.max_output_tokens, 1400);
+        assert.equal(image.detail, 'high');
+        assert.equal(requestBody.max_output_tokens, 1800);
     } finally {
         restore();
         global.fetch = previousFetch;
@@ -129,8 +129,29 @@ test('two-person compatibility remains on OpenAI', async () => {
     global.fetch = async (url, options) => {
         calls.push(url);
         const body = JSON.parse(options.body);
-        assert.equal(body.model, 'gpt-5-mini');
-        return { ok: true, status: 200, json: async () => ({ output_text: 'Бережный ответ.' }) };
+        assert.equal(body.model, 'gpt-5.6');
+        assert.equal(body.text.format.type, 'json_schema');
+        return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+                output_text: JSON.stringify({
+                    score: 78,
+                    confidence: 'medium',
+                    summary: 'Связь держится на честном диалоге.',
+                    narrative: 'У пары есть ресурс для сближения.',
+                    strengths: ['Умение слушать'],
+                    frictions: ['Разный темп решений'],
+                    actions: ['Назвать ожидания', 'Согласовать границы', 'Выбрать общий шаг'],
+                    aspects: [
+                        { key: 'closeness', label: 'Близость', score: 82, insight: 'Тепло поддерживается вниманием.' },
+                        { key: 'dialogue', label: 'Диалог', score: 76, insight: 'Нужна конкретика.' },
+                        { key: 'daily', label: 'Быт', score: 70, insight: 'Темп стоит согласовать.' },
+                        { key: 'growth', label: 'Рост', score: 84, insight: 'Общие цели сближают.' }
+                    ]
+                })
+            })
+        };
     };
 
     try {
@@ -147,7 +168,8 @@ test('two-person compatibility remains on OpenAI', async () => {
             }
         }, response);
         assert.equal(response.statusCode, 200);
-        assert.deepEqual(response.body, { answer: 'Бережный ответ.' });
+        assert.equal(response.body.result.score, 78);
+        assert.match(response.body.answer, /ресурс для сближения/i);
         assert.deepEqual(calls, ['https://api.openai.com/v1/responses']);
     } finally {
         restore();
@@ -207,15 +229,17 @@ test('daily horoscope uses DeepSeek', async () => {
     };
 
     try {
-        const answer = await createHoroscope('aries', '2026-07-27', 'female');
+        const answer = await createHoroscope('aries', '2026-07-27', 'female', 34, 'Казань');
         assert.equal(answer, 'Сегодня берегите внутренний ритм.');
         assert.equal(request.url, 'https://api.deepseek.com/chat/completions');
         assert.equal(request.body.max_tokens, 700);
-        assert.match(request.body.messages[0].content, /поэтическ/i);
-        assert.match(request.body.messages[0].content, /юмор/i);
+        assert.match(request.body.messages[0].content, /короткий и ясный ориентир/i);
+        assert.match(request.body.messages[0].content, /конкретный фокус/i);
         assert.match(request.body.messages[0].content, /женском роде/i);
         assert.match(request.body.messages[1].content, /Искательница/i);
-        assert.match(request.body.messages[1].content, /юмор должен поддерживать/i);
+        assert.match(request.body.messages[1].content, /34/);
+        assert.match(request.body.messages[1].content, /Казань/);
+        assert.match(request.body.messages[1].content, /80–130 слов/i);
     } finally {
         restore();
         global.fetch = previousFetch;

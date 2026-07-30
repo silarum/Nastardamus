@@ -3,6 +3,10 @@ import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 const USER_STORE_URL = process.env.USER_STORE_URL
   || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-user-store';
 
+export const config = {
+  api: { bodyParser: { sizeLimit: '3mb' } }
+};
+
 function sendJson(res, status, body) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -40,17 +44,30 @@ export default async function handler(req, res) {
       telegramId,
       chatId: telegramId,
       username: auth.user.username,
-      firstName: auth.user.first_name
+      firstName: auth.user.first_name,
+      telegramAvatarUrl: auth.user.photo_url
     });
     if (req.method === 'POST') {
-      await userStore(botToken, 'update_user_preferences', {
-        telegramId,
-        chatId: telegramId,
-        zodiacSign: req.body?.zodiacSign,
-        enabled: req.body?.enabled === true,
-        timezone: req.body?.timezone || 'Europe/Berlin',
-        gender: req.body?.gender
-      });
+      const action = String(req.body?.action || 'save');
+      if (action === 'upload_avatar') {
+        await userStore(botToken, 'upload_profile_avatar', {
+          telegramId,
+          image: req.body?.image
+        });
+      } else if (action === 'remove_avatar') {
+        await userStore(botToken, 'remove_profile_avatar', { telegramId });
+      } else {
+        await userStore(botToken, 'update_user_preferences', {
+          telegramId,
+          chatId: telegramId,
+          zodiacSign: req.body?.zodiacSign,
+          enabled: req.body?.enabled === true,
+          timezone: req.body?.timezone || 'Europe/Berlin',
+          gender: req.body?.gender,
+          birthYear: req.body?.birthYear,
+          city: req.body?.city
+        });
+      }
     }
     const data = await userStore(botToken, 'get_user_preferences', { telegramId });
     return sendJson(res, 200, { ok: true, preferences: data.preferences || null });

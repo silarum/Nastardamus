@@ -225,7 +225,12 @@ export default async function handler(req, res) {
                 const identity = await callTelegram(botToken, 'getMe', {});
                 return sendJson(res, 200, {
                     status: 'ok',
-                    bot: { id: identity.id, username: identity.username, first_name: identity.first_name }
+                    bot: {
+                        id: identity.id,
+                        username: identity.username,
+                        first_name: identity.first_name,
+                        has_main_web_app: identity.has_main_web_app === true
+                    }
                 });
             } catch (error) {
                 console.error('Telegram identity check failed:', error);
