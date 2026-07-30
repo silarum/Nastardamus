@@ -67,7 +67,10 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.equal(mount.querySelectorAll('.n-balance-card').length, 0, 'Balance must not be shown on the home screen');
     assert.equal(document.body.textContent.includes('Посмотреть приветствие'), false);
     const homeText = mount.textContent;
-    assert.ok(homeText.indexOf('Быстрый доступ') < homeText.indexOf('Спортивные знамения'));
+    assert.ok(homeText.indexOf('Ваши практики') < homeText.indexOf('Спортивные знамения'));
+    assert.ok(homeText.indexOf('Ладонь') < homeText.indexOf('Руны'));
+    assert.ok(homeText.indexOf('Руны') < homeText.indexOf('Таро'));
+    assert.ok(homeText.indexOf('Таро') < homeText.indexOf('Амур'));
     assert.ok(homeText.indexOf('Спортивные знамения') < homeText.lastIndexOf('Колесо Фортуны'));
     assert.match(
       mount.querySelector('.premium-sports-banner > img').getAttribute('src'),
@@ -76,7 +79,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
 
     click(document, 'Спортивные знамения');
     assert.equal(mount.dataset.screen, 'sports');
-    assert.ok(document.body.textContent.includes('Символический прогноз события'));
+    assert.ok(document.body.textContent.includes('Конкретный сценарий и уровень уверенности'));
     assert.equal(mount.querySelectorAll('.n-bottom-navigation').length, 1);
     app.state.sportsResult = 'Арена на мгновение замирает.\n\nРисунок встречи меняется в самой тишине.';
     app.render();
@@ -88,13 +91,13 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     click(document, 'Назад');
     assert.equal(mount.dataset.screen, 'home');
 
-    click(document, 'Услуги');
+    click(document, 'Практики');
     assert.equal(mount.dataset.screen, 'services');
 
     click(document, 'Двенадцать раскладов Таро');
     assert.equal(mount.dataset.screen, 'tarot');
     assert.equal(document.querySelectorAll('.premium-spread-card').length, 12);
-    click(document, 'Три пути');
+    click(document, 'Прошлое · настоящее · будущее');
     assert.equal(mount.dataset.screen, 'tarot-question');
 
     const question = document.querySelector('textarea');
@@ -115,7 +118,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
 
     app.state.result = {
       id: 'reading-test',
-      type: 'Расклад «Три пути»',
+      type: 'Расклад «Прошлое · настоящее · будущее»',
       title: 'Что поможет сделать следующий шаг?',
       body: 'Первый знак возникает сразу.\n\nВторой абзац раскрывает движение.',
       cards: ['Шут', 'Маг', 'Сила'],
@@ -134,15 +137,14 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.ok(document.body.textContent.includes('Откройте приложение внутри Telegram'));
     click(document, 'Женщина');
     assert.equal(app.state.userGender, 'female');
-    assert.equal(
-      dom.window.localStorage.getItem('nastardamus-profile-v1'),
-      JSON.stringify({ gender: 'female' })
-    );
+    assert.equal(JSON.parse(dom.window.localStorage.getItem('nastardamus-profile-v1')).gender, 'female');
+    assert.ok(document.body.textContent.includes('Фото профиля'));
+    assert.ok(document.body.textContent.includes('Загрузить своё'));
 
     click(document, 'Главная');
     assert.equal(mount.dataset.screen, 'home');
 
-    click(document, 'Услуги');
+    click(document, 'Практики');
     click(document, 'Энергетический след');
     assert.equal(mount.dataset.screen, 'photo-energy');
     assert.equal(document.querySelectorAll('.n-info-banner').length, 0);
@@ -154,7 +156,11 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.ok(document.body.textContent.includes('Опишите, что происходит'));
 
     click(document, 'Назад');
-    click(document, 'Совместимость по фото');
+    click(document, 'Амур');
+    assert.equal(mount.dataset.screen, 'amur');
+    assert.ok(document.body.textContent.includes('Бросить кости Амура'));
+    assert.equal(document.querySelectorAll('.premium-amur-die').length, 2);
+    click(document, 'По фотографиям');
     assert.equal(mount.dataset.screen, 'photo-compat');
     assert.equal(document.querySelectorAll('.n-upload-card').length, 2);
 
@@ -169,24 +175,15 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.equal(app.suggestGenderFromName('Анна'), 'female');
     assert.equal(app.suggestGenderFromName('Иван'), 'male');
     assert.equal(app.suggestGenderFromName('Саша'), 'unspecified');
-    app.state.inviteFlow = 'palm';
-    app.state.inviteName = 'Анна';
-    app.state.inviteGender = 'female';
-    app.state.inviteGoal = 'creative';
-    app.navigate('invite-compose');
-    assert.equal(mount.dataset.screen, 'invite-compose');
-    assert.match(
-      document.querySelector('.premium-invitation-preview__portrait').getAttribute('src'),
-      /portrait-woman\.png$/
-    );
-    assert.equal(document.querySelectorAll('.premium-invite-gender').length, 2);
-    assert.ok(findButton(document, 'Выбрать приложение для отправки') === undefined);
-    app.navigate('palm');
     click(document, 'Продолжить ритуал');
     assert.equal(mount.dataset.screen, 'palm');
     assert.ok(document.getElementById('premium-toast').textContent.includes('Сначала загрузите фото ладони'));
 
-    click(document, 'Услуги');
+    click(document, 'Практики');
+    click(document, 'Чтение по ладони');
+    assert.equal(mount.dataset.screen, 'palm-reading');
+    assert.ok(document.body.textContent.includes('Реальный диалог перед толкованием'));
+    click(document, 'Назад');
     click(document, 'Спросить Эзотериума');
     assert.equal(mount.dataset.screen, 'support');
     assert.ok(document.querySelector('textarea'));
@@ -201,7 +198,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
   }
 });
 
-test('bundled startup restores the elder splash and renders a fixed wheel pointer', async () => {
+test('bundled startup shows registration and enters the redesigned home', async () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const bundle = readFileSync(new URL('../ui-kit/app.bundle.js', import.meta.url), 'utf8');
   const dom = new JSDOM(html, {
@@ -222,10 +219,19 @@ test('bundled startup restores the elder splash and renders a fixed wheel pointe
     assert.ok(mount.textContent.includes('Nastardamus'));
     assert.ok(boot.classList.contains('is-hidden'));
 
-    click(dom.window.document, 'Открыть пространство');
+    const age = mount.querySelector('input[type="number"]');
+    const city = mount.querySelector('input[autocomplete="address-level2"]');
+    age.value = '29';
+    city.value = 'Казань';
+    age.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    city.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    click(dom.window.document, 'Войти в Nastardamus');
+    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
     assert.equal(mount.dataset.screen, 'home');
-    assert.equal(dom.window.location.search, '');
-    assert.equal(mount.querySelectorAll('.n-wheel-pointer').length, 1);
+    assert.equal(new URL(dom.window.location.href).searchParams.get('screen'), 'home');
+    assert.equal(mount.querySelectorAll('.premium-home-practice').length, 4);
+    assert.equal(mount.querySelectorAll('.n-bottom-nav-item').length, 5);
+    assert.equal(mount.querySelectorAll('.n-center-magic-button').length, 0);
 
     await new Promise((resolve) => dom.window.setTimeout(resolve, 300));
     assert.equal(dom.window.document.getElementById('boot-screen'), null);

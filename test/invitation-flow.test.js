@@ -147,7 +147,21 @@ test('joint result charges one chosen participant and completes for both', async
         ok: true,
         status: 200,
         json: async () => ({
-          output_text: 'Общий символический результат, который безопасно открывается обоим участникам.'
+          output_text: JSON.stringify({
+            score: 81,
+            confidence: 'medium',
+            summary: 'Связь усиливается через ясный разговор.',
+            narrative: 'Участникам важно согласовать темп и ожидания.',
+            strengths: ['Взаимное внимание', 'Готовность слышать'],
+            frictions: ['Разный темп решений', 'Невысказанные ожидания'],
+            actions: ['Назвать ожидания', 'Согласовать границы', 'Выбрать общий шаг'],
+            aspects: [
+              { key: 'closeness', label: 'Близость', score: 84, insight: 'Тепло заметно в контакте.' },
+              { key: 'dialogue', label: 'Диалог', score: 79, insight: 'Помогает конкретика.' },
+              { key: 'daily', label: 'Быт', score: 72, insight: 'Нужно согласовать темп.' },
+              { key: 'growth', label: 'Рост', score: 86, insight: 'Есть пространство для общего шага.' }
+            ]
+          })
         })
       };
     }

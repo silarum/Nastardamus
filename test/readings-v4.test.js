@@ -68,13 +68,21 @@ test('accepts a ten-card Celtic Cross', () => {
   assert.match(messages[1].content, /Позиция 10 — Отшельник/);
 });
 
-test('rejects a tarot spread with more than ten cards', () => {
+test('accepts the twelve-card Wheel of the Year and rejects larger spreads', () => {
+  const twelveCards = [...cards, 'Колесо Фортуны', 'Справедливость'];
+  const messages = buildReadingMessages('tarot', {
+    question: 'Как раскрывается год?',
+    cards: twelveCards,
+    spread: 'wheel-of-year',
+    positions: twelveCards.map((_, index) => `Месяц ${index + 1}`)
+  });
+  assert.match(messages[1].content, /Месяц 12 — Справедливость/);
   assert.throws(
     () => buildReadingMessages('tarot', {
       question: 'Слишком большой расклад',
-      cards: [...cards, 'Колесо Фортуны']
+      cards: [...twelveCards, 'Повешенный']
     }),
-    /between one and ten cards/
+    /between one and twelve cards/
   );
 });
 
@@ -106,16 +114,20 @@ test('daily horoscope is personalized by name, sign and date', () => {
     name: 'Анна',
     sign: 'Весы',
     date: '2026-07-27',
-    gender: 'female'
+    gender: 'female',
+    age: 34,
+    city: 'Казань'
   });
 
   assert.match(messages[1].content, /Анна/);
   assert.match(messages[1].content, /Весы/);
   assert.match(messages[1].content, /2026-07-27/);
-  assert.match(messages[0].content, /поэтическ/i);
-  assert.match(messages[0].content, /добрый юмор/i);
+  assert.match(messages[0].content, /короткий и ясный ориентир/i);
+  assert.match(messages[0].content, /конкретный фокус/i);
   assert.match(messages[0].content, /женском роде/i);
-  assert.match(messages[1].content, /новую метафору, архетип, бытовой образ и ритм/i);
+  assert.match(messages[1].content, /34/);
+  assert.match(messages[1].content, /Казань/);
+  assert.match(messages[1].content, /80–130 слов/i);
 });
 
 test('does not infer gender when the user did not specify it', () => {
@@ -129,7 +141,7 @@ test('does not infer gender when the user did not specify it', () => {
   assert.match(messages[0].content, /нейтральные формулировки/i);
 });
 
-test('sports forecast stays symbolic and never becomes betting advice', () => {
+test('sports forecast is concrete about outcomes without becoming betting advice', () => {
   const messages = buildReadingMessages('sports_forecast', {
     event: 'Финал: команда А — команда Б',
     context: 'Интересен возможный перелом темпа.',
@@ -138,7 +150,9 @@ test('sports forecast stays symbolic and never becomes betting advice', () => {
 
   assert.match(messages[0].content, /не подталкивай к ставкам/i);
   assert.match(messages[1].content, /не выдумывай текущую статистику/i);
-  assert.match(messages[1].content, /не основа для ставки/i);
+  assert.match(messages[1].content, /наиболее вероятный исход/i);
+  assert.match(messages[1].content, /три вероятности в процентах/i);
+  assert.match(messages[1].content, /не основание для ставки/i);
 });
 
 test('builds a two-photo compatibility reading', () => {

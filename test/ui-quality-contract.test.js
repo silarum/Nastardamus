@@ -23,30 +23,31 @@ test('premium UI keeps readable text and complete mobile headers', () => {
   assert.doesNotMatch(app, /\.premium-wallet-state\s*\{[^}]*text-overflow:\s*ellipsis/s);
 });
 
-test('gift wheel and primary navigation preserve their geometry', () => {
+test('gift wheel and compact five-slot navigation preserve their geometry', () => {
   const wheelComponent = readFileSync(new URL('../ui-kit/components/FortuneWheel.js', import.meta.url), 'utf8');
+  const navigation = readFileSync(new URL('../ui-kit/components/BottomNavigation.js', import.meta.url), 'utf8');
   assert.doesNotMatch(wheelComponent, /WheelSegment|values=/);
   assert.match(wheelComponent, /WheelPointer/);
   assert.match(components, /\.n-wheel-pointer\s*\{[^}]*left:\s*50%/s);
-  assert.match(components, /\.n-bottom-navigation::before\s*\{/s);
-  assert.match(components, /\.n-bottom-nav-item\s*\{[^}]*min-height:\s*56px/s);
-  assert.match(components, /\.n-center-magic-button\s*\{[^}]*left:\s*50%;[^}]*top:\s*-33px/s);
-  assert.match(components, /\.n-center-magic-button\s*\{[^}]*transform:\s*translateX\(-50%\)/s);
+  assert.match(components, /\.n-bottom-navigation\s*\{[^}]*grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/s);
+  assert.match(components, /\.n-bottom-nav-item\s*\{[^}]*min-height:\s*50px/s);
+  assert.equal((navigation.match(/\bitem\("/g) || []).length, 5);
+  assert.doesNotMatch(navigation, /CenterMagicButton/);
   assert.match(components, /\.n-icon-button\s*\{[^}]*width:\s*44px;\s*height:\s*44px/s);
-  assert.match(
-    appSource,
-    /SectionTitle\(\{\s*text:\s*'Быстрый доступ'[\s\S]*sportsForecastPanel\(\)[\s\S]*text:\s*wallet\.freeSpins[\s\S]*wheelWrap/
-  );
+  assert.match(appSource, /SectionTitle\(\{\s*text:\s*'Ваши практики'/);
+  assert.match(appSource, /homePracticeCard\('palm-oracle'[\s\S]*homePracticeCard\('rune-sanctum'[\s\S]*homePracticeCard\('tarot-deck'[\s\S]*homePracticeCard\('amur-dice'/);
 });
 
-test('PalmLink keeps the approved artwork visible and controls aligned', () => {
+test('Amur and palm journeys keep their artwork and controls aligned', () => {
   assert.match(components, /\.n-goal-chip\s*\{[^}]*height:\s*72px/s);
   assert.match(components, /\.n-energy-hands-scene\s*\{[^}]*overflow:\s*visible/s);
   assert.match(components, /\.n-palm-graphic--left\s*\{[^}]*left:\s*0/s);
   assert.match(components, /\.n-palm-graphic--right\s*\{[^}]*right:\s*0/s);
-  assert.match(app, /\.premium-screen\s*\{[^}]*calc\(154px \+ env\(safe-area-inset-bottom/s);
-  assert.match(appSource, /serviceTile\('energy-hands',\s*'Путь двух судеб'/);
-  assert.match(appSource, /serviceTile\('two-photo-compatibility',\s*'Совместимость по фото'/);
+  assert.match(app, /\.premium-screen\s*\{[^}]*calc\(94px \+ max\(env\(safe-area-inset-bottom/s);
+  assert.match(appSource, /function amurScreen\(\)/);
+  assert.match(appSource, /serviceTile\('partner-invite-emblem',\s*'Личное приглашение'/);
+  assert.match(appSource, /function palmReadingScreen\(\)/);
+  assert.match(appSource, /Реальный диалог перед толкованием/);
 });
 
 test('reading mode removes navigation overlays and uses natural page scrolling', () => {
@@ -87,7 +88,7 @@ test('startup renders the branded elder splash without waiting for Telegram', ()
   assert.doesNotMatch(html, /setTimeout\(window\.hideNastardamusBoot/);
   assert.match(
     appSource,
-    /screen:\s*requestedScreen\s*\|\|\s*\(requestedInvitationToken\s*\?\s*'invitation'\s*:\s*'welcome'\)/
+    /screen:\s*requestedScreen\s*\|\|\s*\(requestedInvitationToken\s*\?\s*'invitation'\s*:\s*\(storedProfile\.completed\s*\?\s*'home'\s*:\s*'welcome'\)\)/
   );
   assert.match(appSource, /function hideBootScreen\(\)/);
 });
@@ -98,7 +99,7 @@ test('public services use neutral badges and language', () => {
   assert.doesNotMatch(appSource, /нейросет|искусственн(?:ый|ого) интеллект/i);
 });
 
-test('every illustrated module uses the approved PNG asset set', () => {
+test('every illustrated module uses the approved optimized asset set', () => {
   const files = readdirSync(artV2);
   const expected = [
     'astrology-forecast.png', 'avatar-seeker.png', 'brand-sun.png', 'connection-heart.png',
@@ -109,7 +110,8 @@ test('every illustrated module uses the approved PNG asset set', () => {
     'photo-palm.png', 'portrait-man.png', 'portrait-woman.png',
     'result-magic-seal.png', 'ritual-tarot-spread.png', 'silarum-coin.png',
     'shortcut-astro-orbit.png', 'shortcut-destiny-hearts.png', 'shortcut-fortune-compass.png', 'tarot-deck.png',
-    'two-photo-compatibility.png', 'sports-prophecy-banner.png'
+    'two-photo-compatibility.png', 'sports-prophecy-banner.png',
+    'amur-dice.webp', 'palm-oracle.webp', 'rune-sanctum.webp'
   ];
 
   assert.deepEqual(files.sort(), expected.sort());
@@ -118,20 +120,24 @@ test('every illustrated module uses the approved PNG asset set', () => {
   let totalBytes = 0;
   for (const name of files) {
     const data = readFileSync(new URL(name, artV2));
-    const width = data.readUInt32BE(16);
-    const height = data.readUInt32BE(20);
-    const colorType = data[25];
-
     totalBytes += data.length;
-    assert.equal(data.subarray(1, 4).toString('ascii'), 'PNG', `${name} is not a PNG`);
     assert.ok(data.length > 10_000, `${name} looks like an empty placeholder`);
     assert.ok(data.length < 2_500_000, `${name} exceeds the per-asset delivery budget`);
-    assert.ok(width <= 960 && height <= 1_700, `${name} exceeds the Retina delivery dimensions`);
-    assert.equal(
-      colorType,
-      name === 'cosmic-background.png' ? 2 : 6,
-      `${name} does not use the expected ${name === 'cosmic-background.png' ? 'RGB' : 'RGBA'} format`
-    );
+    if (name.endsWith('.webp')) {
+      assert.equal(data.subarray(0, 4).toString('ascii'), 'RIFF', `${name} is not a WebP`);
+      assert.equal(data.subarray(8, 12).toString('ascii'), 'WEBP', `${name} is not a WebP`);
+    } else {
+      const width = data.readUInt32BE(16);
+      const height = data.readUInt32BE(20);
+      const colorType = data[25];
+      assert.equal(data.subarray(1, 4).toString('ascii'), 'PNG', `${name} is not a PNG`);
+      assert.ok(width <= 960 && height <= 1_700, `${name} exceeds the Retina delivery dimensions`);
+      assert.equal(
+        colorType,
+        name === 'cosmic-background.png' ? 2 : 6,
+        `${name} does not use the expected ${name === 'cosmic-background.png' ? 'RGB' : 'RGBA'} format`
+      );
+    }
   }
 
   assert.ok(totalBytes < 16_000_000, 'Illustrated asset bundle exceeds the 16 MB delivery budget');

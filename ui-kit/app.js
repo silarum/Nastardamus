@@ -8,6 +8,7 @@ import {
 import { h } from './core/dom.js';
 import { Icon } from './core/icon.js';
 import { premiumArtUrl } from './core/assets.js';
+import { TAROT_CARD_NAMES, tarotCardImage } from './core/tarot-deck.js';
 
 let tg = null;
 let telegramConfigured = false;
@@ -19,6 +20,8 @@ const SUPPORT_KEY = 'nastardamus-support-v4';
 const HOROSCOPE_KEY = 'nastardamus-horoscope-v1';
 const PROFILE_KEY = 'nastardamus-profile-v1';
 const TAROT_REVEAL_MS = 2300;
+const CURRENT_YEAR = new Date().getFullYear();
+const storedProfile = readJSON(PROFILE_KEY, {});
 
 const ZODIAC_SIGNS = {
   aries: { label: 'Овен' }, taurus: { label: 'Телец' }, gemini: { label: 'Близнецы' },
@@ -33,77 +36,66 @@ const GENDER_OPTIONS = {
   unspecified: { label: 'Не указывать', art: 'avatar-seeker' }
 };
 
-const CARD_IMAGES = {
-  'Шут': 'fool.webp', 'Маг': 'magician.webp', 'Верховная Жрица': 'high-priestess.webp',
-  'Императрица': 'empress.webp', 'Император': 'emperor.webp', 'Иерофант': 'hierophant.webp',
-  'Влюблённые': 'lovers.webp', 'Колесница': 'chariot.webp', 'Сила': 'strength.webp',
-  'Отшельник': 'hermit.webp', 'Колесо Фортуны': 'wheel-of-fortune.webp',
-  'Справедливость': 'justice.webp', 'Повешенный': 'hanged-man.webp', 'Смерть': 'death.webp',
-  'Умеренность': 'temperance.webp', 'Дьявол': 'devil.webp', 'Башня': 'tower.webp',
-  'Звезда': 'star.webp', 'Луна': 'moon.webp', 'Солнце': 'sun.webp',
-  'Суд': 'judgement.webp', 'Мир': 'world.webp'
-};
-
 const SPREADS = {
-  'one-sign': {
-    label: 'Один знак', count: 1, category: 'insight', cover: 'high-priestess.webp',
-    description: 'Короткий ответ и главный ориентир дня', access: 'Ежедневный',
-    positions: ['Главный знак']
+  'card-of-day': {
+    label: 'Карта дня', count: 1, category: 'insight', cover: 'high-priestess.webp',
+    description: 'Энергия дня и один ясный ориентир', access: 'Ежедневный', serviceId: 'tarot',
+    positions: ['Энергия дня']
   },
-  'three-paths': {
-    label: 'Три пути', count: 3, category: 'future', cover: 'wheel-of-fortune.webp',
-    description: 'Истоки, настоящее и следующий шаг', access: 'Бесплатная попытка',
-    positions: ['Истоки', 'Настоящее', 'Следующий шаг']
+  'yes-no': {
+    label: 'Да или нет', count: 1, category: 'future', cover: 'justice.webp',
+    description: 'Ответ, условие и зона вашего выбора', access: 'Короткий', serviceId: 'tarot',
+    positions: ['Ответ и условие']
   },
-  decision: {
-    label: 'Перекрёсток', count: 4, category: 'future', cover: 'justice.webp',
-    description: 'Сравнить два решения и увидеть цену выбора', access: 'SILARUM',
-    positions: ['Суть выбора', 'Первый путь', 'Второй путь', 'Внутренняя цена']
+  'past-present-future': {
+    label: 'Прошлое · настоящее · будущее', count: 3, category: 'future', cover: 'wheel-of-fortune.webp',
+    description: 'Три времени одной ситуации', access: 'Бесплатная попытка', serviceId: 'tarot',
+    positions: ['Прошлое', 'Настоящее', 'Будущее']
   },
-  relationship: {
-    label: 'Два сердца', count: 6, category: 'love', cover: 'lovers.webp',
-    description: 'Притяжение, напряжение и общий путь пары', access: 'VIP / SILARUM',
-    positions: ['Ваш вклад', 'Вклад другого', 'Притяжение', 'Напряжение', 'Разговор', 'Общий путь']
+  'situation-obstacle-advice': {
+    label: 'Ситуация · препятствие · совет', count: 3, category: 'insight', cover: 'hermit.webp',
+    description: 'Увидеть суть и практический выход', access: 'SILARUM', serviceId: 'tarot',
+    positions: ['Ситуация', 'Препятствие', 'Совет']
   },
-  'new-love': {
-    label: 'Новая любовь', count: 5, category: 'love', cover: 'empress.webp',
-    description: 'Готовность к встрече и пространство для чувства', access: 'SILARUM',
-    positions: ['Ваше сердце', 'Что отпустить', 'Кого вы зовёте', 'Где возможна встреча', 'Как открыть путь']
+  'love-relationship': {
+    label: 'Любовь и отношения', count: 5, category: 'love', cover: 'lovers.webp',
+    description: 'Чувства, притяжение, напряжение и перспектива', access: 'VIP / SILARUM', serviceId: 'tarot_relationship',
+    positions: ['Ваше чувство', 'Чувство другого', 'Притяжение', 'Напряжение', 'Перспектива']
   },
-  career: {
-    label: 'Путь предназначения', count: 5, category: 'work', cover: 'chariot.webp',
-    description: 'Талант, препятствие и профессиональный шаг', access: 'SILARUM',
-    positions: ['Ресурс', 'Препятствие', 'Талант', 'Действие', 'Перспектива']
+  'money-career': {
+    label: 'Деньги и карьера', count: 5, category: 'work', cover: 'magician.webp',
+    description: 'Ресурс, препятствие, возможность и действие', access: 'SILARUM', serviceId: 'tarot',
+    positions: ['Ресурс', 'Текущая ситуация', 'Препятствие', 'Возможность', 'Действие']
   },
-  money: {
-    label: 'Денежный поток', count: 5, category: 'work', cover: 'magician.webp',
-    description: 'Ресурсы, утечки и практический финансовый фокус', access: 'VIP / SILARUM',
-    positions: ['Текущий поток', 'Скрытая утечка', 'Доступный ресурс', 'Разумное действие', 'Ближайшая тенденция']
+  'two-paths': {
+    label: 'Выбор двух путей', count: 7, category: 'future', cover: 'justice.webp',
+    description: 'Цена и итог каждого варианта', access: 'SILARUM', serviceId: 'tarot',
+    positions: ['Суть выбора', 'Путь A', 'Цена пути A', 'Итог пути A', 'Путь B', 'Цена пути B', 'Итог пути B']
   },
-  shadow: {
-    label: 'Тень и ресурс', count: 3, category: 'insight', cover: 'moon.webp',
-    description: 'Увидеть скрытую тему и вернуть внутреннюю опору', access: 'SILARUM',
-    positions: ['Скрытая тема', 'Сила внутри', 'Возвращение выбора']
+  'pair-compatibility': {
+    label: 'Совместимость пары', count: 8, category: 'love', cover: 'empress.webp',
+    description: 'Притяжение, доверие, диалог и общий путь', access: 'VIP / SILARUM', serviceId: 'tarot_relationship',
+    positions: ['Вы', 'Другой', 'Притяжение', 'Доверие', 'Диалог', 'Близость', 'Сложность', 'Общий путь']
   },
-  'inner-child': {
-    label: 'Голос внутреннего ребёнка', count: 5, category: 'insight', cover: 'sun.webp',
-    description: 'Потребность, защита, радость и бережный шаг', access: 'VIP',
-    positions: ['Что хочет быть услышано', 'Старая защита', 'Живая потребность', 'Источник радости', 'Бережный шаг']
+  'near-future': {
+    label: 'Ближайшее будущее', count: 7, category: 'future', cover: 'star.webp',
+    description: 'Что приходит, что уходит и ваш шаг', access: 'VIP / SILARUM', serviceId: 'tarot',
+    positions: ['Фон', 'Что приходит', 'Что уходит', 'Возможность', 'Риск', 'Ваш шаг', 'Итоговый вектор']
   },
-  'month-ahead': {
-    label: 'Лунный месяц', count: 8, category: 'future', cover: 'moon.webp',
-    description: 'Четыре недели, поворот и итоговая линия месяца', access: 'VIP / SILARUM',
-    positions: ['Тема месяца', 'Первая неделя', 'Вторая неделя', 'Третья неделя', 'Четвёртая неделя', 'Неожиданный поворот', 'Опора', 'Итог']
-  },
-  'year-compass': {
-    label: 'Компас года', count: 8, category: 'future', cover: 'world.webp',
-    description: 'Большой цикл: отношения, дела, ресурсы и рост', access: 'VIP',
-    positions: ['Главная тема', 'Отношения', 'Работа', 'Деньги', 'Дом', 'Внутренний рост', 'Испытание', 'Дар года']
+  'shadow-side': {
+    label: 'Теневая сторона', count: 5, category: 'insight', cover: 'moon.webp',
+    description: 'Триггер, защита, ресурс и интеграция', access: 'SILARUM', serviceId: 'tarot',
+    positions: ['Тень', 'Триггер', 'Защита', 'Ресурс', 'Интеграция']
   },
   'celtic-cross': {
-    label: 'Кельтский крест', count: 10, category: 'deep', cover: 'world.webp',
-    description: 'Глубокое чтение ситуации и её возможного развития', access: 'VIP / SILARUM',
+    label: 'Кельтский крест', count: 10, category: 'deep', cover: 'world.webp', serviceId: 'tarot',
+    description: 'Глубокое чтение ситуации и её развития', access: 'VIP / SILARUM',
     positions: ['Суть', 'Пересечение', 'Основание', 'Прошлое', 'Возможность', 'Ближайший путь', 'Ваша позиция', 'Окружение', 'Надежда и страх', 'Направление']
+  },
+  'wheel-of-year': {
+    label: 'Колесо года', count: 12, category: 'deep', cover: 'sun.webp', serviceId: 'tarot',
+    description: 'Двенадцать месяцев большого цикла', access: 'VIP',
+    positions: ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
   }
 };
 
@@ -125,12 +117,12 @@ const requestedInviteGoal = ['love', 'friendship', 'business', 'creative'].inclu
   ? params.get('invite')
   : 'love';
 const state = {
-  screen: requestedScreen || (requestedInvitationToken ? 'invitation' : 'welcome'),
+  screen: requestedScreen || (requestedInvitationToken ? 'invitation' : (storedProfile.completed ? 'home' : 'welcome')),
   wallet: null,
   walletStatus: 'loading',
   walletMessage: '',
   busy: false,
-  spread: 'three-paths',
+  spread: 'past-present-future',
   tarotCategory: 'all',
   tarotStage: 'catalog',
   tarotQuestion: '',
@@ -199,7 +191,37 @@ const state = {
   wheelRotation: 0,
   topupAmount: '',
   topupReturnScreen: 'services',
-  userGender: normalizeGender(readJSON(PROFILE_KEY, { gender: 'unspecified' }).gender),
+  userGender: normalizeGender(storedProfile.gender),
+  profile: {
+    age: Number(storedProfile.age) || '',
+    city: String(storedProfile.city || ''),
+    avatarUrl: String(storedProfile.avatarUrl || ''),
+    telegramAvatarUrl: String(storedProfile.telegramAvatarUrl || ''),
+    completed: storedProfile.completed === true
+  },
+  cloudReadings: [],
+  cloudReadingsStatus: 'idle',
+  readingCatalogStatus: 'idle',
+  compatibilityCatalog: [],
+  tarotSessionId: '',
+  palmDialogue: {
+    sessionId: '',
+    stage: 'intro',
+    hand: 'right',
+    question: '',
+    image: '',
+    draft: '',
+    messages: [],
+    answers: [],
+    result: null
+  },
+  runeQuestion: '',
+  runeCount: 3,
+  runeSelection: [],
+  runeResult: null,
+  amurMode: 'dice',
+  amurDice: [],
+  amurRolling: false,
   horoscope: readJSON(HOROSCOPE_KEY, { sign: 'aries', enabled: false, reading: '', date: '' }),
   support: readJSON(SUPPORT_KEY, []),
   supportDraft: ''
@@ -214,12 +236,56 @@ function configureTelegram() {
   if (!telegramConfigured) {
     tg.ready?.();
     tg.expand?.();
+    tg.disableVerticalSwipes?.();
     tg.setHeaderColor?.('#070913');
     tg.setBackgroundColor?.('#070913');
+    syncTelegramInsets();
+    tg.onEvent?.('safeAreaChanged', syncTelegramInsets);
+    tg.onEvent?.('contentSafeAreaChanged', syncTelegramInsets);
     telegramConfigured = true;
   }
   return true;
 }
+
+function syncTelegramInsets() {
+  const root = document.documentElement;
+  const safe = tg?.safeAreaInset || {};
+  const content = tg?.contentSafeAreaInset || {};
+  root.style.setProperty('--tg-safe-top', `${Math.max(Number(safe.top) || 0, Number(content.top) || 0)}px`);
+  root.style.setProperty('--tg-safe-bottom', `${Math.max(Number(safe.bottom) || 0, Number(content.bottom) || 0)}px`);
+}
+
+function syncViewport() {
+  const viewport = window.visualViewport;
+  const height = viewport?.height || window.innerHeight;
+  const keyboardOpen = window.innerHeight - height > 130;
+  document.documentElement.style.setProperty('--app-height', `${Math.round(height)}px`);
+  document.body.classList.toggle('is-keyboard-open', keyboardOpen);
+}
+
+function configureVisualQuality() {
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+  const memory = Number(navigator.deviceMemory || 4);
+  const cores = Number(navigator.hardwareConcurrency || 4);
+  const quality = reducedMotion || memory <= 2 || cores <= 2
+    ? 'lite'
+    : memory >= 8 && cores >= 8
+      ? 'high'
+      : 'standard';
+  document.documentElement.dataset.visualQuality = quality;
+  return quality;
+}
+
+window.visualViewport?.addEventListener('resize', syncViewport);
+window.visualViewport?.addEventListener('scroll', syncViewport);
+window.addEventListener('resize', syncViewport);
+document.addEventListener('focusin', (event) => {
+  if (!event.target?.matches?.('input, textarea, select')) return;
+  window.setTimeout(() => event.target.scrollIntoView?.({ block: 'center', behavior: 'smooth' }), 180);
+});
+document.addEventListener('focusout', () => window.setTimeout(syncViewport, 120));
+syncViewport();
+configureVisualQuality();
 
 function readJSON(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
@@ -265,6 +331,14 @@ function suggestGenderFromName(value) {
 }
 
 function profileAvatar() {
+  const uploaded = String(state.profile.avatarUrl || '');
+  if (/^(?:https:|data:image\/)/.test(uploaded)) return uploaded;
+  const telegramAvatar = String(
+    state.profile.telegramAvatarUrl
+    || tg?.initDataUnsafe?.user?.photo_url
+    || ''
+  );
+  if (/^https:\/\//.test(telegramAvatar)) return telegramAvatar;
   return premiumArtUrl(GENDER_OPTIONS[state.userGender]?.art || 'avatar-seeker');
 }
 
@@ -341,8 +415,8 @@ function activeTab(screen = state.screen) {
   if (screen === 'home' || screen === 'wheel' || screen === 'horoscope') return 'home';
   if (screen === 'history') return 'history';
   if (screen === 'profile' || screen === 'withdrawal' || screen === 'topup') return 'profile';
-  if (screen === 'services' || screen === 'support') return 'services';
-  return 'magic';
+  if (screen === 'amur' || screen === 'compatibility' || screen.startsWith('compatibility-') || screen.startsWith('invite') || screen === 'invitation') return 'amur';
+  return 'services';
 }
 
 function shell(content, { tabs = true, active = activeTab(), reading = false } = {}) {
@@ -359,7 +433,7 @@ function shell(content, { tabs = true, active = activeTab(), reading = false } =
 
 function handleBottomNavigation(target) {
   pulse();
-  const routes = { home: 'home', services: 'services', magic: 'tarot', history: 'history', profile: 'profile' };
+  const routes = { home: 'home', services: 'services', amur: 'amur', history: 'history', profile: 'profile' };
   navigate(routes[target] || 'home');
 }
 
@@ -421,55 +495,167 @@ function loadingCard(message = 'Эзотериум соединяет знаки
 }
 
 function welcomeScreen() {
-  const enter = MysticButton({ text: 'Открыть пространство', icon: 'sparkle', variant: 'primary', onClick: () => {
+  const age = textInput({
+    value: state.profile.age,
+    type: 'number',
+    placeholder: 'Например, 28',
+    attrs: { min: 13, max: 120, inputmode: 'numeric', autocomplete: 'bday-year' },
+    onInput: (value) => { state.profile.age = value; }
+  });
+  const city = textInput({
+    value: state.profile.city,
+    placeholder: 'Ваш город',
+    attrs: { autocomplete: 'address-level2', maxlength: 120 },
+    onInput: (value) => { state.profile.city = value; }
+  });
+  const sign = selectField(ZODIAC_SIGNS, state.horoscope.sign, (value) => {
+    state.horoscope.sign = value;
+  });
+  return shell([
+    h('section', { className: 'premium-onboarding' },
+      h('div', { className: 'premium-onboarding__visual' },
+        h('img', { attrs: { src: '/images/splash-v2.webp', alt: '' } }),
+        h('div', { className: 'premium-onboarding__brand' },
+          BrandLogo(),
+          h('p', { className: 'premium-kicker', text: 'ВАШЕ ЛИЧНОЕ ПРОСТРАНСТВО' }),
+          h('h1', { text: 'Настроим Эзотериум под вас' }),
+          h('p', { text: 'Возраст и город помогают делать советы уместнее. Мы не используем их для рекламы.' })
+        )
+      ),
+      MysticCard({ className: 'premium-onboarding__form', children: [
+        h('div', { className: 'premium-onboarding__step' },
+          h('span', { text: '01' }),
+          h('div', {}, h('strong', { text: 'Немного о вас' }), h('small', { text: 'Займёт меньше минуты' }))
+        ),
+        field('Возраст', age, 'От 13 до 120 лет'),
+        field('Город', city, 'Для ритма дня и коротких советов'),
+        field('Знак зодиака', sign),
+        MysticButton({
+          text: state.busy ? 'Сохраняем профиль…' : 'Войти в Nastardamus',
+          icon: 'sparkle',
+          variant: 'primary',
+          disabled: state.busy,
+          onClick: saveOnboardingProfile
+        }),
+        h('small', { className: 'premium-onboarding__note', text: 'Толкования созданы для размышления и развлечения. Настройки можно изменить в профиле.' })
+      ] })
+    )
+  ], { tabs: false });
+}
+
+async function saveOnboardingProfile() {
+  const age = Number(state.profile.age);
+  const city = state.profile.city.trim().replace(/\s+/g, ' ');
+  if (!Number.isInteger(age) || age < 13 || age > 120) return notify('Укажите возраст от 13 до 120 лет');
+  if (city.length < 2) return notify('Укажите ваш город');
+  state.busy = true;
+  render();
+  try {
+    state.profile = {
+      ...state.profile,
+      age,
+      city,
+      telegramAvatarUrl: String(tg?.initDataUnsafe?.user?.photo_url || state.profile.telegramAvatarUrl || ''),
+      completed: true
+    };
+    writeJSON(PROFILE_KEY, { ...state.profile, gender: state.userGender });
+    writeJSON(HOROSCOPE_KEY, state.horoscope);
+    if (tg?.initData) {
+      await api('/api/preferences', {
+        method: 'POST',
+        body: profilePreferencePayload()
+      });
+    }
     pulse('medium');
     state.screen = 'home';
     const url = new URL(location.href);
-    url.searchParams.delete('screen');
+    url.searchParams.set('screen', 'home');
     history.replaceState({}, '', url);
+  } catch (error) {
+    state.profile.completed = false;
+    notify(apiErrorMessage(error));
+  } finally {
+    state.busy = false;
     render();
-  } });
-  return shell([
-    h('section', { className: 'premium-welcome' },
-      h('img', { className: 'premium-welcome-art', attrs: { src: '/images/splash-v2.webp', alt: '' } }),
-      h('div', { className: 'premium-welcome-scrim' }),
-      h('div', { className: 'premium-welcome-content' },
-        BrandLogo(), h('p', { className: 'premium-kicker', text: 'ПРОСТРАНСТВО ЭЗОТЕРИУМА' }),
-        h('h1', { text: 'Услышьте свой знак' }),
-        h('p', { text: 'Таро, звёзды, символические фото-чтения и личный дневник в одном пространстве.' }),
-        enter,
-        h('small', { text: 'Толкования созданы для размышления и развлечения.' })
-      )
-    )
-  ], { tabs: false });
+  }
+}
+
+function profilePreferencePayload(extra = {}) {
+  return {
+    zodiacSign: state.horoscope.sign,
+    enabled: state.horoscope.enabled,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Berlin',
+    gender: state.userGender,
+    birthYear: CURRENT_YEAR - Number(state.profile.age || 18),
+    city: state.profile.city.trim(),
+    ...extra
+  };
 }
 
 function homeScreen() {
   const wallet = state.wallet?.wallet || { freeSpins: 0 };
   const header = h('header', { className: 'premium-home-header' }, BrandLogo(),
-    h('button', { className: 'premium-avatar-button', attrs: { type: 'button', 'aria-label': 'Открыть профиль' }, on: { click: () => navigate('profile') } }, Icon('profile', { size: 23 }))
+    h('button', { className: 'premium-avatar-button', attrs: { type: 'button', 'aria-label': 'Открыть профиль' }, on: { click: () => navigate('profile') } },
+      h('img', { attrs: { src: profileAvatar(), alt: '' } })
+    )
   );
-  const wheel = FortuneWheelCard({ caption: 'Одна из коробок хранит вашу услугу' });
   const wheelEnabled = state.publicConfig.wheelEnabled === true;
-  const wheelWrap = h('div', { className: 'premium-wheel-wrap' }, wheel,
-    h('button', { className: 'premium-wheel-action', attrs: { type: 'button', 'aria-label': 'Открыть Колесо Фортуны' }, on: { click: () => openEnabledFeature(wheelEnabled, 'wheel', 'Колесо отключено администратором') } }),
-    h('div', { className: 'premium-wheel-result', text: wheelEnabled ? 'Коснитесь, чтобы открыть' : 'Временно отключено' })
-  );
+  const horoscopeReady = state.horoscope.reading && state.horoscope.date === new Intl.DateTimeFormat('en-CA').format(new Date());
 
   return shell([
     header,
-    GreetingCard({ username: firstName(), message: 'Слушай знаки. Доверься интуиции.', avatar: profileAvatar() }),
-    SectionTitle({ text: 'Быстрый доступ' }),
-    QuickAccessGrid({ items: [
-      { art: 'shortcut-destiny-hearts', title: 'Совместимость', onClick: () => navigate('compatibility') },
-      { art: 'tarot-deck', title: 'Таро расклад', onClick: () => navigate('tarot') },
-      { art: 'shortcut-astro-orbit', title: 'Гороскоп дня', onClick: () => navigate('horoscope') },
-      { art: 'photo-energy-imprint', title: 'След по фото', onClick: () => navigate('photo-energy') }
-    ] }),
+    h('section', { className: 'premium-home-greeting' },
+      h('p', { className: 'premium-kicker', text: 'СЕГОДНЯ ВАЖНО' }),
+      h('h1', { text: `${firstName()}, найдите одну ясную точку опоры` }),
+      h('p', { text: `${state.profile.city || 'Ваш город'} · ${ZODIAC_SIGNS[state.horoscope.sign]?.label || 'личный ритм'}` })
+    ),
+    h('button', {
+      className: 'premium-daily-card',
+      attrs: { type: 'button' },
+      on: { click: () => navigate('horoscope') }
+    },
+    h('img', { attrs: { src: premiumArtUrl('astrology-forecast'), alt: '' } }),
+    h('span', { className: 'premium-daily-card__copy' },
+      h('small', { text: 'ЛИЧНЫЙ ОРИЕНТИР' }),
+      h('strong', { text: horoscopeReady ? 'Ваш совет на сегодня готов' : 'Короткий гороскоп дня' }),
+      h('span', { text: horoscopeReady ? String(state.horoscope.reading).split('\n')[0].slice(0, 110) : 'Фокус, отношения, дела и один конкретный шаг.' }),
+      h('b', { text: horoscopeReady ? 'Открыть снова →' : 'Получить совет →' })
+    )),
+    SectionTitle({ text: 'Ваши практики' }),
+    h('div', { className: 'premium-home-practices' },
+      homePracticeCard('palm-oracle', 'Ладонь', 'Диалог и чтение линий', 'palm-reading'),
+      homePracticeCard('rune-sanctum', 'Руны', 'Три знака и действие', 'runes'),
+      homePracticeCard('tarot-deck', 'Таро', 'Полная колода 78 карт', 'tarot'),
+      homePracticeCard('amur-dice', 'Амур', 'Кости и совместимость', 'amur')
+    ),
     sportsForecastPanel(),
-    SectionTitle({ text: wallet.freeSpins ? `Колесо Фортуны · ${wallet.freeSpins} подарок` : 'Колесо Фортуны' }),
-    wheelWrap
+    h('div', { className: 'premium-home-footer-row' },
+      h('button', {
+        className: 'premium-mini-feature',
+        attrs: { type: 'button' },
+        on: { click: () => openEnabledFeature(wheelEnabled, 'wheel', 'Колесо отключено администратором') }
+      },
+      Icon('wheel', { size: 28 }),
+      h('span', {}, h('strong', { text: 'Колесо Фортуны' }), h('small', { text: wallet.freeSpins ? `${wallet.freeSpins} вращение доступно` : 'Подарок дня' }))),
+      h('button', {
+        className: 'premium-mini-feature',
+        attrs: { type: 'button' },
+        on: { click: () => navigate('history') }
+      },
+      Icon('history', { size: 28 }),
+      h('span', {}, h('strong', { text: 'Моя история' }), h('small', { text: 'Все сохранённые чтения' })))
+    )
   ], { active: 'home' });
+}
+
+function homePracticeCard(art, title, description, screen) {
+  return h('button', {
+    className: 'premium-home-practice',
+    attrs: { type: 'button' },
+    on: { click: () => navigate(screen) }
+  },
+  h('img', { attrs: { src: premiumArtUrl(art), alt: '', loading: 'lazy' } }),
+  h('span', {}, h('strong', { text: title }), h('small', { text: description })));
 }
 
 function sportsForecastPanel() {
@@ -497,7 +683,7 @@ function sportsForecastPanel() {
 function sportsForecastScreen() {
   const reading = state.busy || Boolean(state.sportsResult);
   return shell([
-    screenHeader('Спортивные знамения', 'Символический прогноз события', 'home'),
+    screenHeader('Прогноз события', 'Конкретный сценарий и уровень уверенности', 'home'),
     h('section', { className: 'premium-sports-hero' },
       h('img', {
         attrs: {
@@ -523,7 +709,7 @@ function sportsForecastScreen() {
       }), 'Можно оставить пустым.')
     ] }),
     MysticButton({
-      text: state.busy ? 'Эзотериум слушает арену…' : 'Открыть символический прогноз',
+      text: state.busy ? 'Собираем факторы…' : 'Получить конкретный прогноз',
       icon: 'sparkle',
       variant: 'primary',
       disabled: state.busy,
@@ -538,7 +724,7 @@ function sportsForecastScreen() {
       : null,
     h('p', {
       className: 'premium-info-note',
-      text: 'Художественное чтение для развлечения. Не используйте его как основу для ставок или финансовых решений.'
+      text: 'Прогноз показывает вероятный сценарий и неопределённость. Он не является гарантией и не предназначен для ставок.'
     })
   ], { active: 'home', reading });
 }
@@ -550,10 +736,16 @@ async function submitSportsForecast() {
   state.busy = true;
   render();
   try {
-    state.sportsResult = await requestReading('sports_forecast', {
+    const reading = await requestReading('sports_forecast', {
       event,
       context: state.sportsContext.trim()
-    });
+    }, '', { structured: true });
+    state.sportsResult = reading.answer;
+    await saveCloudReading({
+      id: uniqueId('sports'), kind: 'sports', mode: 'forecast',
+      type: 'Прогноз события', title: event, body: reading.answer,
+      result: reading.result, createdAt: new Date().toISOString(), favorite: false
+    }, { subtype: 'sports-forecast', input: { event, context: state.sportsContext.trim() } });
     pulse('medium');
   } catch (error) {
     notify(apiErrorMessage(error));
@@ -571,12 +763,16 @@ function walletStatusText() {
 
 function servicesScreen() {
   return shell([
-    screenHeader('Услуги', 'Выберите пространство', 'home'),
+    screenHeader('Практики', 'Каждая практика — отдельный понятный путь', 'home'),
+    MysticCard({ className: 'premium-practices-intro', children: [
+      h('p', { className: 'premium-kicker', text: 'ЭЗОТЕРИУМ' }),
+      h('h2', { text: 'Выберите один вопрос и один способ чтения' }),
+      h('p', { text: 'Совместимость и приглашения собраны отдельно в «Амуре», чтобы здесь не было повторяющихся экранов.' })
+    ] }),
     h('div', { className: 'premium-service-list' },
       serviceTile('tarot-deck', 'Двенадцать раскладов Таро', 'От одного знака до глубокого Кельтского креста', () => navigate('tarot'), serviceBadge('tarot')),
-      serviceTile('connection-heart', 'Совместимость', 'По фото, ладоням или персональным данным', () => navigate('compatibility'), serviceBadge('photo_compatibility')),
-      serviceTile('two-photo-compatibility', 'Совместимость по фото', 'Быстрый переход к двум изображениям', () => openEnabledFeature(state.publicConfig.jointReadingsEnabled, 'photo-compat', 'Совместные чтения временно отключены'), serviceBadge('photo_compatibility')),
-      serviceTile('energy-hands', 'Путь двух судеб', 'Быстрый переход к совместимости по ладоням', () => openEnabledFeature(state.publicConfig.palmLinkEnabled, 'palm', 'PalmLink временно отключён'), serviceBadge('palmlink', '')),
+      serviceTile('palm-oracle', 'Чтение по ладони', 'Фото ладони, вопросы мастера и подробное толкование', () => navigate('palm-reading'), serviceBadge('palm_reading', 'Бесплатно')),
+      serviceTile('rune-sanctum', 'Руны и намерение', 'Одна или три руны, прогноз и безопасная практика', () => navigate('runes'), serviceBadge('rune_reading', 'Бесплатно')),
       serviceTile('astrology-forecast', 'Натальная подсказка', 'Сильные стороны и текущий ориентир', () => navigate('natal'), serviceBadge('natal')),
       serviceTile('photo-energy-imprint', 'Энергетический след', 'Фото как личный символ и точка опоры', () => navigate('photo-energy'), serviceBadge('photo_energy')),
       serviceTile('result-magic-seal', 'Определение порчи', 'Фото, ваша история и совет Эзотериума', () => navigate('photo-damage'), serviceBadge('photo_damage')),
@@ -692,7 +888,7 @@ function tarotScreen() {
 }
 
 function tarotSpreadCard(id, spread) {
-  const serviceId = id === 'relationship' ? 'tarot_relationship' : 'tarot';
+  const serviceId = spread.serviceId || 'tarot';
   return h('button', {
     className: 'premium-spread-card',
     attrs: { type: 'button', 'aria-label': `Открыть расклад ${spread.label}` },
@@ -723,7 +919,7 @@ function selectTarotSpread(id) {
 }
 
 function tarotQuestionScreen() {
-  const spread = SPREADS[state.spread] || SPREADS['three-paths'];
+  const spread = SPREADS[state.spread] || SPREADS['past-present-future'];
   const question = textarea({
     value: state.tarotQuestion,
     placeholder: 'Сформулируйте один вопрос, который действительно важен сейчас…',
@@ -743,7 +939,7 @@ function tarotQuestionScreen() {
     MysticCard({ className: 'premium-form-card', children: [
       field('Ваш вопрос', question, 'Не вводите адреса, пароли и платёжные данные.')
     ] }),
-    state.spread === 'relationship'
+    ['love-relationship', 'pair-compatibility'].includes(state.spread)
       ? h('div', { className: 'premium-invite-panel' },
           SectionTitle({ text: 'Кого вы приглашаете?' }),
           GoalSelector({ value: state.inviteGoal, onChange: (goal) => { state.inviteGoal = goal; render(); } }),
@@ -754,25 +950,42 @@ function tarotQuestionScreen() {
   ]);
 }
 
-function startTarot() {
+async function startTarot() {
   if (!state.tarotQuestion.trim()) return notify('Сформулируйте вопрос');
   state.tarotCards = [];
   state.revealingCard = null;
   state.tarotStage = 'shuffle';
-  state.tarotDeck = shuffle(Object.keys(CARD_IMAGES)).slice(0, Math.max(14, SPREADS[state.spread].count + 8));
+  state.tarotSessionId = '';
+  state.tarotDeck = Array.from(
+    { length: Math.max(14, SPREADS[state.spread].count + 8) },
+    (_, index) => `closed-${index}`
+  );
   pulse('medium');
   navigate('tarot-draw');
+  if (!tg?.initData) return;
+  try {
+    const data = await api('/api/proxy', {
+      method: 'POST',
+      body: {
+        action: 'create_tarot_session',
+        spreadId: state.spread,
+        question: state.tarotQuestion.trim()
+      }
+    });
+    state.tarotSessionId = data.sessionId || '';
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  }
 }
 
 function beginTarotSelection() {
   state.tarotStage = 'select';
-  state.tarotDeck = shuffle(state.tarotDeck);
   pulse('medium');
   render();
 }
 
 function tarotDrawScreen() {
-  const spread = SPREADS[state.spread] || SPREADS['three-paths'];
+  const spread = SPREADS[state.spread] || SPREADS['past-present-future'];
   if (state.tarotStage === 'shuffle') {
     return shell([
       screenHeader(spread.label, 'Подготовка колоды', 'tarot-question'),
@@ -795,8 +1008,8 @@ function tarotDrawScreen() {
     return h('button', {
       className: `premium-tarot-card ${selected ? 'is-selected' : ''}`,
       attrs: { type: 'button', disabled: selected || locked, 'aria-label': selected ? name : `Выбрать закрытую карту ${index + 1}` },
-      on: { click: () => selectTarotCard(name) }
-    }, selected ? h('img', { attrs: { src: `/images/cards/${CARD_IMAGES[name]}`, alt: name } }) : h('span', { text: '✦' }));
+      on: { click: () => selectTarotCard(index) }
+    }, selected ? h('img', { attrs: { src: tarotCardImage(name), alt: name } }) : h('span', { text: '✦' }));
   }));
 
   return shell([
@@ -824,7 +1037,7 @@ function tarotDrawScreen() {
 function tarotComposition(spread, cards = state.tarotCards) {
   return h('div', { className: `premium-tarot-composition premium-tarot-composition--${spread.count}`, attrs: { 'aria-label': 'Композиция расклада' } },
     cards.map((name, index) => h('figure', { className: 'premium-composition-card' },
-      h('img', { attrs: { src: `/images/cards/${CARD_IMAGES[name]}`, alt: name } }),
+      h('img', { attrs: { src: tarotCardImage(name), alt: name } }),
       h('figcaption', {},
         h('small', { text: spread.positions[index] || `Позиция ${index + 1}` }),
         h('strong', { text: name })
@@ -837,20 +1050,41 @@ function tarotRevealOverlay(reveal) {
   return h('div', { className: 'premium-card-reveal', attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': `Открыта карта ${reveal.name}` } },
     h('span', { className: 'premium-card-reveal__mist', attrs: { 'aria-hidden': 'true' } }),
     h('div', { className: 'premium-card-reveal__card' },
-      h('img', { attrs: { src: `/images/cards/${CARD_IMAGES[reveal.name]}`, alt: reveal.name } }),
+      h('img', { attrs: { src: reveal.loading ? '/images/card-back.webp' : tarotCardImage(reveal.name), alt: reveal.loading ? 'Закрытая карта' : reveal.name } }),
       h('small', { text: reveal.position }),
       h('strong', { text: reveal.name })
     )
   );
 }
 
-function selectTarotCard(name) {
+async function selectTarotCard(slotIndex) {
   const spread = SPREADS[state.spread];
-  if (state.revealingCard || state.tarotCards.includes(name) || state.tarotCards.length >= spread.count) return;
+  if (state.revealingCard || state.tarotCards.length >= spread.count) return;
+  if (!String(state.tarotDeck[slotIndex] || '').startsWith('closed-')) return;
   const index = state.tarotCards.length;
+  state.revealingCard = { name: 'Карта открывается…', position: spread.positions[index] || `Позиция ${index + 1}`, loading: true };
+  pulse('medium');
+  render();
+  let name = '';
+  try {
+    if (tg?.initData && state.tarotSessionId) {
+      const data = await api('/api/proxy', {
+        method: 'POST',
+        body: { action: 'draw_tarot_card', readingId: state.tarotSessionId }
+      });
+      name = data.card;
+    } else {
+      const available = TAROT_CARD_NAMES.filter((card) => !state.tarotCards.includes(card));
+      name = available[cryptoIndex(available.length)];
+    }
+  } catch (error) {
+    state.revealingCard = null;
+    notify(apiErrorMessage(error));
+    return render();
+  }
+  state.tarotDeck[slotIndex] = name;
   state.tarotCards.push(name);
   state.revealingCard = { name, position: spread.positions[index] || `Позиция ${index + 1}` };
-  pulse('medium');
   render();
   const duration = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ? 320 : TAROT_REVEAL_MS;
   window.setTimeout(() => {
@@ -864,7 +1098,7 @@ function selectTarotCard(name) {
 async function submitTarot() {
   if (state.busy) return;
   const spread = SPREADS[state.spread];
-  const serviceId = state.spread === 'relationship' ? 'tarot_relationship' : 'tarot';
+  const serviceId = spread.serviceId || 'tarot';
   if (!confirmServicePayment(serviceId)) return;
   state.busy = true;
   render();
@@ -875,7 +1109,11 @@ async function submitTarot() {
       type: `Расклад «${spread.label}»`, title: state.tarotQuestion.trim(), body: answer,
       cards: [...state.tarotCards], createdAt: new Date().toISOString(), favorite: false
     };
-    saveResult(state.result, { silent: true });
+    await saveCloudReading(state.result, {
+      readingId: state.tarotSessionId,
+      subtype: state.spread,
+      input: { question: state.tarotQuestion.trim(), cards: state.tarotCards, positions: spread.positions }
+    });
     navigate('tarot-result');
   } catch (error) {
     notify(apiErrorMessage(error));
@@ -909,7 +1147,8 @@ async function submitNatal() {
   state.busy = true; render();
   try {
     const answer = await requestReading('natal', { date: state.natalDate, time: state.natalTime || '12:00' }, 'natal');
-    state.result = { id: uniqueId('natal'), type: 'Натальная подсказка', title: state.natalDate, body: answer, cards: [], createdAt: new Date().toISOString(), favorite: false };
+    state.result = { id: uniqueId('natal'), kind: 'natal', mode: 'natal', type: 'Натальная подсказка', title: state.natalDate, body: answer, cards: [], createdAt: new Date().toISOString(), favorite: false };
+    await saveCloudReading(state.result, { subtype: 'natal', input: { date: state.natalDate, time: state.natalTime || '12:00' } });
     navigate('natal-result');
   } catch (error) { notify(apiErrorMessage(error)); }
   finally { state.busy = false; render(); }
@@ -1010,7 +1249,7 @@ function compatibilityPersonForm(side, title) {
 
 function compatibilityDataScreen() {
   return shell([
-    screenHeader('Совместимость по данным', 'Два человека — один символический рисунок', 'compatibility'),
+    screenHeader('Совместимость по данным', 'Два человека — один понятный прогноз', state.amurMode === 'compatibility' ? 'amur' : 'compatibility'),
     h('div', { className: 'premium-person-forms' },
       compatibilityPersonForm('first', 'Первый участник'),
       compatibilityPersonForm('second', 'Второй участник')
@@ -1051,26 +1290,31 @@ async function submitDataCompatibility() {
   if (!first.name.trim() || !second.name.trim()) return notify('Укажите имена обоих участников');
   if (!first.date || !second.date) return notify('Укажите даты рождения обоих участников');
   if (state.busy) return;
-  if (!confirmServicePayment('photo_compatibility')) return;
+  if (state.amurMode !== 'compatibility' && !confirmServicePayment('photo_compatibility')) return;
   state.busy = true;
   render();
   try {
-    const answer = await requestReading('compatibility', {
+    const reading = await requestReading(state.amurMode === 'compatibility' ? 'amur_compatibility' : 'compatibility', {
       first: { ...first, name: first.name.trim() },
       second: { ...second, name: second.name.trim() },
-      question: question.trim() || 'Что помогает этим двум людям слышать друг друга?'
-    }, 'photo_compatibility');
-    const score = compatibilityScore(first, second);
+      question: question.trim() || 'Что помогает этим двум людям слышать друг друга?',
+      relationship: goalLabel(state.inviteGoal),
+      dice: state.amurDice
+    }, state.amurMode === 'compatibility' ? '' : 'photo_compatibility', { structured: true });
     state.result = {
-      id: uniqueId('compatibility-data'), kind: 'compatibility', mode: 'data',
-      type: 'Совместимость по данным', title: `${first.name.trim()} и ${second.name.trim()}`,
-      body: answer, cards: [], createdAt: new Date().toISOString(), favorite: false,
-      score, participants: [
+      id: uniqueId('compatibility-data'), kind: state.amurMode === 'compatibility' ? 'amur' : 'compatibility', mode: 'data',
+      type: state.amurMode === 'compatibility' ? 'Амур · совместимость' : 'Совместимость по данным',
+      title: `${first.name.trim()} и ${second.name.trim()}`,
+      body: reading.answer, result: reading.result, cards: [], createdAt: new Date().toISOString(), favorite: false,
+      score: reading.result.score, aspects: reading.result.aspects, participants: [
         { name: first.name.trim(), gender: first.gender, note: first.date },
         { name: second.name.trim(), gender: second.gender, note: second.date }
       ]
     };
-    saveResult(state.result, { silent: true });
+    await saveCloudReading(state.result, {
+      subtype: state.amurMode === 'compatibility' ? 'amur-data' : 'data',
+      input: { first, second, question, dice: state.amurDice }
+    });
     navigate('compatibility-data-result');
   } catch (error) {
     notify(apiErrorMessage(error));
@@ -1078,12 +1322,6 @@ async function submitDataCompatibility() {
     state.busy = false;
     render();
   }
-}
-
-function compatibilityScore(first, second) {
-  const source = `${first.name}|${first.date}|${second.name}|${second.date}`;
-  const hash = [...source].reduce((value, symbol) => ((value * 31) + symbol.charCodeAt(0)) >>> 0, 2166136261);
-  return 62 + (hash % 30);
 }
 
 function photoScreen(mode) {
@@ -1107,7 +1345,7 @@ function photoScreen(mode) {
     onRemove: () => { state.photoTwo = ''; render(); }
   }) : null;
   return shell([
-    screenHeader(title, subtitle, isPair ? 'compatibility' : 'services'),
+    screenHeader(title, subtitle, isPair && ['photo', 'compatibility'].includes(state.amurMode) ? 'amur' : isPair ? 'compatibility' : 'services'),
     h('div', { className: isPair ? 'premium-upload-grid' : '' }, firstUpload, secondUpload),
     isPair ? MysticCard({ className: 'premium-form-card', children: [
       field('Имя первого человека', textInput({ value: state.photoNameOne, placeholder: 'Имя', onInput: (value) => { state.photoNameOne = value; } })),
@@ -1244,26 +1482,28 @@ async function submitPhoto(pair, damage = false) {
           image: state.photoOne,
           consentOwn: true
         };
-    const answer = await requestReading(feature, payload, feature);
+    const generated = await requestReading(feature, payload, feature, { structured: pair });
+    const answer = pair ? generated.answer : generated;
+    const structured = pair ? generated.result : null;
     state.result = {
       id: uniqueId(feature), kind: pair ? 'compatibility' : 'photo', mode: pair ? 'photo' : damage ? 'damage' : 'energy',
       type: pair ? 'Совместимость по фото' : damage ? 'Разбор Эзотериума' : 'Энергетический след',
       title: pair
         ? `${state.photoNameOne || 'Первый человек'} и ${state.photoNameTwo || 'Второй человек'}`
         : state.photoConcern || 'Символическое фото-чтение',
-      body: answer, cards: [], createdAt: new Date().toISOString(), favorite: false,
-      score: pair
-        ? compatibilityScore(
-            { name: state.photoNameOne || 'Первый человек', date: 'photo-one' },
-            { name: state.photoNameTwo || 'Второй человек', date: 'photo-two' }
-          )
-        : null,
+      body: answer, result: structured || {}, cards: [], createdAt: new Date().toISOString(), favorite: false,
+      score: pair ? structured.score : null,
+      aspects: pair ? structured.aspects : [],
       participants: pair ? [
         { name: state.photoNameOne || 'Первый человек', gender: 'unspecified', note: 'Первый образ' },
         { name: state.photoNameTwo || 'Второй человек', gender: 'unspecified', note: 'Второй образ' }
       ] : []
     };
-    saveResult(state.result, { silent: true });
+    await saveCloudReading(state.result, {
+      subtype: state.result.mode,
+      input: { concern: payload.concern, firstName: payload.firstName, secondName: payload.secondName },
+      media: pair ? [state.photoOne, state.photoTwo] : [state.photoOne]
+    });
     navigate('photo-result');
   } catch (error) { notify(apiErrorMessage(error)); }
   finally { state.busy = false; render(); }
@@ -1275,6 +1515,419 @@ function photoResultScreen() {
   return state.result.kind === 'compatibility'
     ? compatibilityResultScreen(back)
     : resultScreen({ title: state.result.type, subtitle: 'Личный ответ Эзотериума', back, result: state.result });
+}
+
+const PALM_QUESTIONS = [
+  'Какой вопрос о настоящем для вас важнее всего?',
+  'Где вы сейчас чувствуете выбор: отношения, работа, деньги, дом или внутреннее состояние?',
+  'Что заметно изменилось в вашей жизни за последние три месяца?',
+  'Какой ответ был бы для вас не просто приятным, а действительно полезным?'
+];
+
+function palmReadingScreen() {
+  const dialogue = state.palmDialogue;
+  const intro = dialogue.stage === 'intro';
+  const completed = dialogue.stage === 'result' && dialogue.result;
+  const upload = intro ? imageUpload({
+    title: 'Сфотографируйте раскрытую ладонь при дневном свете',
+    image: dialogue.image,
+    capture: 'environment',
+    onImage: (image) => { dialogue.image = image; render(); },
+    onRemove: () => { dialogue.image = ''; render(); }
+  }) : null;
+  return shell([
+    screenHeader('Чтение по ладони', intro ? 'Реальный диалог перед толкованием' : 'Разговор с Эзотериумом', 'services'),
+    intro ? h('section', { className: 'premium-feature-hero premium-feature-hero--palm' },
+      h('img', { attrs: { src: premiumArtUrl('palm-oracle'), alt: '' } }),
+      h('div', {},
+        h('p', { className: 'premium-kicker', text: 'ХИРОМАНТИЯ БЕЗ ДОГАДОК' }),
+        h('h1', { text: 'Сначала ладонь. Затем — ваши ответы.' }),
+        h('p', { text: 'Эзотериум сверит видимые линии с тем, что происходит в вашей жизни, и честно отметит неразличимые детали.' })
+      )
+    ) : null,
+    intro ? upload : null,
+    intro ? h('div', { className: 'premium-segmented-choice' },
+      h('button', {
+        className: dialogue.hand === 'left' ? 'is-active' : '',
+        attrs: { type: 'button' },
+        on: { click: () => { dialogue.hand = 'left'; render(); } }
+      }, 'Левая ладонь'),
+      h('button', {
+        className: dialogue.hand === 'right' ? 'is-active' : '',
+        attrs: { type: 'button' },
+        on: { click: () => { dialogue.hand = 'right'; render(); } }
+      }, 'Правая ладонь')
+    ) : null,
+    intro ? field('Главный вопрос', textarea({
+      value: dialogue.question,
+      placeholder: 'Например: что мешает мне решиться на перемены?',
+      onInput: (value) => { dialogue.question = value; },
+      maxLength: 500
+    })) : null,
+    intro ? MysticCard({ className: 'premium-palm-guide', children: [
+      h('strong', { text: 'Как сделать хороший снимок' }),
+      h('ol', {},
+        h('li', { text: 'Разверните ладонь к камере и расслабьте пальцы.' }),
+        h('li', { text: 'Избегайте теней, бликов и фильтров.' }),
+        h('li', { text: 'В кадре должна быть вся ладонь от запястья до кончиков пальцев.' })
+      )
+    ] }) : null,
+    intro ? MysticButton({
+      text: 'Начать диалог',
+      icon: 'hand',
+      variant: 'primary',
+      onClick: startPalmDialogue
+    }) : null,
+    !intro && !completed ? palmDialoguePanel() : null,
+    completed ? palmReadingResult(dialogue.result) : null
+  ], { active: 'services', reading: !intro });
+}
+
+function palmDialoguePanel() {
+  const dialogue = state.palmDialogue;
+  const currentQuestion = PALM_QUESTIONS[dialogue.answers.length];
+  const input = textarea({
+    value: dialogue.draft,
+    placeholder: 'Ответьте своими словами…',
+    onInput: (value) => { dialogue.draft = value; },
+    maxLength: 700
+  });
+  return h('section', { className: 'premium-oracle-dialogue' },
+    h('div', { className: 'premium-dialogue-progress' },
+      h('span', {}, h('i', { style: `width:${Math.min(100, (dialogue.answers.length / PALM_QUESTIONS.length) * 100)}%` })),
+      h('small', { text: `${Math.min(dialogue.answers.length + 1, PALM_QUESTIONS.length)} из ${PALM_QUESTIONS.length}` })
+    ),
+    h('div', { className: 'premium-dialogue-messages' },
+      dialogue.messages.map((message) => h('div', {
+        className: `premium-dialogue-bubble is-${message.role}`,
+        text: message.content
+      })),
+      state.busy ? h('div', { className: 'premium-dialogue-bubble is-assistant is-thinking' }, h('i'), h('i'), h('i')) : null
+    ),
+    currentQuestion && !state.busy ? MysticCard({ className: 'premium-dialogue-composer', children: [
+      input,
+      MysticButton({
+        text: dialogue.answers.length === PALM_QUESTIONS.length - 1 ? 'Завершить и истолковать' : 'Ответить',
+        icon: 'send',
+        variant: 'primary',
+        onClick: submitPalmDialogueAnswer
+      })
+    ] }) : null,
+    state.busy ? loadingCard('Сверяем ответы с линиями ладони…') : null
+  );
+}
+
+async function startPalmDialogue() {
+  const dialogue = state.palmDialogue;
+  if (!dialogue.image) return notify('Сначала добавьте фотографию ладони');
+  if (dialogue.question.trim().length < 5) return notify('Сформулируйте главный вопрос');
+  dialogue.stage = 'dialogue';
+  dialogue.messages = [{ role: 'assistant', content: PALM_QUESTIONS[0] }];
+  dialogue.answers = [];
+  dialogue.draft = '';
+  render();
+  if (!tg?.initData) return;
+  try {
+    const created = await api('/api/proxy', {
+      method: 'POST',
+      body: {
+        action: 'create_dialogue_session',
+        kind: 'palm',
+        subtype: dialogue.hand,
+        title: dialogue.question.trim(),
+        input: { hand: dialogue.hand, question: dialogue.question.trim() }
+      }
+    });
+    dialogue.sessionId = created.sessionId || '';
+    if (dialogue.sessionId) {
+      await api('/api/proxy', {
+        method: 'POST',
+        body: { action: 'append_dialogue_message', readingId: dialogue.sessionId, role: 'assistant', content: PALM_QUESTIONS[0] }
+      });
+    }
+  } catch {
+    notify('Диалог продолжится; синхронизация восстановится при сохранении');
+  }
+}
+
+async function submitPalmDialogueAnswer() {
+  const dialogue = state.palmDialogue;
+  const answer = dialogue.draft.trim().replace(/\s+/g, ' ');
+  if (answer.length < 3) return notify('Расскажите чуть подробнее');
+  const index = dialogue.answers.length;
+  dialogue.answers.push(answer);
+  dialogue.messages.push({ role: 'user', content: answer });
+  dialogue.draft = '';
+  if (dialogue.sessionId) {
+    api('/api/proxy', {
+      method: 'POST',
+      body: { action: 'append_dialogue_message', readingId: dialogue.sessionId, role: 'user', content: answer }
+    }).catch(() => {});
+  }
+  if (dialogue.answers.length < PALM_QUESTIONS.length) {
+    const acknowledgement = index === 0
+      ? 'Я понял направление вопроса. Теперь уточним, где именно сейчас находится напряжение.'
+      : index === 1
+        ? 'Эта область обозначена. Важно увидеть, что уже начало меняться.'
+        : 'Контекст стал яснее. Осталось отделить полезный ответ от просто желаемого.';
+    const nextQuestion = PALM_QUESTIONS[dialogue.answers.length];
+    dialogue.messages.push({ role: 'assistant', content: `${acknowledgement} ${nextQuestion}` });
+    if (dialogue.sessionId) {
+      api('/api/proxy', {
+        method: 'POST',
+        body: { action: 'append_dialogue_message', readingId: dialogue.sessionId, role: 'assistant', content: `${acknowledgement} ${nextQuestion}` }
+      }).catch(() => {});
+    }
+    pulse();
+    return render();
+  }
+  state.busy = true;
+  dialogue.messages.push({ role: 'assistant', content: 'Спасибо. Теперь я сопоставляю ваши ответы с теми линиями, которые действительно различимы на снимке.' });
+  render();
+  try {
+    const reading = await requestReading('palm_reading', {
+      image: dialogue.image,
+      hand: dialogue.hand === 'left' ? 'левой' : 'правой',
+      question: dialogue.question.trim(),
+      answers: dialogue.answers,
+      consentOwn: true
+    }, '', { structured: true });
+    dialogue.result = reading.result;
+    dialogue.stage = 'result';
+    state.result = {
+      id: dialogue.sessionId || uniqueId('palm-reading'),
+      kind: 'palm',
+      mode: 'palm-reading',
+      type: 'Чтение по ладони',
+      title: dialogue.question.trim(),
+      body: reading.answer,
+      result: reading.result,
+      createdAt: new Date().toISOString(),
+      favorite: false
+    };
+    await saveCloudReading(state.result, {
+      readingId: dialogue.sessionId,
+      subtype: dialogue.hand,
+      input: { question: dialogue.question.trim(), hand: dialogue.hand, answers: dialogue.answers },
+      media: [dialogue.image]
+    });
+    pulse('medium');
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
+function palmReadingResult(result) {
+  return h('section', { className: 'premium-structured-result' },
+    MysticCard({ className: `premium-quality-card is-${result.quality}`, children: [
+      h('small', { text: result.quality === 'retake' ? 'СНИМОК ЛУЧШЕ ПЕРЕСНЯТЬ' : 'КАЧЕСТВО СНИМКА ПОДХОДИТ' }),
+      h('h2', { text: result.summary }),
+      h('p', { text: result.limitation })
+    ] }),
+    h('div', { className: 'premium-observation-list' },
+      (result.observations || []).map((item) => MysticCard({ className: 'premium-observation-card', children: [
+        h('strong', { text: item.line }),
+        h('small', { text: item.visibleDetail }),
+        h('p', { text: item.interpretation })
+      ] }))
+    ),
+    MysticCard({ className: 'premium-result-reading', children: [formatReading(result.narrative)] }),
+    SectionTitle({ text: 'Три шага' }),
+    h('ol', { className: 'premium-action-list' }, (result.actions || []).map((action) => h('li', { text: action }))),
+    MysticButton({
+      text: 'Новое чтение',
+      icon: 'hand',
+      variant: 'outline',
+      onClick: () => {
+        state.palmDialogue = { sessionId: '', stage: 'intro', hand: 'right', question: '', image: '', draft: '', messages: [], answers: [], result: null };
+        render();
+      }
+    })
+  );
+}
+
+const RUNES = [
+  ['ᚠ', 'Феху', 'ресурс и движение'], ['ᚢ', 'Уруз', 'сила и восстановление'],
+  ['ᚦ', 'Турисаз', 'граница и проверка'], ['ᚨ', 'Ансуз', 'слово и понимание'],
+  ['ᚱ', 'Райдо', 'путь и согласование'], ['ᚲ', 'Кеназ', 'ясность и мастерство'],
+  ['ᚷ', 'Гебо', 'обмен и партнёрство'], ['ᚹ', 'Вуньо', 'радость и согласие'],
+  ['ᚺ', 'Хагалаз', 'перестройка'], ['ᚾ', 'Наутиз', 'необходимость и терпение'],
+  ['ᛁ', 'Иса', 'пауза и сосредоточение'], ['ᛃ', 'Йера', 'цикл и результат'],
+  ['ᛇ', 'Эйваз', 'стойкость и переход'], ['ᛈ', 'Перт', 'тайна и вероятность'],
+  ['ᛉ', 'Альгиз', 'защита и внимание'], ['ᛋ', 'Соулу', 'цель и жизненность'],
+  ['ᛏ', 'Тейваз', 'решимость и справедливость'], ['ᛒ', 'Беркана', 'рост и забота'],
+  ['ᛖ', 'Эваз', 'доверие и движение'], ['ᛗ', 'Манназ', 'человек и сообщество'],
+  ['ᛚ', 'Лагуз', 'чувство и течение'], ['ᛜ', 'Ингуз', 'созревание'],
+  ['ᛞ', 'Дагаз', 'перелом и ясность'], ['ᛟ', 'Отала', 'дом и наследие']
+];
+
+function runeScreen() {
+  const result = state.runeResult;
+  return shell([
+    screenHeader('Руны', 'Знак, смысл и действие', 'services'),
+    h('section', { className: 'premium-feature-hero premium-feature-hero--runes' },
+      h('img', { attrs: { src: premiumArtUrl('rune-sanctum'), alt: '' } }),
+      h('div', {},
+        h('p', { className: 'premium-kicker', text: 'СТАРШИЙ ФУТАРК' }),
+        h('h1', { text: 'Пусть знак станет конкретным шагом' }),
+        h('p', { text: 'Руны не обещают чудо. Они помогают увидеть тенденцию, препятствие и доступный ресурс.' })
+      )
+    ),
+    field('Ваш вопрос', textarea({
+      value: state.runeQuestion,
+      placeholder: 'Что мне важно сделать в ближайшее время?',
+      onInput: (value) => { state.runeQuestion = value; },
+      maxLength: 500
+    })),
+    h('div', { className: 'premium-segmented-choice' },
+      h('button', { className: state.runeCount === 1 ? 'is-active' : '', attrs: { type: 'button' }, on: { click: () => { state.runeCount = 1; render(); } } }, 'Одна руна'),
+      h('button', { className: state.runeCount === 3 ? 'is-active' : '', attrs: { type: 'button' }, on: { click: () => { state.runeCount = 3; render(); } } }, 'Три руны')
+    ),
+    state.runeSelection.length ? h('div', { className: 'premium-rune-cast' },
+      state.runeSelection.map(([glyph, name, meaning], index) => h('div', {
+        className: 'premium-rune-stone',
+        style: `--delay:${index * 120}ms`
+      }, h('b', { text: glyph }), h('strong', { text: name }), h('small', { text: meaning })))
+    ) : null,
+    MysticButton({
+      text: state.busy ? 'Руны раскрываются…' : state.runeSelection.length ? 'Сделать новый бросок' : 'Бросить руны',
+      icon: 'sparkle',
+      variant: 'primary',
+      disabled: state.busy,
+      onClick: castRunes
+    }),
+    state.busy ? loadingCard('Соединяем три знака в один прогноз…') : null,
+    result ? h('section', { className: 'premium-structured-result' },
+      MysticCard({ className: 'premium-result-reading', children: [
+        h('h2', { text: result.headline }),
+        formatReading(result.narrative)
+      ] }),
+      h('div', { className: 'premium-rune-result-grid' },
+        MysticCard({ children: [h('small', { text: 'Тенденция' }), h('p', { text: result.tendency })] }),
+        MysticCard({ children: [h('small', { text: 'Препятствие' }), h('p', { text: result.obstacle })] }),
+        MysticCard({ children: [h('small', { text: 'Ресурс' }), h('p', { text: result.resource })] })
+      ),
+      MysticCard({ className: 'premium-rune-ritual', children: [
+        h('strong', { text: 'Действие на 24 часа' }), h('p', { text: result.action24h }),
+        h('strong', { text: 'Безопасная практика намерения' }), h('p', { text: result.safeRitual })
+      ] })
+    ) : null
+  ], { active: 'services', reading: state.busy || Boolean(result) });
+}
+
+function cryptoIndex(max) {
+  const value = new Uint32Array(1);
+  crypto.getRandomValues(value);
+  return value[0] % max;
+}
+
+async function castRunes() {
+  const question = state.runeQuestion.trim();
+  if (question.length < 5) return notify('Сформулируйте вопрос для рун');
+  if (state.busy) return;
+  const pool = [...RUNES];
+  state.runeSelection = [];
+  while (state.runeSelection.length < state.runeCount) {
+    state.runeSelection.push(pool.splice(cryptoIndex(pool.length), 1)[0]);
+  }
+  state.runeResult = null;
+  state.busy = true;
+  render();
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const reading = await requestReading('rune_reading', {
+      question,
+      runes: state.runeSelection.map(([, name]) => name)
+    }, '', { structured: true });
+    state.runeResult = reading.result;
+    const saved = {
+      id: uniqueId('runes'), kind: 'runes', type: 'Руны', title: question,
+      body: reading.answer, result: reading.result, createdAt: new Date().toISOString(), favorite: false
+    };
+    state.result = saved;
+    await saveCloudReading(saved, { subtype: `${state.runeCount}-runes`, input: { question, runes: state.runeSelection.map(([, name]) => name) } });
+    pulse('medium');
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
+function amurScreen() {
+  const diceText = state.amurDice.length
+    ? amurDiceMeaning(state.amurDice)
+    : 'Два броска создают игровой образ вашей пары — без ставок и скрытых правил.';
+  return shell([
+    screenHeader('Амур', 'Игра, совместимость и приглашения', 'home'),
+    h('section', { className: 'premium-amur-hero' },
+      h('img', { attrs: { src: premiumArtUrl('amur-dice'), alt: '' } }),
+      h('div', {},
+        h('p', { className: 'premium-kicker', text: 'ИГРА ДВУХ СУДЕБ' }),
+        h('h1', { text: 'Бросьте кости. Затем проверьте смысл.' }),
+        h('p', { text: 'Лёгкая игровая механика приводит к настоящему анализу данных, фото или ладоней.' })
+      )
+    ),
+    h('div', { className: 'premium-amur-dice-stage', attrs: { 'aria-live': 'polite' } },
+      [0, 1].map((index) => h('div', {
+        className: `premium-amur-die ${state.amurRolling ? 'is-rolling' : ''}`,
+        text: state.amurDice[index] ? diceGlyph(state.amurDice[index]) : '✦'
+      })),
+      h('p', { text: diceText })
+    ),
+    MysticButton({
+      text: state.amurRolling ? 'Кости в движении…' : 'Бросить кости Амура',
+      icon: 'heart',
+      variant: 'gold',
+      disabled: state.amurRolling,
+      onClick: rollAmurDice
+    }),
+    SectionTitle({ text: 'Проверить совместимость' }),
+    h('div', { className: 'premium-amur-paths' },
+      serviceTile('shortcut-destiny-hearts', 'По персональным данным', 'Имена, даты и конкретные рекомендации', () => {
+        state.amurMode = 'compatibility';
+        navigate('compatibility-data');
+      }, 'Подробно'),
+      serviceTile('two-photo-compatibility', 'По фотографиям', 'Два образа и визуальная атмосфера', () => {
+        state.amurMode = 'photo';
+        navigate('photo-compat');
+      }, serviceBadge('photo_compatibility')),
+      serviceTile('energy-hands', 'По ладоням', 'Совместный рисунок двух ладоней', () => {
+        state.amurMode = 'palm';
+        navigate('palm');
+      }, serviceBadge('palmlink')),
+      serviceTile('partner-invite-emblem', 'Личное приглашение', 'Карточка, ссылка и автоматическое ожидание данных', () => navigate('invite-start'), 'Для двоих')
+    )
+  ], { active: 'amur' });
+}
+
+function diceGlyph(value) {
+  return ['','⚀','⚁','⚂','⚃','⚄','⚅'][value] || '✦';
+}
+
+function amurDiceMeaning(values) {
+  const total = values.reduce((sum, value) => sum + value, 0);
+  if (values[0] === values[1]) return `Дубль ${values[0]}: сегодня важнее всего совпадение темпа и честное «мы».`;
+  if (total <= 5) return 'Тихий бросок: не торопите связь — задайте один прямой вопрос.';
+  if (total <= 8) return 'Ровный бросок: притяжение поддержит маленькое совместное действие.';
+  return 'Сильный бросок: энергии много; договоритесь о границах, прежде чем ускоряться.';
+}
+
+async function rollAmurDice() {
+  if (state.amurRolling) return;
+  state.amurRolling = true;
+  state.amurDice = [];
+  render();
+  pulse('medium');
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  state.amurDice = [cryptoIndex(6) + 1, cryptoIndex(6) + 1];
+  state.amurRolling = false;
+  pulse('medium');
+  render();
 }
 
 function palmScreen() {
@@ -1293,7 +1946,7 @@ function palmScreen() {
   });
   const selector = GoalSelector({ value: state.palmGoal, onChange: (goal) => { state.palmGoal = goal; render(); } });
   return shell([
-    screenHeader('Путь двух судеб', 'Найди связь через символы ладоней', 'services'),
+    screenHeader('Путь двух судеб', 'Найди связь через символы ладоней', state.amurMode === 'palm' ? 'amur' : 'services'),
     upload,
     consentRow(
       'Я согласен на закрытую обработку изображения своей ладони для совместного чтения.',
@@ -1486,13 +2139,24 @@ function inviteComposerScreen() {
       ? MysticCard({ className: 'premium-invite-ready', children: [
           Icon('share', { size: 27 }),
           h('div', {},
-            h('strong', { text: 'Приглашение готово' }),
-            h('small', { text: 'Нажмите ниже — телефон покажет Telegram, WhatsApp, SMS и другие установленные приложения.' })
+            h('strong', { text: state.preparedInvite.analysisRequested ? 'Проверка запущена' : 'Приглашение готово' }),
+            h('small', { text: state.preparedInvite.analysisRequested
+              ? `Ждём данные от ${state.inviteName.trim()}. После загрузки прогноз запустится автоматически и придёт обоим.`
+              : 'Сначала отправьте карточку, затем запустите проверку — ждать на этом экране не нужно.' })
           )
         ] })
       : null,
     state.preparedInvite
-      ? MysticButton({ text: 'Выбрать приложение для отправки', icon: 'share', variant: 'primary', onClick: nativeSharePreparedInvite })
+      ? h('div', { className: 'premium-invite-steps' },
+          h('div', {}, h('span', { text: '1' }), MysticButton({ text: 'Отправить приглашение', icon: 'share', variant: 'primary', onClick: nativeSharePreparedInvite })),
+          h('div', {}, h('span', { text: '2' }), MysticButton({
+            text: state.preparedInvite.analysisRequested ? 'Проверка уже ожидает данные' : 'Проверить совместимость',
+            icon: 'heart',
+            variant: 'gold',
+            disabled: state.busy || state.preparedInvite.analysisRequested,
+            onClick: startPreparedInvitation
+          }))
+        )
       : MysticButton({
           text: state.busy ? 'Создаём приглашение…' : 'Подготовить приглашение',
           icon: 'send',
@@ -1505,6 +2169,63 @@ function inviteComposerScreen() {
       text: 'Имя используется только как подсказка для открытки. Перед отправкой вариант всегда подтверждает инициатор.'
     })
   ], { tabs: false });
+}
+
+function inviteStartScreen() {
+  return shell([
+    screenHeader('Личное приглашение', 'Выберите данные для совместного прогноза', 'amur'),
+    h('section', { className: 'premium-invite-start-hero' },
+      h('img', { attrs: { src: premiumArtUrl('partner-invite-emblem'), alt: '' } }),
+      h('div', {},
+        h('p', { className: 'premium-kicker', text: 'КАРТОЧКА ДЛЯ ДВОИХ' }),
+        h('h1', { text: 'Один отправляет. Второй дополняет. Результат получают оба.' }),
+        h('p', { text: 'После отправки инициатор запускает проверку. Система ждёт данные приглашённого и сама завершает прогноз.' })
+      )
+    ),
+    h('div', { className: 'premium-invite-flow-diagram' },
+      ['Создать карточку', 'Получить данные', 'Сформировать прогноз', 'Отправить обоим'].map((label, index) =>
+        h('div', {}, h('span', { text: String(index + 1) }), h('strong', { text: label }))
+      )
+    ),
+    serviceTile('two-photo-compatibility', 'Приглашение по фото', 'Сначала добавьте своё фото, затем оформите карточку', () => {
+      state.inviteFlow = 'photo';
+      state.photoMode = 'compatibility';
+      navigate('photo-compat');
+    }, 'Фото'),
+    serviceTile('energy-hands', 'Приглашение по ладони', 'Сначала добавьте свою ладонь, затем оформите карточку', () => {
+      state.inviteFlow = 'palm';
+      navigate('palm');
+    }, 'Ладонь')
+  ], { active: 'amur' });
+}
+
+async function startPreparedInvitation() {
+  const token = state.preparedInvite?.token;
+  if (!token || state.busy) return;
+  const serviceId = state.preparedInvite.flow === 'palm' ? 'palmlink' : 'photo_compatibility';
+  const price = Number(serviceConfig(serviceId).price || 0);
+  const message = price > 0
+    ? `Когда второй участник добавит данные, с вашего баланса будет списано ${formatMoney(price)} SILARUM и прогноз автоматически придёт обоим. Продолжить?`
+    : 'Когда второй участник добавит данные, прогноз автоматически сформируется и придёт обоим. Продолжить?';
+  if (!window.confirm(message)) return;
+  state.busy = true;
+  render();
+  try {
+    const data = await api('/api/proxy', {
+      method: 'POST',
+      body: { action: 'invitation_start', invitationToken: token }
+    });
+    state.preparedInvite = { ...state.preparedInvite, ...data.invitation, analysisRequested: true };
+    notify(data.invitation?.status === 'completed'
+      ? 'Прогноз уже готов'
+      : 'Проверка запущена — можно закрыть экран');
+    pulse('medium');
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  } finally {
+    state.busy = false;
+    render();
+  }
 }
 
 async function preparePersonalInvitation() {
@@ -1529,6 +2250,11 @@ async function preparePersonalInvitation() {
         inviteeGender: state.inviteGender,
         initiatorGender: state.userGender,
         initiatorImage: ownImage,
+        initiatorProfile: {
+          age: Number(state.profile.age) || null,
+          city: state.profile.city,
+          zodiacSign: state.horoscope.sign
+        },
         consentOwn: true,
         adultConfirmed: true
       }
@@ -1668,8 +2394,10 @@ function invitationServiceId(invitation = state.invitation) {
 function invitationStatusCard(invitation) {
   const status = {
     awaiting_participant: {
-      title: 'Приглашение доставлено',
-      copy: `Ждём, когда ${invitation.inviteeName} откроет ссылку и добавит фото.`
+      title: invitation.analysisRequested ? 'Проверка запущена' : 'Приглашение доставлено',
+      copy: invitation.analysisRequested
+        ? `Ждём данные от ${invitation.inviteeName}. После загрузки прогноз сформируется автоматически.`
+        : `Ждём, когда ${invitation.inviteeName} откроет ссылку и добавит фото.`
     },
     ready: {
       title: 'Оба образа готовы',
@@ -1873,6 +2601,11 @@ async function uploadInvitationPhoto() {
         invitationToken: state.invitationToken,
         participantImage: state.invitationPhoto,
         participantGender: state.invitationGender,
+        participantProfile: {
+          age: Number(state.profile.age) || null,
+          city: state.profile.city,
+          zodiacSign: state.horoscope.sign
+        },
         consentOwn: true,
         adultConfirmed: true
       }
@@ -1917,14 +2650,15 @@ async function completeJointInvitation(payerRole) {
   state.busy = true;
   render();
   try {
-    const answer = await requestReading('photo_compatibility', {
+    const reading = await requestReading('photo_compatibility', {
       invitationToken: state.invitationToken,
       payerRole
-    }, serviceId);
+    }, serviceId, { structured: true });
     state.invitation = {
       ...state.invitation,
       status: 'completed',
-      result: answer
+      result: reading.answer,
+      resultPayload: reading.result
     };
     pulse('medium');
   } catch (error) {
@@ -1947,7 +2681,7 @@ async function submitPalmCompatibility() {
   if (!confirmServicePayment('palmlink')) return;
   state.busy = true; render();
   try {
-    const answer = await requestReading('photo_compatibility', {
+    const reading = await requestReading('photo_compatibility', {
       concern: `Что важно понять о связи с целью «${goalLabel(state.palmGoal)}»?`,
       firstName: firstName(), secondName: state.partnerName || 'Партнёр',
       firstImage: state.palmOne, secondImage: state.palmTwo,
@@ -1955,21 +2689,22 @@ async function submitPalmCompatibility() {
       consentPartner: true,
       adultConfirmed: state.palmAdultConfirmed,
       source: 'palmlink'
-    }, 'palmlink');
+    }, 'palmlink', { structured: true });
     state.result = {
       id: uniqueId('palm'), kind: 'compatibility', mode: 'palm',
       type: 'Совместимость по ладоням', title: `${firstName()} и ${state.partnerName || 'Партнёр'}`,
-      body: answer, cards: [], createdAt: new Date().toISOString(), favorite: false,
-      score: compatibilityScore(
-        { name: firstName(), date: 'palm-one' },
-        { name: state.partnerName || 'Партнёр', date: 'palm-two' }
-      ),
+      body: reading.answer, result: reading.result, cards: [], createdAt: new Date().toISOString(), favorite: false,
+      score: reading.result.score, aspects: reading.result.aspects,
       participants: [
         { name: firstName(), gender: state.userGender, note: 'Ваша ладонь' },
         { name: state.partnerName || 'Партнёр', gender: 'unspecified', note: 'Вторая ладонь' }
       ]
     };
-    saveResult(state.result, { silent: true });
+    await saveCloudReading(state.result, {
+      subtype: 'palm-compatibility',
+      input: { firstName: firstName(), secondName: state.partnerName || 'Партнёр', goal: state.palmGoal },
+      media: [state.palmOne, state.palmTwo]
+    });
     navigate('compatibility-result');
   } catch (error) { notify(apiErrorMessage(error)); }
   finally { state.busy = false; render(); }
@@ -1986,25 +2721,34 @@ function compatibilityResultScreen(backOverride = '') {
     { name: firstName(), gender: state.userGender, note: 'Первый участник' },
     { name: state.partnerName || 'Партнёр', gender: 'unspecified', note: 'Второй участник' }
   ];
-  const score = Number(result.score) || 75;
-  const aspects = [
-    { art: 'metric-heart-seal', title: 'Эмоциональный резонанс', description: 'Как два человека слышат чувства', score: Math.max(45, Math.min(96, score + 4)) },
-    { art: 'metric-palm-seal', title: 'Ритм общения', description: 'Диалог, паузы и уважение границ', score: Math.max(42, Math.min(94, score - 3)) },
-    { art: 'metric-tarot-seal', title: 'Общий вектор', description: 'Темы, которые легче развивать вместе', score: Math.max(40, Math.min(97, score + 1)) }
-  ];
-  const spheres = [
-    { icon: 'heart', label: 'Близость', score: Math.max(40, Math.min(97, score + 5)) },
-    { icon: 'users', label: 'Дружба', score: Math.max(40, Math.min(96, score + 1)) },
-    { icon: 'briefcase', label: 'Дела', score: Math.max(40, Math.min(94, score - 5)) },
-    { icon: 'sparkle', label: 'Рост', score: Math.max(40, Math.min(98, score + 3)) }
-  ];
+  const score = Number.isFinite(Number(result.score)) ? Number(result.score) : 0;
+  const structuredAspects = Array.isArray(result.aspects) && result.aspects.length
+    ? result.aspects
+    : Array.isArray(result.result?.aspects) ? result.result.aspects : [];
+  const artByKey = {
+    closeness: 'metric-heart-seal',
+    dialogue: 'metric-palm-seal',
+    daily: 'metric-tarot-seal',
+    growth: 'metric-heart-seal'
+  };
+  const iconByKey = { closeness: 'heart', dialogue: 'users', daily: 'briefcase', growth: 'sparkle' };
+  const aspects = structuredAspects.map((aspect) => ({
+    art: artByKey[aspect.key] || 'metric-tarot-seal',
+    title: aspect.label,
+    description: aspect.insight,
+    score: Number(aspect.score) || 0
+  }));
+  const spheres = structuredAspects.map((aspect) => ({
+    icon: iconByKey[aspect.key] || 'sparkle',
+    label: aspect.label,
+    score: Number(aspect.score) || 0
+  }));
   const back = backOverride || (result.mode === 'data' ? 'compatibility-data' : result.mode === 'photo' ? 'photo-compat' : 'ritual');
   const panels = [
     MysticCard({ className: 'premium-result-reading', children: [formatReading(result.body)] }),
     MysticCard({ className: 'premium-recommendations', children: [
-      h('p', { text: 'Говорите о потребностях прямо, не ожидая чтения мыслей.' }),
-      h('p', { text: 'Сверяйте символическое чтение с реальными поступками и диалогом.' }),
-      h('p', { text: 'Сохраняйте личные границы и отдельное пространство каждого.' })
+      ...(result.result?.actions || []).map((action) => h('p', { text: action })),
+      h('p', { text: 'Сверяйте чтение с реальными поступками и добровольным диалогом обоих участников.' })
     ] })
   ];
   panels[1].hidden = true;
@@ -2019,11 +2763,11 @@ function compatibilityResultScreen(backOverride = '') {
       right: { name: right.name, birthDate: right.note, gender: right.gender }
     }),
     tabs, ...panels,
-    SectionTitle({ text: 'Символические аспекты' }),
-    MetricsList({ items: aspects }),
-    SectionTitle({ text: 'Прогноз по сферам' }),
-    ForecastGrid({ items: spheres }),
-    FinalScoreCard({ score, message: 'Символический индекс, а не приговор отношениям' }),
+    aspects.length ? SectionTitle({ text: 'Аспекты, рассчитанные в чтении' }) : null,
+    aspects.length ? MetricsList({ items: aspects }) : null,
+    spheres.length ? SectionTitle({ text: 'Карта связи' }) : null,
+    spheres.length ? ForecastGrid({ items: spheres }) : null,
+    FinalScoreCard({ score, message: `Уверенность: ${result.result?.confidence || 'не указана'} · символический ориентир` }),
     h('div', { className: 'n-share-actions' },
       MysticButton({
         text: result.favorite ? 'В избранном' : 'В избранное',
@@ -2081,13 +2825,131 @@ function saveResult(result, { silent = false } = {}) {
   if (!silent) notify(index >= 0 ? 'История обновлена' : 'Сохранено в историю');
 }
 
+async function saveCloudReading(result, {
+  readingId = '',
+  subtype = '',
+  input = {},
+  media = []
+} = {}) {
+  if (!result) return null;
+  if (!tg?.initData) {
+    saveResult(result, { silent: true });
+    return result;
+  }
+  try {
+    const data = await api('/api/proxy', {
+      method: 'POST',
+      body: {
+        action: 'save_reading',
+        readingId: /^[0-9a-f-]{36}$/i.test(readingId) ? readingId : undefined,
+        kind: result.kind || 'photo',
+        subtype: subtype || result.mode || result.kind || 'reading',
+        title: result.title || result.type || 'Символическое чтение',
+        input,
+        result: {
+          ...(result.result || {}),
+          ui: {
+            type: result.type || '',
+            mode: result.mode || '',
+            spread: result.spread || '',
+            cards: Array.isArray(result.cards) ? result.cards : [],
+            positions: Array.isArray(result.positions) ? result.positions : [],
+            participants: Array.isArray(result.participants) ? result.participants : [],
+            score: Number.isFinite(Number(result.score)) ? Number(result.score) : null,
+            aspects: Array.isArray(result.aspects) ? result.aspects : []
+          }
+        },
+        resultText: result.body,
+        favorite: result.favorite === true,
+        media
+      }
+    });
+    if (data.reading) {
+      const cloud = normalizeCloudReading(data.reading);
+      Object.assign(result, cloud);
+      state.cloudReadings = [
+        cloud,
+        ...state.cloudReadings.filter((entry) => entry.id !== cloud.id)
+      ];
+      state.cloudReadingsStatus = 'ready';
+      return cloud;
+    }
+  } catch (error) {
+    saveResult(result, { silent: true });
+    notify('Результат сохранён на устройстве; облако синхронизируется позже');
+  }
+  return result;
+}
+
+function normalizeCloudReading(reading) {
+  const result = reading.result || {};
+  const ui = result.ui && typeof result.ui === 'object' ? result.ui : {};
+  return {
+    id: reading.id,
+    kind: reading.kind,
+    mode: ui.mode || reading.subtype,
+    type: ui.type || ({
+      tarot: 'Таро',
+      compatibility: 'Совместимость',
+      palm: 'Чтение по ладони',
+      runes: 'Руны',
+      amur: 'Амур',
+      natal: 'Натальная подсказка',
+      horoscope: 'Гороскоп',
+      sports: 'Прогноз события',
+      photo: 'Фото-чтение'
+    })[reading.kind] || 'Символическое чтение',
+    title: reading.title,
+    body: reading.body,
+    result,
+    spread: ui.spread || reading.subtype,
+    cards: Array.isArray(ui.cards) ? ui.cards : [],
+    positions: Array.isArray(ui.positions) ? ui.positions : [],
+    participants: Array.isArray(ui.participants) ? ui.participants : [],
+    score: Number.isFinite(Number(ui.score ?? result.score)) ? Number(ui.score ?? result.score) : null,
+    aspects: Array.isArray(ui.aspects) && ui.aspects.length
+      ? ui.aspects
+      : Array.isArray(result.aspects) ? result.aspects : [],
+    media: reading.media || [],
+    favorite: reading.favorite === true,
+    createdAt: reading.createdAt || reading.completedAt,
+    updatedAt: reading.updatedAt
+  };
+}
+
+async function loadCloudReadings({ force = false } = {}) {
+  if (!tg?.initData) return;
+  if (!force && ['loading', 'ready'].includes(state.cloudReadingsStatus)) return;
+  state.cloudReadingsStatus = 'loading';
+  if (state.screen === 'history') render();
+  try {
+    const data = await api('/api/proxy', {
+      method: 'POST',
+      body: { action: 'list_readings' }
+    });
+    state.cloudReadings = (data.readings || []).map(normalizeCloudReading);
+    state.cloudReadingsStatus = 'ready';
+  } catch {
+    state.cloudReadingsStatus = 'error';
+  }
+  if (state.screen === 'history') render();
+}
+
 function toggleFavorite(id) {
   const entries = readJSON(JOURNAL_KEY, []);
   const entry = entries.find((item) => item.id === id);
-  const next = !(entry?.favorite ?? (state.result?.id === id && state.result.favorite));
+  const cloud = state.cloudReadings.find((item) => item.id === id);
+  const next = !(cloud?.favorite ?? entry?.favorite ?? (state.result?.id === id && state.result.favorite));
   if (entry) entry.favorite = next;
   if (state.result?.id === id) state.result.favorite = next;
   writeJSON(JOURNAL_KEY, entries);
+  if (cloud) {
+    cloud.favorite = next;
+    api('/api/proxy', {
+      method: 'POST',
+      body: { action: 'update_reading', readingId: id, favorite: next }
+    }).catch(() => notify('Не удалось синхронизировать избранное'));
+  }
   notify(next ? 'Добавлено в избранное' : 'Убрано из избранного');
   render();
 }
@@ -2135,13 +2997,15 @@ async function createDailyHoroscope() {
   render();
   try {
     const date = new Intl.DateTimeFormat('en-CA').format(new Date());
-    const answer = await requestReading('daily_horoscope', {
+    const reading = await requestReading('daily_horoscope', {
       sign: ZODIAC_SIGNS[state.horoscope.sign]?.label || state.horoscope.sign,
       date,
       name: firstName(),
-      gender: state.userGender
-    });
-    state.horoscope = { ...state.horoscope, reading: answer, date };
+      gender: state.userGender,
+      age: Number(state.profile.age) || 18,
+      city: state.profile.city
+    }, '', { structured: true });
+    state.horoscope = { ...state.horoscope, reading: reading.answer, date };
     writeJSON(HOROSCOPE_KEY, state.horoscope);
   } catch (error) {
     notify(apiErrorMessage(error));
@@ -2162,12 +3026,7 @@ async function saveHoroscopePreference(checked) {
   try {
     await api('/api/preferences', {
       method: 'POST',
-      body: {
-        zodiacSign: state.horoscope.sign,
-        enabled: checked,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Berlin',
-        gender: state.userGender
-      }
+      body: profilePreferencePayload({ enabled: checked })
     });
     notify(checked ? 'Гороскоп будет приходить каждое утро' : 'Ежедневная доставка выключена');
   } catch (error) {
@@ -2179,18 +3038,24 @@ async function saveHoroscopePreference(checked) {
 }
 
 function historyScreen() {
-  const allEntries = readJSON(JOURNAL_KEY, []).filter((entry) => !entry.deletedAt);
+  if (tg?.initData && state.cloudReadingsStatus === 'idle') queueMicrotask(() => loadCloudReadings());
+  const localEntries = readJSON(JOURNAL_KEY, []).filter((entry) => !entry.deletedAt);
+  const allEntries = state.cloudReadingsStatus === 'ready'
+    ? state.cloudReadings
+    : localEntries;
   const entries = allEntries.filter((entry) => {
     if (state.historyFilter === 'favorites') return entry.favorite === true;
     if (state.historyFilter === 'tarot') return historyKind(entry) === 'tarot';
     if (state.historyFilter === 'compatibility') return historyKind(entry) === 'compatibility';
+    if (state.historyFilter === 'practice') return ['palm', 'runes', 'amur'].includes(historyKind(entry));
     return true;
   });
   const filters = {
     all: `Все · ${allEntries.length}`,
     favorites: 'Избранные',
     tarot: 'Таро',
-    compatibility: 'Совместимость'
+    compatibility: 'Совместимость',
+    practice: 'Ладонь и руны'
   };
   return shell([
     screenHeader('Мои расклады', 'Сохранённые знаки и результаты', 'home'),
@@ -2201,6 +3066,7 @@ function historyScreen() {
         on: { click: () => { state.historyFilter = id; render(); } }
       }, label))
     ),
+    state.cloudReadingsStatus === 'loading' ? loadingCard('Загружаем облачную историю…') : null,
     entries.length ? h('div', { className: 'premium-history-list' }, entries.map((entry) => MysticCard({ className: 'premium-history-card', children: [
       h('div', { className: 'premium-history-head' },
         h('strong', { text: entry.type || 'Символическое чтение' }),
@@ -2230,27 +3096,48 @@ function historyKind(entry) {
   if (entry.kind) return entry.kind;
   if (String(entry.id || '').startsWith('tarot') || /расклад|таро/iu.test(entry.type || '')) return 'tarot';
   if (/совместим|двух судеб/iu.test(entry.type || '')) return 'compatibility';
+  if (/ладон/iu.test(entry.type || '')) return 'palm';
+  if (/рун/iu.test(entry.type || '')) return 'runes';
+  if (/амур/iu.test(entry.type || '')) return 'amur';
   return 'reading';
 }
 
 function openHistoryEntry(entry) {
   state.result = { ...entry };
   if (historyKind(entry) === 'tarot') return navigate('tarot-result');
-  if (historyKind(entry) === 'compatibility') return navigate('compatibility-data-result');
+  if (['compatibility', 'amur'].includes(historyKind(entry))) return navigate('compatibility-data-result');
+  if (historyKind(entry) === 'palm') {
+    state.palmDialogue.result = entry.result;
+    state.palmDialogue.stage = 'result';
+    return navigate('palm-reading');
+  }
+  if (historyKind(entry) === 'runes') {
+    state.runeResult = entry.result;
+    return navigate('runes');
+  }
   navigate('photo-result');
 }
 
 function renameHistoryEntry(id) {
   const entries = readJSON(JOURNAL_KEY, []);
   const entry = entries.find((item) => item.id === id);
-  if (!entry) return;
-  const title = window.prompt('Новое название результата', entry.title || '');
+  const cloud = state.cloudReadings.find((item) => item.id === id);
+  const target = cloud || entry;
+  if (!target) return;
+  const title = window.prompt('Новое название результата', target.title || '');
   if (title === null) return;
   const clean = title.trim().slice(0, 120);
   if (!clean) return notify('Название не может быть пустым');
-  entry.title = clean;
+  if (entry) entry.title = clean;
   if (state.result?.id === id) state.result.title = clean;
   writeJSON(JOURNAL_KEY, entries);
+  if (cloud) {
+    cloud.title = clean;
+    api('/api/proxy', {
+      method: 'POST',
+      body: { action: 'update_reading', readingId: id, title: clean }
+    }).catch(() => notify('Не удалось синхронизировать название'));
+  }
   notify('Название сохранено');
   render();
 }
@@ -2259,9 +3146,17 @@ function softDeleteHistoryEntry(id) {
   if (!window.confirm('Скрыть этот результат из истории? Финансовая операция останется сохранённой.')) return;
   const entries = readJSON(JOURNAL_KEY, []);
   const entry = entries.find((item) => item.id === id);
-  if (!entry) return;
-  entry.deletedAt = new Date().toISOString();
+  const cloud = state.cloudReadings.find((item) => item.id === id);
+  if (!entry && !cloud) return;
+  if (entry) entry.deletedAt = new Date().toISOString();
   writeJSON(JOURNAL_KEY, entries);
+  if (cloud) {
+    state.cloudReadings = state.cloudReadings.filter((item) => item.id !== id);
+    api('/api/proxy', {
+      method: 'POST',
+      body: { action: 'delete_reading', readingId: id }
+    }).catch(() => notify('Не удалось удалить запись из облака'));
+  }
   notify('Результат скрыт из истории');
   render();
 }
@@ -2278,6 +3173,7 @@ function profileScreen() {
       balance: formatMoney(wallet.balance || 0),
       avatar: profileAvatar()
     }),
+    profileIdentityCard(),
     genderPreferenceCard(),
     h('div', { className: 'premium-wallet-metrics' },
       MysticCard({ children: [h('small', { text: 'Доступно' }), h('strong', { text: formatMoney(wallet.available) })] }),
@@ -2311,6 +3207,114 @@ function profileScreen() {
     SectionTitle({ text: 'Последние операции' }),
     ledger.length ? h('div', { className: 'premium-ledger' }, ledger.slice(0, 20).map(ledgerRow)) : MysticCard({ className: 'premium-empty-state premium-empty-state--small', children: [h('p', { text: 'Операций пока нет.' })] })
   ], { active: 'profile' });
+}
+
+function profileIdentityCard() {
+  const input = h('input', {
+    attrs: { type: 'file', accept: 'image/jpeg,image/png,image/webp', hidden: true }
+  });
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const image = await prepareImage(file);
+      await uploadProfileAvatar(image);
+    } catch (error) {
+      notify(apiErrorMessage(error));
+    }
+  });
+  const age = textInput({
+    value: state.profile.age,
+    type: 'number',
+    attrs: { min: 13, max: 120, inputmode: 'numeric' },
+    onInput: (value) => { state.profile.age = value; }
+  });
+  const city = textInput({
+    value: state.profile.city,
+    attrs: { maxlength: 120, autocomplete: 'address-level2' },
+    onInput: (value) => { state.profile.city = value; }
+  });
+  return MysticCard({ className: 'premium-profile-identity', children: [
+    h('div', { className: 'premium-avatar-editor' },
+      h('div', { className: 'premium-avatar-editor__image' },
+        h('img', { attrs: { src: profileAvatar(), alt: 'Фото профиля' } }),
+        h('span', { text: '✦' })
+      ),
+      h('div', {},
+        h('strong', { text: 'Фото профиля' }),
+        h('small', { text: state.profile.avatarUrl ? 'Используется загруженное фото' : state.profile.telegramAvatarUrl || tg?.initDataUnsafe?.user?.photo_url ? 'Загружено из Telegram' : 'Используется образ Эзотериума' }),
+        h('div', { className: 'premium-avatar-editor__actions' },
+          input,
+          h('button', { attrs: { type: 'button' }, on: { click: () => input.click() } }, 'Загрузить своё'),
+          state.profile.avatarUrl ? h('button', { attrs: { type: 'button' }, on: { click: removeProfileAvatar } }, 'Вернуть из TG') : null
+        )
+      )
+    ),
+    h('div', { className: 'premium-profile-grid' },
+      field('Возраст', age),
+      field('Город', city)
+    ),
+    MysticButton({
+      text: 'Сохранить данные',
+      icon: 'save',
+      variant: 'outline',
+      onClick: saveProfileDetails
+    })
+  ] });
+}
+
+async function saveProfileDetails() {
+  const age = Number(state.profile.age);
+  const city = state.profile.city.trim().replace(/\s+/g, ' ');
+  if (!Number.isInteger(age) || age < 13 || age > 120) return notify('Укажите возраст от 13 до 120 лет');
+  if (city.length < 2) return notify('Укажите город');
+  state.profile.age = age;
+  state.profile.city = city;
+  state.profile.completed = true;
+  writeJSON(PROFILE_KEY, { ...state.profile, gender: state.userGender });
+  if (!tg?.initData) return notify('Профиль сохранён на этом устройстве');
+  try {
+    await api('/api/preferences', { method: 'POST', body: profilePreferencePayload() });
+    notify('Профиль обновлён');
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  }
+}
+
+async function uploadProfileAvatar(image) {
+  if (!tg?.initData) {
+    state.profile.avatarUrl = image;
+    writeJSON(PROFILE_KEY, { ...state.profile, gender: state.userGender });
+    render();
+    return notify('Фото сохранено на этом устройстве');
+  }
+  state.busy = true;
+  render();
+  try {
+    const data = await api('/api/preferences', {
+      method: 'POST',
+      body: { action: 'upload_avatar', image }
+    });
+    state.profile.avatarUrl = data.preferences?.profile_avatar_url || image;
+    writeJSON(PROFILE_KEY, { ...state.profile, gender: state.userGender });
+    notify('Фото профиля обновлено');
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
+async function removeProfileAvatar() {
+  state.profile.avatarUrl = '';
+  writeJSON(PROFILE_KEY, { ...state.profile, gender: state.userGender });
+  render();
+  if (!tg?.initData) return;
+  try {
+    await api('/api/preferences', { method: 'POST', body: { action: 'remove_avatar' } });
+    notify('Возвращено фото из Telegram');
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  }
 }
 
 function topupStatusLabel(status, verificationState = 'manual') {
@@ -2542,7 +3546,7 @@ async function submitSupport() {
   } finally { state.busy = false; render(); }
 }
 
-async function requestReading(feature, payload, serviceId = '') {
+async function requestReading(feature, payload, serviceId = '', { structured = false } = {}) {
   try {
     const data = await api('/api/proxy', {
       method: 'POST',
@@ -2553,12 +3557,15 @@ async function requestReading(feature, payload, serviceId = '') {
       }
     });
     if (typeof data.answer !== 'string' || !data.answer.trim()) throw new Error('empty_response');
+    if (structured && (!data.result || typeof data.result !== 'object')) throw new Error('invalid_structured_response');
     if (data.invitation) {
       state.invitation = data.invitation;
       state.invitationStatus = 'ready';
     }
     loadWallet({ force: true });
-    return data.answer.trim();
+    return structured
+      ? { answer: data.answer.trim(), result: data.result }
+      : data.answer.trim();
   } catch (error) {
     if (error?.status === 402) {
       const minimum = Number(state.wallet?.config?.sbpMinimumSilarum || 10);
@@ -2673,6 +3680,36 @@ async function loadPublicConfig() {
   if (['home', 'services', 'wheel', 'palm', 'ritual', 'profile', 'topup'].includes(state.screen)) render();
 }
 
+async function loadReadingCatalog() {
+  if (!tg?.initData || state.readingCatalogStatus === 'loading') return;
+  state.readingCatalogStatus = 'loading';
+  try {
+    const data = await api('/api/proxy', {
+      method: 'POST',
+      body: { action: 'get_reading_catalog' }
+    });
+    for (const spread of data.tarot || []) {
+      const current = SPREADS[spread.id] || {};
+      SPREADS[spread.id] = {
+        ...current,
+        label: spread.title || current.label || spread.id,
+        description: spread.description || current.description || '',
+        count: Number(spread.card_count || current.count || 1),
+        positions: Array.isArray(spread.positions) ? spread.positions : current.positions || [],
+        category: spread.category || current.category || 'insight',
+        serviceId: spread.service_id || current.serviceId || 'tarot',
+        access: ['only', 'vip_only'].includes(spread.vip_access) ? 'VIP' : Number(spread.price_units || 0) > 0 ? 'SILARUM' : 'Доступно',
+        cover: current.cover || 'high-priestess.webp'
+      };
+    }
+    state.compatibilityCatalog = data.compatibility || [];
+    state.readingCatalogStatus = 'ready';
+  } catch {
+    state.readingCatalogStatus = 'error';
+  }
+  if (['tarot', 'compatibility', 'amur'].includes(state.screen)) render();
+}
+
 async function loadPreferences() {
   if (!tg?.initData) return;
   try {
@@ -2682,8 +3719,25 @@ async function loadPreferences() {
       state.horoscope.sign = preferences.zodiac_sign || state.horoscope.sign;
       state.horoscope.enabled = preferences.daily_horoscope_enabled === true;
       state.userGender = normalizeGender(preferences.gender || state.userGender);
+      const birthYear = Number(preferences.birth_year);
+      state.profile = {
+        ...state.profile,
+        age: birthYear ? Math.max(13, CURRENT_YEAR - birthYear) : state.profile.age,
+        city: preferences.city || state.profile.city,
+        avatarUrl: preferences.profile_avatar_url || state.profile.avatarUrl,
+        telegramAvatarUrl: preferences.telegram_avatar_url
+          || tg?.initDataUnsafe?.user?.photo_url
+          || state.profile.telegramAvatarUrl,
+        completed: Boolean(preferences.profile_completed_at || (birthYear && preferences.city))
+      };
       writeJSON(HOROSCOPE_KEY, state.horoscope);
-      writeJSON(PROFILE_KEY, { gender: state.userGender });
+      writeJSON(PROFILE_KEY, { ...state.profile, gender: state.userGender });
+      if (state.screen === 'welcome' && state.profile.completed) {
+        state.screen = 'home';
+        const url = new URL(location.href);
+        url.searchParams.set('screen', 'home');
+        history.replaceState({}, '', url);
+      }
     }
   } catch {
     // Local preference remains available if the profile endpoint is temporarily unavailable.
@@ -2722,7 +3776,7 @@ function genderPreferenceCard() {
 
 async function saveGenderPreference(value) {
   state.userGender = normalizeGender(value);
-  writeJSON(PROFILE_KEY, { gender: state.userGender });
+  writeJSON(PROFILE_KEY, { ...state.profile, gender: state.userGender });
   render();
   if (!tg?.initData) {
     notify('Обращение сохранено на этом устройстве');
@@ -2731,26 +3785,12 @@ async function saveGenderPreference(value) {
   try {
     await api('/api/preferences', {
       method: 'POST',
-      body: {
-        zodiacSign: state.horoscope.sign,
-        enabled: state.horoscope.enabled,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Berlin',
-        gender: state.userGender
-      }
+      body: profilePreferencePayload()
     });
     notify('Эзотериум запомнил форму обращения');
   } catch (error) {
     notify(apiErrorMessage(error));
   }
-}
-
-function shuffle(values) {
-  const result = [...values];
-  for (let index = result.length - 1; index > 0; index -= 1) {
-    const swap = Math.floor(Math.random() * (index + 1));
-    [result[index], result[swap]] = [result[swap], result[index]];
-  }
-  return result;
 }
 
 function uniqueId(prefix) {
@@ -2764,7 +3804,7 @@ function formatDate(value) {
 
 function render() {
   const routes = {
-    welcome: welcomeScreen, home: homeScreen, services: servicesScreen,
+    welcome: welcomeScreen, home: homeScreen, services: servicesScreen, amur: amurScreen,
     wheel: wheelScreen, tarot: tarotScreen, 'tarot-question': tarotQuestionScreen,
     'tarot-draw': tarotDrawScreen, 'tarot-result': tarotResultScreen,
     natal: natalScreen, 'natal-result': natalResultScreen,
@@ -2774,8 +3814,9 @@ function render() {
     'compatibility-data': compatibilityDataScreen,
     'compatibility-data-result': compatibilityResultScreen,
     'photo-energy': () => photoScreen('energy'), 'photo-damage': () => photoScreen('damage'), 'photo-compat': () => photoScreen('compatibility'), 'photo-result': photoResultScreen,
+    'palm-reading': palmReadingScreen, runes: runeScreen,
     palm: palmScreen, ritual: ritualScreen, 'compatibility-result': compatibilityResultScreen,
-    'invite-compose': inviteComposerScreen, invitation: invitationScreen,
+    'invite-start': inviteStartScreen, 'invite-compose': inviteComposerScreen, invitation: invitationScreen,
     history: historyScreen, profile: profileScreen, topup: topupScreen, withdrawal: withdrawalScreen, support: supportScreen
   };
   if (!routes[state.screen]) state.screen = 'home';
@@ -2800,6 +3841,8 @@ function loadTelegramData({ force = false } = {}) {
   loadPublicConfig();
   loadWallet({ force });
   loadPreferences();
+  loadReadingCatalog();
+  loadCloudReadings({ force });
   if (state.invitationToken) loadActiveInvitation({ accept: true });
   return true;
 }
