@@ -72,9 +72,10 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.ok(homeText.indexOf('Руны') < homeText.indexOf('Таро'));
     assert.ok(homeText.indexOf('Таро') < homeText.indexOf('Амур'));
     assert.ok(homeText.indexOf('Спортивные знамения') < homeText.lastIndexOf('Колесо Фортуны'));
+    assert.ok(homeText.includes('Личное пространство Эзотериума'));
     assert.match(
       mount.querySelector('.premium-sports-banner > img').getAttribute('src'),
-      /sports-prophecy-banner\.png$/
+      /sports-prophecy-banner\.webp$/
     );
 
     click(document, 'Спортивные знамения');
@@ -88,6 +89,26 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.ok(mount.querySelector('.premium-screen--reading'));
     app.state.sportsResult = '';
     app.render();
+    click(document, 'Назад');
+    assert.equal(mount.dataset.screen, 'home');
+
+    click(document, 'Личное пространство Эзотериума');
+    assert.equal(mount.dataset.screen, 'space');
+    assert.ok(document.body.textContent.toLocaleLowerCase('ru').includes('энергия дня'));
+    assert.ok(document.body.textContent.includes('Ближайшие события'));
+    click(document, 'Добавить событие');
+    assert.equal(mount.dataset.screen, 'space-event-form');
+    const eventTitle = document.querySelector('input[placeholder="Например: важный разговор"]');
+    eventTitle.value = 'Разговор о новом проекте';
+    eventTitle.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    click(document, 'Сохранить и проанализировать');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(mount.dataset.screen, 'space-event');
+    assert.ok(document.body.textContent.includes('Энергия события'));
+    assert.ok(document.body.textContent.includes('Вопрос Эзотериума'));
+    click(document, 'Назад');
+    assert.equal(mount.dataset.screen, 'space');
+    assert.ok(document.body.textContent.includes('Разговор о новом проекте'));
     click(document, 'Назад');
     assert.equal(mount.dataset.screen, 'home');
 
@@ -168,8 +189,8 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     click(document, 'По ладоням');
     assert.equal(mount.dataset.screen, 'palm');
     assert.equal(document.querySelectorAll('.n-palm-graphic').length, 2);
-    assert.match(document.querySelector('.n-palm-graphic--left').getAttribute('src'), /palm-left\.png$/);
-    assert.match(document.querySelector('.n-palm-graphic--right').getAttribute('src'), /palm-right\.png$/);
+    assert.match(document.querySelector('.n-palm-graphic--left').getAttribute('src'), /palm-left\.webp$/);
+    assert.match(document.querySelector('.n-palm-graphic--right').getAttribute('src'), /palm-right\.webp$/);
     click(document, 'Творческий союз');
     assert.equal(app.state.palmGoal, 'creative');
     assert.equal(app.suggestGenderFromName('Анна'), 'female');

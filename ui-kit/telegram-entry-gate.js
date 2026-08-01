@@ -2,7 +2,8 @@ const BOT_USERNAME = 'BelonTip_bot';
 const GATE_ID = 'telegram-entry-gate';
 const TELEGRAM_WAIT_MS = 1800;
 const TELEGRAM_LATE_READY_MS = 12_000;
-const BOOT_RECOVERY_MS = 4_500;
+const BOOT_SLOW_MS = 7_000;
+const BOOT_RETRY_MS = 20_000;
 
 function announceTelegramReady() {
   const webApp = window.Telegram?.WebApp;
@@ -12,17 +13,28 @@ function announceTelegramReady() {
   return true;
 }
 
-function recoverBootScreen() {
+function markSlowBoot() {
   const boot = document.getElementById('boot-screen');
-  if (!boot || boot.classList.contains('is-hidden')) return;
-  boot.classList.add('is-hidden');
-  window.setTimeout(() => boot.remove(), 260);
+  if (!boot || boot.classList.contains('is-hidden') || document.documentElement.dataset.appReady === 'true') return;
+  boot.classList.add('is-slow');
+  const status = boot.querySelector('[data-boot-status]');
+  if (status) status.textContent = 'Связь медленная… продолжаем загружать пространство';
+}
+
+function offerBootRetry() {
+  const boot = document.getElementById('boot-screen');
+  if (!boot || boot.classList.contains('is-hidden') || document.documentElement.dataset.appReady === 'true') return;
+  markSlowBoot();
+  const retry = boot.querySelector('[data-boot-retry]');
+  if (retry) retry.hidden = false;
 }
 
 if (!announceTelegramReady()) {
   document.getElementById('telegram-web-app-sdk')?.addEventListener('load', announceTelegramReady, { once: true });
 }
-window.setTimeout(recoverBootScreen, BOOT_RECOVERY_MS);
+window.setTimeout(markSlowBoot, BOOT_SLOW_MS);
+window.setTimeout(offerBootRetry, BOOT_RETRY_MS);
+document.querySelector('[data-boot-retry]')?.addEventListener('click', () => window.location.reload());
 
 function hasSignedTelegramLaunch() {
   return Boolean(window.Telegram?.WebApp?.initData);

@@ -1,4 +1,5 @@
 import { runAgent } from '../lib/ai-runtime.js';
+import { parseEsoteriumResponse } from '../lib/esoterium.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 import {
   enforceRateLimit,
@@ -64,7 +65,8 @@ export default async function handler(req, res) {
       history: cleanHistory(req.body?.history)
     });
     const handoff = /\[HANDOFF\]/i.test(result.answer);
-    const answer = result.answer.replace(/\s*\[HANDOFF\]\s*/gi, '').trim();
+    const parsed = parseEsoteriumResponse(result.answer.replace(/\s*\[HANDOFF\]\s*/gi, ''));
+    const answer = parsed.answer;
     return sendJson(res, 200, {
       ok: true,
       answer,

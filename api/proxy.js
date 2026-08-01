@@ -35,7 +35,18 @@ const READING_STORE_ACTIONS = new Set([
     'delete_reading',
     'create_dialogue_session',
     'append_dialogue_message',
-    'get_active_dialogue'
+    'get_active_dialogue',
+    'get_esoterium_context',
+    'set_esoterium_memory',
+    'clear_esoterium_memory',
+    'save_esoterium_turn',
+    'get_personal_space',
+    'upsert_personal_event',
+    'upsert_personal_goal',
+    'upsert_personal_task',
+    'save_personal_checkin',
+    'save_space_preferences',
+    'clear_personal_space'
 ]);
 const USER_STORE_URL = process.env.USER_STORE_URL
     || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-user-store';
