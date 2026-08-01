@@ -9,6 +9,11 @@ import { h } from './core/dom.js';
 import { Icon } from './core/icon.js';
 import { premiumArtUrl } from './core/assets.js';
 import { TAROT_CARD_NAMES, tarotCardImage } from './core/tarot-deck.js';
+import {
+  PERSONAL_CATEGORIES, PERSONAL_PRIORITIES, analyzePersonalEvent, dailyEnergy,
+  goalProgress, nextPersonalEvents, normalizePersonalEvent, normalizePersonalGoal,
+  normalizePersonalTask, personalDateKey, personalGreeting, taskDueOn
+} from '../lib/personal-space.js';
 
 let tg = null;
 let telegramConfigured = false;
@@ -19,9 +24,11 @@ const JOURNAL_KEY = 'nastardamus-journal-v2';
 const SUPPORT_KEY = 'nastardamus-support-v4';
 const HOROSCOPE_KEY = 'nastardamus-horoscope-v1';
 const PROFILE_KEY = 'nastardamus-profile-v1';
+const PERSONAL_SPACE_KEY = 'nastardamus-personal-space-v1';
 const TAROT_REVEAL_MS = 2300;
 const CURRENT_YEAR = new Date().getFullYear();
 const storedProfile = readJSON(PROFILE_KEY, {});
+const storedPersonalSpace = readJSON(PERSONAL_SPACE_KEY, {});
 
 const ZODIAC_SIGNS = {
   aries: { label: 'Овен' }, taurus: { label: 'Телец' }, gemini: { label: 'Близнецы' },
@@ -224,7 +231,25 @@ const state = {
   amurRolling: false,
   horoscope: readJSON(HOROSCOPE_KEY, { sign: 'aries', enabled: false, reading: '', date: '' }),
   support: readJSON(SUPPORT_KEY, []),
-  supportDraft: ''
+  supportDraft: '',
+  personalSpace: {
+    status: 'idle',
+    events: Array.isArray(storedPersonalSpace.events) ? storedPersonalSpace.events : [],
+    goals: Array.isArray(storedPersonalSpace.goals) ? storedPersonalSpace.goals : [],
+    tasks: Array.isArray(storedPersonalSpace.tasks) ? storedPersonalSpace.tasks : [],
+    checkins: Array.isArray(storedPersonalSpace.checkins) ? storedPersonalSpace.checkins : [],
+    settings: {
+      memoryEnabled: storedPersonalSpace.settings?.memoryEnabled !== false,
+      morningEnabled: storedPersonalSpace.settings?.morningEnabled !== false,
+      eveningEnabled: storedPersonalSpace.settings?.eveningEnabled !== false,
+      plan: String(storedPersonalSpace.settings?.plan || 'free')
+    },
+    selectedEventId: '',
+    selectedGoalId: '',
+    eventDraft: null,
+    goalDraft: null,
+    taskDraft: null
+  }
 };
 
 let toastTimer;
@@ -412,7 +437,7 @@ function navigate(screen, { replace = false } = {}) {
 }
 
 function activeTab(screen = state.screen) {
-  if (screen === 'home' || screen === 'wheel' || screen === 'horoscope') return 'home';
+  if (screen === 'home' || screen === 'wheel' || screen === 'horoscope' || screen.startsWith('space')) return 'home';
   if (screen === 'history') return 'history';
   if (screen === 'profile' || screen === 'withdrawal' || screen === 'topup') return 'profile';
   if (screen === 'amur' || screen === 'compatibility' || screen.startsWith('compatibility-') || screen.startsWith('invite') || screen === 'invitation') return 'amur';
@@ -592,6 +617,395 @@ function profilePreferencePayload(extra = {}) {
   };
 }
 
+function persistPersonalSpace() {
+  writeJSON(PERSONAL_SPACE_KEY, {
+    events: state.personalSpace.events,
+    goals: state.personalSpace.goals,
+    tasks: state.personalSpace.tasks,
+    checkins: state.personalSpace.checkins,
+    settings: state.personalSpace.settings
+  });
+}
+
+async function personalStore(action, payload = {}) {
+  if (!tg?.initData) return { ok: true, local: true };
+  return api('/api/proxy', { method: 'POST', body: { action, ...payload } });
+}
+
+async function loadPersonalSpace({ force = false } = {}) {
+  if (!tg?.initData || (state.personalSpace.status === 'loading' && !force)) return;
+  if (state.personalSpace.status === 'ready' && !force) return;
+  state.personalSpace.status = 'loading';
+  if (state.screen === 'space') render();
+  try {
+    const data = await personalStore('get_personal_space');
+    if (!data.local) {
+      state.personalSpace.events = Array.isArray(data.events) ? data.events : [];
+      state.personalSpace.goals = Array.isArray(data.goals) ? data.goals : [];
+      state.personalSpace.tasks = Array.isArray(data.tasks) ? data.tasks : [];
+      state.personalSpace.checkins = Array.isArray(data.checkins) ? data.checkins : [];
+      state.personalSpace.settings = { ...state.personalSpace.settings, ...(data.settings || {}) };
+    }
+    state.personalSpace.status = 'ready';
+    persistPersonalSpace();
+  } catch (error) {
+    state.personalSpace.status = 'offline';
+    if (state.screen === 'space') notify('Открыта сохранённая копия. Синхронизация повторится позже.');
+  } finally {
+    if (state.screen.startsWith('space')) render();
+  }
+}
+
+function personalEnergyCard() {
+  const energy = dailyEnergy();
+  return h('button', {
+    className: 'personal-energy-card',
+    attrs: { type: 'button' },
+    style: { '--energy-a': energy.colors[0], '--energy-b': energy.colors[1] },
+    on: { click: () => { state.personalSpace.energyOpen = !state.personalSpace.energyOpen; render(); } }
+  },
+  h('span', { className: 'personal-energy-card__symbol', text: energy.symbol }),
+  h('span', {},
+    h('small', { text: `ЭНЕРГИЯ ДНЯ · ${energy.number}` }),
+    h('strong', { text: energy.title }),
+    h('span', { text: energy.short })
+  ),
+  h('b', { text: state.personalSpace.energyOpen ? 'Свернуть ↑' : 'Подробнее →' }));
+}
+
+function personalEventRow(event) {
+  const category = PERSONAL_CATEGORIES[event.category] || PERSONAL_CATEGORIES.other;
+  return h('button', {
+    className: 'personal-list-row', attrs: { type: 'button' },
+    on: { click: () => { state.personalSpace.selectedEventId = event.eventId; navigate('space-event'); } }
+  },
+  h('i', { style: { background: category.color } }),
+  h('span', {}, h('strong', { text: event.title }), h('small', { text: `${formatPersonalDate(event.date)}${event.time ? ` · ${event.time}` : ''} · ${category.label}` })),
+  h('b', { text: PERSONAL_PRIORITIES[event.priority]?.mark || '·' }));
+}
+
+function personalGoalRow(goal) {
+  const progress = goalProgress(goal.goalId, state.personalSpace.tasks);
+  return h('button', {
+    className: 'personal-goal-row', attrs: { type: 'button' },
+    on: { click: () => { state.personalSpace.selectedGoalId = goal.goalId; navigate('space-goal'); } }
+  },
+  h('span', {}, h('strong', { text: goal.title }), h('small', { text: goal.deadline ? `До ${formatPersonalDate(goal.deadline)}` : 'Без срока' })),
+  h('span', { className: 'personal-progress' },
+    h('i', {}, h('b', { style: { width: `${progress.percent}%` } })),
+    h('small', { text: `${progress.completed}/${progress.total} · ${progress.percent}%` })
+  ));
+}
+
+function formatPersonalDate(value) {
+  const parsed = new Date(`${value}T12:00:00`);
+  return Number.isNaN(parsed.getTime()) ? '' : new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(parsed);
+}
+
+function personalRitualCard() {
+  const today = personalDateKey();
+  const current = state.personalSpace.checkins.find((item) => item.date === today);
+  const hour = new Date().getHours();
+  if (hour >= 6 && state.personalSpace.settings.morningEnabled && !current?.morningTasks?.length) {
+    const candidates = [
+      ...state.personalSpace.tasks.filter((task) => taskDueOn(task)).map((task) => ({ id: task.taskId, title: task.title })),
+      ...nextPersonalEvents(state.personalSpace.events).map((event) => ({ id: event.eventId, title: event.title }))
+    ].slice(0, 6);
+    return MysticCard({ className: 'personal-ritual-card', children: [
+      h('small', { className: 'premium-kicker', text: 'УТРЕННИЙ НАСТРОЙ' }),
+      h('h3', { text: 'Что сегодня действительно важно?' }),
+      h('p', { text: 'Выберите до трёх дел. Это не контроль, а ваша точка опоры.' }),
+      candidates.length ? candidates.map((item) => {
+        const input = h('input', { attrs: { type: 'checkbox' }, on: { change: (event) => {
+          const selected = new Set(state.personalSpace.morningSelected || []);
+          event.target.checked ? selected.add(item.id) : selected.delete(item.id);
+          if (selected.size > 3) { event.target.checked = false; selected.delete(item.id); notify('На утро можно выбрать не больше трёх дел'); }
+          state.personalSpace.morningSelected = [...selected];
+        } } });
+        return h('label', { className: 'personal-check-row' }, input, h('span', { text: item.title }));
+      }) : h('p', { className: 'premium-info-note', text: 'Добавьте событие или задачу — и они появятся здесь.' }),
+      MysticButton({ text: 'Сохранить настрой', icon: 'sparkle', variant: 'primary', onClick: saveMorningCheckin })
+    ] });
+  }
+  if (hour >= 20 && state.personalSpace.settings.eveningEnabled && current?.morningTasks?.length && !current.eveningReflection) {
+    return MysticCard({ className: 'personal-ritual-card', children: [
+      h('small', { className: 'premium-kicker', text: 'ВЕЧЕРНЯЯ РЕФЛЕКСИЯ' }),
+      h('h3', { text: 'Что этот день помог понять?' }),
+      field('Короткий итог', textarea({ value: state.personalSpace.reflectionDraft || '', placeholder: 'Что получилось, что перенести, за что вы благодарны…', maxLength: 1000, onInput: (value) => { state.personalSpace.reflectionDraft = value; } })),
+      MysticButton({ text: 'Завершить день', icon: 'sparkle', variant: 'primary', onClick: saveEveningReflection })
+    ] });
+  }
+  return null;
+}
+
+async function saveMorningCheckin() {
+  const selected = state.personalSpace.morningSelected || [];
+  if (!selected.length) return notify('Выберите хотя бы одно важное дело');
+  const entry = { date: personalDateKey(), morningTasks: selected, eveningReflection: null };
+  state.personalSpace.checkins = [...state.personalSpace.checkins.filter((item) => item.date !== entry.date), entry];
+  persistPersonalSpace(); render();
+  try { await personalStore('save_personal_checkin', { checkin: entry }); } catch { notify('Настрой сохранён на устройстве'); }
+}
+
+async function saveEveningReflection() {
+  const text = String(state.personalSpace.reflectionDraft || '').trim();
+  if (text.length < 3) return notify('Добавьте хотя бы одну короткую мысль');
+  const date = personalDateKey();
+  const current = state.personalSpace.checkins.find((item) => item.date === date);
+  const entry = { ...current, date, eveningReflection: { text, savedAt: new Date().toISOString() } };
+  state.personalSpace.checkins = [...state.personalSpace.checkins.filter((item) => item.date !== date), entry];
+  state.personalSpace.reflectionDraft = ''; persistPersonalSpace(); render();
+  try { await personalStore('save_personal_checkin', { checkin: entry }); } catch { notify('Итог сохранён на устройстве'); }
+}
+
+function personalSpaceScreen() {
+  const energy = dailyEnergy();
+  const events = nextPersonalEvents(state.personalSpace.events);
+  const goals = state.personalSpace.goals.filter((goal) => goal.status === 'active').slice(0, 4);
+  return shell([
+    screenHeader('Личное пространство', 'События, цели и живой ритм дня', 'home'),
+    h('section', { className: 'personal-space-greeting' },
+      h('p', { text: personalGreeting(firstName()) }),
+      state.personalSpace.status === 'offline' ? h('small', { text: 'Офлайн-копия · данные синхронизируются позже' }) : null
+    ),
+    personalEnergyCard(),
+    state.personalSpace.energyOpen ? MysticCard({ className: 'personal-energy-detail', children: [
+      h('p', { text: energy.full }),
+      h('dl', {}, h('dt', { text: 'Благоприятно' }), h('dd', { text: energy.favorable }), h('dt', { text: 'Лучше избегать' }), h('dd', { text: energy.avoid })),
+      h('strong', { text: energy.recommendation })
+    ] }) : null,
+    personalRitualCard(),
+    SectionTitle({ text: 'Ближайшие события', action: 'Все' }),
+    h('div', { className: 'personal-list' }, events.length ? events.map(personalEventRow) : h('p', { className: 'personal-empty', text: 'Событий пока нет. Добавьте то, к чему хотите подготовиться осознанно.' })),
+    SectionTitle({ text: 'Активные цели' }),
+    h('div', { className: 'personal-list' }, goals.length ? goals.map(personalGoalRow) : h('p', { className: 'personal-empty', text: 'Создайте цель и разбейте её на небольшие повторяемые шаги.' })),
+    h('div', { className: 'personal-space-actions' },
+      MysticButton({ text: 'Добавить событие', icon: 'sparkle', variant: 'primary', onClick: () => { state.personalSpace.eventDraft = null; navigate('space-event-form'); } }),
+      MysticButton({ text: 'Новая цель', icon: 'plus', variant: 'secondary', onClick: () => { state.personalSpace.goalDraft = null; navigate('space-goal-form'); } })
+    ),
+    h('button', { className: 'personal-privacy-link', attrs: { type: 'button' }, on: { click: () => navigate('space-settings') } }, Icon('profile', { size: 20 }), h('span', { text: 'Память, данные и приватность' }))
+  ], { active: 'home' });
+}
+
+function personalEventDraft() {
+  if (!state.personalSpace.eventDraft) {
+    const current = state.personalSpace.events.find((item) => item.eventId === state.personalSpace.selectedEventId);
+    state.personalSpace.eventDraft = current ? { ...current } : {
+      eventId: '', title: '', date: personalDateKey(), time: '', description: '',
+      category: 'other', priority: 'medium', status: 'active', reminder: false, goalId: ''
+    };
+  }
+  return state.personalSpace.eventDraft;
+}
+
+function personalEventFormScreen() {
+  const draft = personalEventDraft();
+  const reminder = h('input', { attrs: { type: 'checkbox' }, on: { change: (event) => { draft.reminder = event.target.checked; } } });
+  reminder.checked = draft.reminder;
+  return shell([
+    screenHeader(draft.eventId ? 'Изменить событие' : 'Новое событие', 'Эзотериум поможет увидеть его яснее', 'space'),
+    MysticCard({ className: 'premium-form-card', children: [
+      field('Название *', textInput({ value: draft.title, placeholder: 'Например: важный разговор', attrs: { maxlength: 100 }, onInput: (value) => { draft.title = value; } })),
+      h('div', { className: 'personal-form-grid' },
+        field('Дата *', textInput({ value: draft.date, type: 'date', attrs: { min: personalDateKey() }, onInput: (value) => { draft.date = value; } })),
+        field('Время', textInput({ value: draft.time, type: 'time', onInput: (value) => { draft.time = value; } }))
+      ),
+      field('Описание', textarea({ value: draft.description, placeholder: 'Контекст, ожидания, важные детали…', maxLength: 500, onInput: (value) => { draft.description = value; } })),
+      field('Категория', selectField(PERSONAL_CATEGORIES, draft.category, (value) => { draft.category = value; })),
+      field('Приоритет', selectField(PERSONAL_PRIORITIES, draft.priority, (value) => { draft.priority = value; })),
+      h('label', { className: 'personal-check-row' }, reminder, h('span', { text: draft.time ? 'Напомнить перед событием' : 'Укажите время, чтобы включить напоминание' }))
+    ] }),
+    MysticButton({ text: state.busy ? 'Сохраняем…' : 'Сохранить и проанализировать', icon: 'sparkle', variant: 'primary', disabled: state.busy, onClick: savePersonalEvent })
+  ], { active: 'home' });
+}
+
+async function savePersonalEvent() {
+  if (state.busy) return;
+  let event;
+  try {
+    event = normalizePersonalEvent(personalEventDraft());
+  } catch (error) {
+    const messages = { event_title_too_short: 'Название должно содержать хотя бы 3 символа', event_date_invalid: 'Выберите сегодняшнюю или будущую дату', event_time_invalid: 'Проверьте время события' };
+    return notify(messages[error.message] || 'Проверьте обязательные поля');
+  }
+  event.eventId ||= globalThis.crypto?.randomUUID?.() || `${Date.now()}00000000-0000-4000-8000-000000000000`.slice(-36);
+  event.analysis = analyzePersonalEvent(event);
+  state.busy = true; render();
+  try {
+    const data = await personalStore('upsert_personal_event', { event });
+    const saved = data.event || event;
+    state.personalSpace.events = [...state.personalSpace.events.filter((item) => item.eventId !== saved.eventId), saved];
+    state.personalSpace.selectedEventId = saved.eventId;
+    state.personalSpace.eventDraft = null;
+    persistPersonalSpace();
+    navigate('space-event', { replace: true });
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  } finally { state.busy = false; render(); }
+}
+
+function personalEventScreen() {
+  const event = state.personalSpace.events.find((item) => item.eventId === state.personalSpace.selectedEventId);
+  if (!event) return shell([screenHeader('Событие', '', 'space'), h('p', { className: 'personal-empty', text: 'Событие не найдено.' })], { active: 'home' });
+  const analysis = event.analysis || analyzePersonalEvent(event);
+  const parts = [
+    ['Энергия события', analysis.energy], ['Возможности', analysis.opportunities], ['Риски', analysis.risks],
+    ['Рекомендация', analysis.recommendation], ['Вопрос Эзотериума', analysis.question]
+  ];
+  return shell([
+    screenHeader(event.title, `${formatPersonalDate(event.date)}${event.time ? ` · ${event.time}` : ''}`, 'space'),
+    event.description ? MysticCard({ children: [h('p', { text: event.description })] }) : null,
+    h('section', { className: 'personal-analysis' }, parts.map(([title, copy], index) => MysticCard({ className: index === 4 ? 'personal-analysis__question' : '', children: [h('small', { text: `0${index + 1}` }), h('h3', { text: title }), h('p', { text: copy })] }))),
+    h('div', { className: 'personal-space-actions' },
+      MysticButton({ text: 'Изменить', icon: 'profile', variant: 'secondary', onClick: () => { state.personalSpace.eventDraft = { ...event }; navigate('space-event-form'); } }),
+      MysticButton({ text: 'Завершить', icon: 'sparkle', variant: 'primary', onClick: () => updatePersonalEventStatus(event, 'completed') })
+    ),
+    h('button', { className: 'personal-danger-link', attrs: { type: 'button' }, on: { click: () => updatePersonalEventStatus(event, 'archived') }, text: 'Удалить событие' })
+  ], { active: 'home' });
+}
+
+async function updatePersonalEventStatus(event, status) {
+  const updated = { ...event, status };
+  state.personalSpace.events = state.personalSpace.events.map((item) => item.eventId === event.eventId ? updated : item);
+  persistPersonalSpace(); navigate('space', { replace: true });
+  try { await personalStore('upsert_personal_event', { event: updated }); } catch { notify('Изменение сохранено на устройстве'); }
+}
+
+function personalGoalDraft() {
+  if (!state.personalSpace.goalDraft) {
+    const current = state.personalSpace.goals.find((item) => item.goalId === state.personalSpace.selectedGoalId);
+    state.personalSpace.goalDraft = current ? { ...current } : { goalId: '', title: '', description: '', category: 'growth', deadline: '', status: 'active' };
+  }
+  return state.personalSpace.goalDraft;
+}
+
+function personalGoalFormScreen() {
+  const draft = personalGoalDraft();
+  return shell([
+    screenHeader(draft.goalId ? 'Изменить цель' : 'Новая цель', 'Движение начинается с ясной формулировки', 'space'),
+    MysticCard({ className: 'premium-form-card', children: [
+      field('Название *', textInput({ value: draft.title, placeholder: 'Чего вы хотите достичь?', attrs: { maxlength: 100 }, onInput: (value) => { draft.title = value; } })),
+      field('Зачем это важно', textarea({ value: draft.description, placeholder: 'Ваш личный смысл и желаемый результат…', maxLength: 500, onInput: (value) => { draft.description = value; } })),
+      field('Категория', selectField(PERSONAL_CATEGORIES, draft.category, (value) => { draft.category = value; })),
+      field('Срок', textInput({ value: draft.deadline, type: 'date', attrs: { min: personalDateKey() }, onInput: (value) => { draft.deadline = value; } }))
+    ] }),
+    MysticButton({ text: state.busy ? 'Сохраняем…' : 'Сохранить цель', icon: 'sparkle', variant: 'primary', disabled: state.busy, onClick: savePersonalGoal })
+  ], { active: 'home' });
+}
+
+async function savePersonalGoal() {
+  let goal;
+  try { goal = normalizePersonalGoal(personalGoalDraft()); } catch { return notify('Название цели должно содержать хотя бы 3 символа'); }
+  goal.goalId ||= globalThis.crypto?.randomUUID?.() || `${Date.now()}00000000-0000-4000-8000-000000000000`.slice(-36);
+  state.busy = true; render();
+  try {
+    const data = await personalStore('upsert_personal_goal', { goal });
+    const saved = data.goal || goal;
+    state.personalSpace.goals = [...state.personalSpace.goals.filter((item) => item.goalId !== saved.goalId), saved];
+    state.personalSpace.selectedGoalId = saved.goalId;
+    state.personalSpace.goalDraft = null; persistPersonalSpace(); navigate('space-goal', { replace: true });
+  } catch (error) { notify(apiErrorMessage(error)); } finally { state.busy = false; render(); }
+}
+
+function personalGoalScreen() {
+  const goal = state.personalSpace.goals.find((item) => item.goalId === state.personalSpace.selectedGoalId);
+  if (!goal) return shell([screenHeader('Цель', '', 'space'), h('p', { className: 'personal-empty', text: 'Цель не найдена.' })], { active: 'home' });
+  const tasks = state.personalSpace.tasks.filter((task) => task.goalId === goal.goalId);
+  const progress = goalProgress(goal.goalId, state.personalSpace.tasks);
+  const draft = state.personalSpace.taskDraft || { title: '', recurrence: 'none', scheduledDate: personalDateKey() };
+  state.personalSpace.taskDraft = draft;
+  return shell([
+    screenHeader(goal.title, goal.deadline ? `Цель до ${formatPersonalDate(goal.deadline)}` : 'Без жёсткого срока', 'space'),
+    MysticCard({ className: 'personal-goal-summary', children: [
+      goal.description ? h('p', { text: goal.description }) : null,
+      h('strong', { text: `${progress.percent}% пути на сегодня` }),
+      h('span', { className: 'personal-progress personal-progress--wide' }, h('i', {}, h('b', { style: { width: `${progress.percent}%` } })))
+    ] }),
+    SectionTitle({ text: 'Шаги и привычки' }),
+    h('div', { className: 'personal-list' }, tasks.length ? tasks.map((task) => personalTaskRow(task)) : h('p', { className: 'personal-empty', text: 'Добавьте первый выполнимый шаг.' })),
+    MysticCard({ className: 'premium-form-card', children: [
+      field('Новый шаг', textInput({ value: draft.title, placeholder: 'Например: 20 минут практики', attrs: { maxlength: 100 }, onInput: (value) => { draft.title = value; } })),
+      field('Повторение', selectField({ none: { label: 'Один раз' }, daily: { label: 'Каждый день' }, weekly: { label: 'Каждую неделю' }, monthly: { label: 'Каждый месяц' } }, draft.recurrence, (value) => { draft.recurrence = value; })),
+      MysticButton({ text: 'Добавить шаг', icon: 'plus', variant: 'secondary', onClick: () => savePersonalTask(goal) })
+    ] }),
+    h('div', { className: 'personal-space-actions' },
+      MysticButton({ text: 'Изменить цель', icon: 'profile', variant: 'secondary', onClick: () => { state.personalSpace.goalDraft = { ...goal }; navigate('space-goal-form'); } }),
+      MysticButton({ text: 'Завершить цель', icon: 'sparkle', variant: 'primary', onClick: () => updatePersonalGoalStatus(goal, 'completed') })
+    )
+  ], { active: 'home' });
+}
+
+function personalTaskRow(task) {
+  const today = personalDateKey();
+  const checked = task.completedDates?.includes(today);
+  const input = h('input', { attrs: { type: 'checkbox' }, on: { change: () => togglePersonalTask(task) } });
+  input.checked = checked;
+  return h('label', { className: `personal-check-row${checked ? ' is-complete' : ''}` }, input, h('span', {}, h('strong', { text: task.title }), h('small', { text: { none: 'Один раз', daily: 'Каждый день', weekly: 'Раз в неделю', monthly: 'Раз в месяц' }[task.recurrence] } )));
+}
+
+async function savePersonalTask(goal) {
+  let task;
+  try { task = normalizePersonalTask({ ...state.personalSpace.taskDraft, taskId: globalThis.crypto?.randomUUID?.(), goalId: goal.goalId, completedDates: [] }); } catch { return notify('Название шага должно содержать хотя бы 3 символа'); }
+  state.personalSpace.tasks.push(task); state.personalSpace.taskDraft = null; persistPersonalSpace(); render();
+  try { const data = await personalStore('upsert_personal_task', { task }); if (data.task) state.personalSpace.tasks = state.personalSpace.tasks.map((item) => item.taskId === task.taskId ? data.task : item); } catch { notify('Шаг сохранён на устройстве'); }
+}
+
+async function togglePersonalTask(task) {
+  const today = personalDateKey();
+  const dates = new Set(task.completedDates || []);
+  dates.has(today) ? dates.delete(today) : dates.add(today);
+  task.completedDates = [...dates].sort(); persistPersonalSpace(); render();
+  try { await personalStore('upsert_personal_task', { task }); } catch { notify('Прогресс сохранён на устройстве'); }
+}
+
+async function updatePersonalGoalStatus(goal, status) {
+  const updated = { ...goal, status };
+  state.personalSpace.goals = state.personalSpace.goals.map((item) => item.goalId === goal.goalId ? updated : item);
+  persistPersonalSpace(); navigate('space', { replace: true });
+  try { await personalStore('upsert_personal_goal', { goal: updated }); } catch { notify('Изменение сохранено на устройстве'); }
+}
+
+function personalSettingsScreen() {
+  const toggle = (key, label, note) => {
+    const input = h('input', { attrs: { type: 'checkbox' }, on: { change: (event) => updatePersonalSettings(key, event.target.checked) } });
+    input.checked = state.personalSpace.settings[key] !== false;
+    return h('label', { className: 'personal-setting-row' }, h('span', {}, h('strong', { text: label }), h('small', { text: note })), input);
+  };
+  return shell([
+    screenHeader('Память и приватность', 'Вы управляете всеми сохранёнными данными', 'space'),
+    MysticCard({ className: 'personal-settings-card', children: [
+      toggle('memoryEnabled', 'Память Эзотериума', 'Связывает новые консультации с важными деталями прошлых бесед.'),
+      toggle('morningEnabled', 'Утренний настрой', 'После 06:00 предлагает выбрать до трёх главных дел.'),
+      toggle('eveningEnabled', 'Вечерняя рефлексия', 'После 20:00 появляется только при заполненном утре.')
+    ] }),
+    MysticCard({ children: [h('small', { className: 'premium-kicker', text: 'ВАШ ТАРИФ' }), h('h3', { text: String(state.personalSpace.settings.plan || 'free').toLocaleUpperCase('ru') }), h('p', { text: 'События, цели, задачи и локальная энергия дня доступны уже сейчас.' })] }),
+    MysticButton({ text: 'Экспортировать мои данные', icon: 'history', variant: 'secondary', onClick: exportPersonalSpace }),
+    h('button', { className: 'personal-danger-link', attrs: { type: 'button' }, on: { click: clearPersonalSpace }, text: 'Удалить все данные личного пространства' }),
+    h('p', { className: 'premium-info-note', text: 'После удаления серверные события, цели, задачи и ритуалы нельзя восстановить.' })
+  ], { active: 'home' });
+}
+
+async function updatePersonalSettings(key, value) {
+  state.personalSpace.settings[key] = value; persistPersonalSpace();
+  try { await personalStore('save_space_preferences', { settings: state.personalSpace.settings }); } catch { notify('Настройка сохранена на устройстве'); }
+}
+
+function exportPersonalSpace() {
+  const data = JSON.stringify({ exportedAt: new Date().toISOString(), ...state.personalSpace, eventDraft: undefined, goalDraft: undefined, taskDraft: undefined }, null, 2);
+  const url = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+  const link = document.createElement('a'); link.href = url; link.download = `nastardamus-personal-space-${personalDateKey()}.json`; link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 500); notify('Экспорт подготовлен');
+}
+
+async function clearPersonalSpace() {
+  if (!window.confirm('Удалить все события, цели, задачи и дневные итоги без возможности восстановления?')) return;
+  try {
+    await personalStore('clear_personal_space');
+    state.personalSpace.events = []; state.personalSpace.goals = []; state.personalSpace.tasks = []; state.personalSpace.checkins = [];
+    persistPersonalSpace(); navigate('space', { replace: true }); notify('Личное пространство очищено');
+  } catch (error) { notify(apiErrorMessage(error)); }
+}
+
 function homeScreen() {
   const wallet = state.wallet?.wallet || { freeSpins: 0 };
   const header = h('header', { className: 'premium-home-header' }, BrandLogo(),
@@ -609,6 +1023,17 @@ function homeScreen() {
       h('h1', { text: `${firstName()}, найдите одну ясную точку опоры` }),
       h('p', { text: `${state.profile.city || 'Ваш город'} · ${ZODIAC_SIGNS[state.horoscope.sign]?.label || 'личный ритм'}` })
     ),
+    h('button', {
+      className: 'personal-space-entry', attrs: { type: 'button' },
+      on: { click: () => { navigate('space'); loadPersonalSpace(); } }
+    },
+    h('span', { className: 'personal-space-entry__sigil', text: '✦' }),
+    h('span', {},
+      h('small', { text: 'НОВЫЙ ЦЕНТРАЛЬНЫЙ БЛОК' }),
+      h('strong', { text: 'Личное пространство Эзотериума' }),
+      h('span', { text: 'Энергия дня, события, цели и ваш живой ритм.' })
+    ),
+    h('b', { text: 'Открыть →' })),
     h('button', {
       className: 'premium-daily-card',
       attrs: { type: 'button' },
@@ -844,7 +1269,7 @@ function prizeReveal(reward) {
   })[reward.serviceId] || 'cosmic-card';
   return MysticCard({ className: 'premium-prize-reveal', children: [
     h('div', { className: 'premium-prize-art', attrs: { 'aria-hidden': 'true' } },
-      h('img', { attrs: { src: `/ui-kit/assets/art-v2/${artwork}.png`, alt: '', draggable: 'false' } }),
+      h('img', { attrs: { src: premiumArtUrl(artwork), alt: '', draggable: 'false' } }),
       h('span', { text: reward.quantity > 1 ? `×${reward.quantity}` : '✦' })
     ),
     h('p', { className: 'premium-kicker', text: 'КОРОБКА РАСКРЫТА' }),
@@ -3817,6 +4242,8 @@ function render() {
     'palm-reading': palmReadingScreen, runes: runeScreen,
     palm: palmScreen, ritual: ritualScreen, 'compatibility-result': compatibilityResultScreen,
     'invite-start': inviteStartScreen, 'invite-compose': inviteComposerScreen, invitation: invitationScreen,
+    space: personalSpaceScreen, 'space-event': personalEventScreen, 'space-event-form': personalEventFormScreen,
+    'space-goal': personalGoalScreen, 'space-goal-form': personalGoalFormScreen, 'space-settings': personalSettingsScreen,
     history: historyScreen, profile: profileScreen, topup: topupScreen, withdrawal: withdrawalScreen, support: supportScreen
   };
   if (!routes[state.screen]) state.screen = 'home';
@@ -3830,6 +4257,7 @@ window.addEventListener('popstate', () => {
 });
 
 function hideBootScreen() {
+  document.documentElement.dataset.appReady = 'true';
   const boot = document.getElementById('boot-screen');
   if (!boot) return;
   boot.classList.add('is-hidden');
@@ -3843,6 +4271,7 @@ function loadTelegramData({ force = false } = {}) {
   loadPreferences();
   loadReadingCatalog();
   loadCloudReadings({ force });
+  loadPersonalSpace({ force });
   if (state.invitationToken) loadActiveInvitation({ accept: true });
   return true;
 }

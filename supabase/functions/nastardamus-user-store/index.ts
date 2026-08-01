@@ -67,6 +67,70 @@ async function ensureWallet(telegramId: number) {
   });
 }
 
+async function ensureUserContext(telegramId: number) {
+  await rest("nastardamus_user_context?on_conflict=telegram_id", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Prefer: "resolution=ignore-duplicates,return=minimal" },
+    body: JSON.stringify({ telegram_id: telegramId })
+  });
+}
+
+async function readUserContext(telegramId: number) {
+  await ensureUserContext(telegramId);
+  const response = await rest(`nastardamus_user_context?telegram_id=eq.${telegramId}&select=memory_enabled,memories,updated_at&limit=1`);
+  return (await response.json())?.[0] || { memory_enabled: true, memories: [] };
+}
+
+function cleanConversationMessages(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(-24).flatMap((item) => {
+    const role = item?.role === "assistant" ? "assistant" : "user";
+    const content = String(item?.content || "").trim().slice(0, 4000);
+    return content ? [{ role, content }] : [];
+  });
+}
+
+function mergeMemory(memories: unknown, value: unknown) {
+  const content = String(value || "").trim().slice(0, 300);
+  const current = Array.isArray(memories) ? memories : [];
+  if (!content) return current.slice(-30);
+  const normalized = content.toLocaleLowerCase("ru");
+  const filtered = current.filter((item) => String(item?.content || item || "").trim().toLocaleLowerCase("ru") !== normalized);
+  return [...filtered, { content, createdAt: new Date().toISOString() }].slice(-30);
+}
+
+const PERSONAL_CATEGORIES = new Set(["work", "love", "health", "growth", "finance", "home", "travel", "other"]);
+const PERSONAL_STATUSES = new Set(["active", "completed", "archived"]);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function cleanPersonalText(value: unknown, maxLength: number, required = false) {
+  const text = String(value || "").trim().replace(/\s+/g, " ").slice(0, maxLength);
+  if (required && text.length < 3) throw new Error("invalid_personal_title");
+  return text;
+}
+
+function personalEventView(row: Record<string, unknown>) {
+  return {
+    eventId: row.event_id, title: row.title, date: row.event_date, time: String(row.event_time || "").slice(0, 5),
+    description: row.description || "", category: row.category, priority: row.priority, status: row.status,
+    reminder: row.reminder === true, goalId: row.goal_id || "", analysis: row.analysis || null, enrichments: row.enrichments || {}
+  };
+}
+
+function personalGoalView(row: Record<string, unknown>) {
+  return { goalId: row.goal_id, title: row.title, description: row.description || "", category: row.category, deadline: row.deadline || "", status: row.status };
+}
+
+function personalTaskView(row: Record<string, unknown>) {
+  return { taskId: row.task_id, goalId: row.goal_id || "", title: row.title, description: row.description || "", recurrence: row.recurrence, scheduledDate: row.scheduled_date, completedDates: row.completed_dates || [] };
+}
+
+async function assertOwnedId(table: string, idColumn: string, id: string, telegramId: number) {
+  const response = await rest(`${table}?${idColumn}=eq.${encodeURIComponent(id)}&select=telegram_id&limit=1`);
+  const row = (await response.json())?.[0];
+  if (row && Number(row.telegram_id) !== telegramId) throw new Error("personal_item_forbidden");
+}
+
 async function readSettings() {
   const response = await rest("nastardamus_settings?key=eq.global&select=settings&limit=1");
   const rows = await response.json();
@@ -2029,6 +2093,136 @@ Deno.serve(async (req: Request) => {
         headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
         body: JSON.stringify({ last_horoscope_sent_on: sentOn, updated_at: new Date().toISOString() })
       });
+      return json(200, { ok: true });
+    }
+
+    if (action === "get_esoterium_context") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const [context, conversationsResponse] = await Promise.all([
+        readUserContext(telegramId),
+        rest(`nastardamus_esoterium_conversations?telegram_id=eq.${telegramId}&select=consultation_id,mode,title,stage,summary,updated_at&order=updated_at.desc&limit=20`)
+      ]);
+      return json(200, { ok: true, memoryEnabled: context.memory_enabled === true, memories: Array.isArray(context.memories) ? context.memories : [], consultations: await conversationsResponse.json() });
+    }
+
+    if (action === "set_esoterium_memory") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      if (typeof body?.enabled !== "boolean") return json(400, { error: "invalid_memory_setting" });
+      await ensureUserContext(telegramId);
+      await rest(`nastardamus_user_context?telegram_id=eq.${telegramId}`, { method: "PATCH", headers: { "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ memory_enabled: body.enabled, updated_at: new Date().toISOString() }) });
+      return json(200, { ok: true, memoryEnabled: body.enabled });
+    }
+
+    if (action === "clear_esoterium_memory") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const context = await readUserContext(telegramId);
+      await Promise.all([
+        rest(`nastardamus_user_context?telegram_id=eq.${telegramId}`, { method: "PATCH", headers: { "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ memories: [], updated_at: new Date().toISOString() }) }),
+        rest(`nastardamus_esoterium_conversations?telegram_id=eq.${telegramId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } })
+      ]);
+      return json(200, { ok: true, memoryEnabled: context.memory_enabled === true });
+    }
+
+    if (action === "save_esoterium_turn") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const consultationId = String(body?.consultationId || "").trim();
+      const mode = String(body?.mode || "general").trim();
+      const stage = String(body?.stage || "clarifying").trim();
+      if (!/^[A-Za-z0-9._:-]{8,160}$/.test(consultationId)) return json(400, { error: "invalid_consultation_id" });
+      if (!["general", "tarot", "palmistry", "runes", "natal", "photo", "compatibility", "planning"].includes(mode) || !["opening", "clarifying", "symbols", "summary", "recommendation"].includes(stage)) return json(400, { error: "invalid_consultation_state" });
+      const context = await readUserContext(telegramId);
+      const now = new Date().toISOString();
+      await rest("nastardamus_esoterium_conversations?on_conflict=telegram_id,consultation_id", {
+        method: "POST", headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ telegram_id: telegramId, consultation_id: consultationId, mode, title: cleanPersonalText(body?.title, 300), stage, summary: cleanPersonalText(body?.summary, 1000), messages: cleanConversationMessages(body?.messages), updated_at: now })
+      });
+      if (context.memory_enabled === true && String(body?.memory || "").trim()) {
+        await rest(`nastardamus_user_context?telegram_id=eq.${telegramId}`, { method: "PATCH", headers: { "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ memories: mergeMemory(context.memories, body.memory), updated_at: now }) });
+      }
+      return json(200, { ok: true, memoryEnabled: context.memory_enabled === true });
+    }
+
+    if (action === "get_personal_space") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const [eventsResponse, goalsResponse, tasksResponse, checkinsResponse, settingsResponse] = await Promise.all([
+        rest(`nastardamus_personal_events?telegram_id=eq.${telegramId}&status=neq.archived&select=*&order=event_date.asc,event_time.asc&limit=500`),
+        rest(`nastardamus_personal_goals?telegram_id=eq.${telegramId}&status=neq.archived&select=*&order=created_at.desc&limit=200`),
+        rest(`nastardamus_personal_tasks?telegram_id=eq.${telegramId}&select=*&order=created_at.asc&limit=1000`),
+        rest(`nastardamus_daily_checkins?telegram_id=eq.${telegramId}&select=*&order=checkin_date.desc&limit=120`),
+        rest(`nastardamus_space_preferences?telegram_id=eq.${telegramId}&select=*&limit=1`)
+      ]);
+      const [events, goals, tasks, checkins, settingsRows] = await Promise.all([eventsResponse.json(), goalsResponse.json(), tasksResponse.json(), checkinsResponse.json(), settingsResponse.json()]);
+      const settings = settingsRows?.[0] || {};
+      return json(200, {
+        ok: true, events: events.map(personalEventView), goals: goals.map(personalGoalView), tasks: tasks.map(personalTaskView),
+        checkins: checkins.map((row: Record<string, unknown>) => ({ date: row.checkin_date, morningTasks: row.morning_tasks || [], morningNote: row.morning_note || "", eveningReflection: row.evening_reflection || null })),
+        settings: { memoryEnabled: settings.memory_enabled !== false, morningEnabled: settings.morning_enabled !== false, eveningEnabled: settings.evening_enabled !== false, plan: settings.plan || "free" }
+      });
+    }
+
+    if (action === "upsert_personal_event") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const event = body?.event || {};
+      const eventId = String(event.eventId || crypto.randomUUID());
+      if (!UUID_PATTERN.test(eventId)) return json(400, { error: "invalid_event_id" });
+      await assertOwnedId("nastardamus_personal_events", "event_id", eventId, telegramId);
+      const date = String(event.date || ""); const time = String(event.time || ""); const goalId = String(event.goalId || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || (time && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time))) return json(400, { error: "invalid_event_date" });
+      if (goalId && !UUID_PATTERN.test(goalId)) return json(400, { error: "invalid_goal_id" });
+      if (goalId) await assertOwnedId("nastardamus_personal_goals", "goal_id", goalId, telegramId);
+      const payload = { event_id: eventId, telegram_id: telegramId, title: cleanPersonalText(event.title, 100, true), event_date: date, event_time: time || null, description: cleanPersonalText(event.description, 500), category: PERSONAL_CATEGORIES.has(event.category) ? event.category : "other", priority: ["low", "medium", "high"].includes(event.priority) ? event.priority : "medium", status: PERSONAL_STATUSES.has(event.status) ? event.status : "active", reminder: event.reminder === true && Boolean(time), goal_id: goalId || null, analysis: cleanJsonObject(event.analysis), enrichments: cleanJsonObject(event.enrichments), updated_at: new Date().toISOString() };
+      const response = await rest("nastardamus_personal_events?on_conflict=event_id", { method: "POST", headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(payload) });
+      return json(200, { ok: true, event: personalEventView((await response.json())?.[0] || payload) });
+    }
+
+    if (action === "upsert_personal_goal") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const goal = body?.goal || {}; const goalId = String(goal.goalId || crypto.randomUUID()); const deadline = String(goal.deadline || "");
+      if (!UUID_PATTERN.test(goalId) || (deadline && !/^\d{4}-\d{2}-\d{2}$/.test(deadline))) return json(400, { error: "invalid_goal" });
+      await assertOwnedId("nastardamus_personal_goals", "goal_id", goalId, telegramId);
+      const payload = { goal_id: goalId, telegram_id: telegramId, title: cleanPersonalText(goal.title, 100, true), description: cleanPersonalText(goal.description, 500), category: PERSONAL_CATEGORIES.has(goal.category) ? goal.category : "other", deadline: deadline || null, status: PERSONAL_STATUSES.has(goal.status) ? goal.status : "active", updated_at: new Date().toISOString() };
+      const response = await rest("nastardamus_personal_goals?on_conflict=goal_id", { method: "POST", headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(payload) });
+      return json(200, { ok: true, goal: personalGoalView((await response.json())?.[0] || payload) });
+    }
+
+    if (action === "upsert_personal_task") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const task = body?.task || {}; const taskId = String(task.taskId || crypto.randomUUID()); const goalId = String(task.goalId || ""); const scheduledDate = String(task.scheduledDate || "");
+      if (!UUID_PATTERN.test(taskId) || (goalId && !UUID_PATTERN.test(goalId)) || !/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)) return json(400, { error: "invalid_task" });
+      await assertOwnedId("nastardamus_personal_tasks", "task_id", taskId, telegramId); if (goalId) await assertOwnedId("nastardamus_personal_goals", "goal_id", goalId, telegramId);
+      const completedDates = Array.isArray(task.completedDates) ? [...new Set(task.completedDates.map(String).filter((date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date)))].slice(-400) : [];
+      const payload = { task_id: taskId, telegram_id: telegramId, goal_id: goalId || null, title: cleanPersonalText(task.title, 100, true), description: cleanPersonalText(task.description, 500), recurrence: ["none", "daily", "weekly", "monthly"].includes(task.recurrence) ? task.recurrence : "none", scheduled_date: scheduledDate, completed_dates: completedDates, updated_at: new Date().toISOString() };
+      const response = await rest("nastardamus_personal_tasks?on_conflict=task_id", { method: "POST", headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(payload) });
+      return json(200, { ok: true, task: personalTaskView((await response.json())?.[0] || payload) });
+    }
+
+    if (action === "save_personal_checkin") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const checkin = body?.checkin || {}; const date = String(checkin.date || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json(400, { error: "invalid_date" });
+      const morningTasks = Array.isArray(checkin.morningTasks) ? checkin.morningTasks.map(String).slice(0, 3) : [];
+      await rest("nastardamus_daily_checkins?on_conflict=telegram_id,checkin_date", { method: "POST", headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ telegram_id: telegramId, checkin_date: date, morning_tasks: morningTasks, morning_note: cleanPersonalText(checkin.morningNote, 1000), evening_reflection: checkin.eveningReflection && typeof checkin.eveningReflection === "object" ? checkin.eveningReflection : null, updated_at: new Date().toISOString() }) });
+      return json(200, { ok: true });
+    }
+
+    if (action === "save_space_preferences") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const settings = body?.settings || {}; const memoryEnabled = settings.memoryEnabled !== false;
+      await Promise.all([
+        rest("nastardamus_space_preferences?on_conflict=telegram_id", { method: "POST", headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ telegram_id: telegramId, memory_enabled: memoryEnabled, morning_enabled: settings.morningEnabled !== false, evening_enabled: settings.eveningEnabled !== false, updated_at: new Date().toISOString() }) }),
+        ensureUserContext(telegramId).then(() => rest(`nastardamus_user_context?telegram_id=eq.${telegramId}`, { method: "PATCH", headers: { "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ memory_enabled: memoryEnabled, updated_at: new Date().toISOString() }) }))
+      ]);
+      return json(200, { ok: true });
+    }
+
+    if (action === "clear_personal_space") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      await Promise.all([
+        rest(`nastardamus_personal_events?telegram_id=eq.${telegramId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }),
+        rest(`nastardamus_personal_tasks?telegram_id=eq.${telegramId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }),
+        rest(`nastardamus_daily_checkins?telegram_id=eq.${telegramId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } })
+      ]);
+      await rest(`nastardamus_personal_goals?telegram_id=eq.${telegramId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
       return json(200, { ok: true });
     }
 

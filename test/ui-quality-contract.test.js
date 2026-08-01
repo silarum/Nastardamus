@@ -100,17 +100,18 @@ test('public services use neutral badges and language', () => {
 });
 
 test('every illustrated module uses the approved optimized asset set', () => {
-  const files = readdirSync(artV2);
+  const allFiles = readdirSync(artV2);
+  const files = allFiles.filter((name) => name.endsWith('.webp'));
   const expected = [
-    'astrology-forecast.png', 'avatar-seeker.png', 'brand-sun.png', 'connection-heart.png',
-    'cosmic-background.png', 'cosmic-card.png', 'cosmic-footer-divider.png', 'energy-hands.png',
-    'fortune-wheel.png', 'greeting-compass.png', 'laurel-left.png', 'laurel-right.png',
-    'metric-heart-seal.png', 'metric-palm-seal.png', 'metric-tarot-seal.png',
-    'nav-magic-sun.png', 'palm-left.png', 'palm-right.png', 'partner-invite-emblem.png', 'photo-energy-imprint.png',
-    'photo-palm.png', 'portrait-man.png', 'portrait-woman.png',
-    'result-magic-seal.png', 'ritual-tarot-spread.png', 'silarum-coin.png',
-    'shortcut-astro-orbit.png', 'shortcut-destiny-hearts.png', 'shortcut-fortune-compass.png', 'tarot-deck.png',
-    'two-photo-compatibility.png', 'sports-prophecy-banner.png',
+    'astrology-forecast.webp', 'avatar-seeker.webp', 'brand-sun.webp', 'connection-heart.webp',
+    'cosmic-background.webp', 'cosmic-card.webp', 'cosmic-footer-divider.webp', 'energy-hands.webp',
+    'fortune-wheel.webp', 'greeting-compass.webp', 'laurel-left.webp', 'laurel-right.webp',
+    'metric-heart-seal.webp', 'metric-palm-seal.webp', 'metric-tarot-seal.webp',
+    'nav-magic-sun.webp', 'palm-left.webp', 'palm-right.webp', 'partner-invite-emblem.webp', 'photo-energy-imprint.webp',
+    'photo-palm.webp', 'portrait-man.webp', 'portrait-woman.webp',
+    'result-magic-seal.webp', 'ritual-tarot-spread.webp', 'silarum-coin.webp',
+    'shortcut-astro-orbit.webp', 'shortcut-destiny-hearts.webp', 'shortcut-fortune-compass.webp', 'tarot-deck.webp',
+    'two-photo-compatibility.webp', 'sports-prophecy-banner.webp',
     'amur-dice.webp', 'palm-oracle.webp', 'rune-sanctum.webp'
   ];
 
@@ -123,24 +124,12 @@ test('every illustrated module uses the approved optimized asset set', () => {
     totalBytes += data.length;
     assert.ok(data.length > 10_000, `${name} looks like an empty placeholder`);
     assert.ok(data.length < 2_500_000, `${name} exceeds the per-asset delivery budget`);
-    if (name.endsWith('.webp')) {
-      assert.equal(data.subarray(0, 4).toString('ascii'), 'RIFF', `${name} is not a WebP`);
-      assert.equal(data.subarray(8, 12).toString('ascii'), 'WEBP', `${name} is not a WebP`);
-    } else {
-      const width = data.readUInt32BE(16);
-      const height = data.readUInt32BE(20);
-      const colorType = data[25];
-      assert.equal(data.subarray(1, 4).toString('ascii'), 'PNG', `${name} is not a PNG`);
-      assert.ok(width <= 960 && height <= 1_700, `${name} exceeds the Retina delivery dimensions`);
-      assert.equal(
-        colorType,
-        name === 'cosmic-background.png' ? 2 : 6,
-        `${name} does not use the expected ${name === 'cosmic-background.png' ? 'RGB' : 'RGBA'} format`
-      );
-    }
+    assert.equal(data.subarray(0, 4).toString('ascii'), 'RIFF', `${name} is not a WebP`);
+    assert.equal(data.subarray(8, 12).toString('ascii'), 'WEBP', `${name} is not a WebP`);
   }
 
-  assert.ok(totalBytes < 16_000_000, 'Illustrated asset bundle exceeds the 16 MB delivery budget');
+  assert.ok(totalBytes < 2_500_000, 'Illustrated delivery bundle exceeds the 2.5 MB budget');
+  assert.match(readFileSync(new URL('../ui-kit/core/assets.js', import.meta.url), 'utf8'), /\$\{name\}\.webp/);
 });
 
 test('paired invitations have an original image for every category', () => {

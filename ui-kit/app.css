@@ -218,6 +218,71 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .premium-service-list .premium-service-tile { min-height: 86px; }
 .premium-service-tile { position: relative; cursor: pointer; transition: transform .18s ease, border-color .18s ease, filter .18s ease; }
 .premium-service-tile:active { transform: scale(.985); }
+
+/* Личное пространство Эзотериума */
+.personal-space-entry {
+  width: 100%; min-height: 132px; display: grid; grid-template-columns: 58px 1fr; gap: 14px;
+  align-items: center; padding: 18px; border: 1px solid rgba(233,190,98,.45); border-radius: 24px;
+  background: radial-gradient(circle at 8% 12%,rgba(225,175,80,.22),transparent 34%),linear-gradient(145deg,#311b4b,#10142d 62%,#202738);
+  color: #f9e7b1; text-align: left; box-shadow: 0 18px 42px rgba(1,2,12,.35); cursor: pointer;
+}
+.personal-space-entry__sigil { display:grid;place-items:center;width:58px;height:58px;border:1px solid #e7bd64;border-radius:50%;font:32px/1 Georgia,serif;box-shadow:inset 0 0 22px rgba(138,62,175,.45),0 0 26px rgba(229,184,90,.18) }
+.personal-space-entry > span:nth-child(2) { display:grid;gap:5px;min-width:0 }
+.personal-space-entry small,.personal-energy-card small { color:#d8ad58;font-size:10px;font-weight:800;letter-spacing:.12em }
+.personal-space-entry strong { font:600 19px/1.15 var(--n-title-font);color:#ffecb7 }
+.personal-space-entry span span { color:#c9bfd2;font-size:12px;line-height:1.45 }
+.personal-space-entry > b { grid-column:2;color:#efc86d;font-size:11px }
+.personal-space-greeting { padding:4px 3px }
+.personal-space-greeting p { margin:0;color:#e9ddea;font:500 16px/1.55 var(--n-title-font) }
+.personal-space-greeting small { display:block;margin-top:6px;color:#c89f5b;font-size:10px }
+.personal-energy-card { width:100%;display:grid;grid-template-columns:54px 1fr;gap:13px;align-items:center;padding:18px;border:1px solid rgba(240,202,116,.38);border-radius:22px;background:linear-gradient(135deg,var(--energy-a),var(--energy-b));color:#fff;text-align:left;box-shadow:0 15px 40px rgba(0,0,0,.32);cursor:pointer }
+.personal-energy-card__symbol { display:grid;place-items:center;width:52px;height:52px;border:1px solid rgba(255,236,186,.65);border-radius:50%;background:rgba(8,8,20,.24);font:31px/1 Georgia,serif }
+.personal-energy-card > span:nth-child(2) { display:grid;gap:4px }
+.personal-energy-card strong { font:600 22px/1.05 var(--n-title-font) }
+.personal-energy-card span span { color:rgba(255,255,255,.82);font-size:11px;line-height:1.4 }
+.personal-energy-card > b { grid-column:2;color:#ffecb7;font-size:10px }
+.personal-energy-detail p,.personal-energy-detail dd { color:#d7cfdb;font-size:13px;line-height:1.6 }
+.personal-energy-detail dl { display:grid;grid-template-columns:105px 1fr;gap:8px;margin:14px 0 }
+.personal-energy-detail dt { color:#e1b965;font-size:11px;font-weight:800 }
+.personal-energy-detail dd { margin:0 }
+.personal-list { display:grid;gap:9px }
+.personal-list-row,.personal-goal-row,.personal-privacy-link { width:100%;display:grid;align-items:center;padding:13px;border:1px solid rgba(232,206,243,.14);border-radius:17px;background:rgba(25,20,41,.82);color:#f3e8f4;text-align:left;cursor:pointer }
+.personal-list-row { grid-template-columns:4px 1fr 24px;gap:12px }
+.personal-list-row > i { width:4px;height:42px;border-radius:999px }
+.personal-list-row span,.personal-goal-row > span:first-child { display:grid;gap:4px }
+.personal-list-row strong,.personal-goal-row strong { font-size:13px }
+.personal-list-row small,.personal-goal-row small { color:#aaa0b4;font-size:10px }
+.personal-list-row > b { color:#e9c268;font-size:18px;text-align:center }
+.personal-goal-row { grid-template-columns:1fr 116px;gap:12px }
+.personal-progress { display:grid;gap:5px }
+.personal-progress > i { display:block;height:5px;overflow:hidden;border-radius:99px;background:#302a3a }
+.personal-progress > i > b { display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#b65ecc,#e7bd64) }
+.personal-progress small { text-align:right }
+.personal-progress--wide { margin-top:5px }
+.personal-empty { margin:0;padding:18px;border:1px dashed rgba(223,190,232,.2);border-radius:17px;color:#aaa1b2;font-size:12px;line-height:1.55;text-align:center }
+.personal-space-actions { display:grid;grid-template-columns:1fr 1fr;gap:9px }
+.personal-privacy-link { grid-template-columns:26px 1fr;gap:10px;color:#cfc2d5 }
+.personal-form-grid { display:grid;grid-template-columns:1fr 1fr;gap:10px }
+.personal-check-row { display:flex;align-items:center;gap:11px;padding:11px 12px;border:1px solid rgba(222,193,229,.14);border-radius:14px;background:rgba(18,15,29,.56);color:#e1d8e5;font-size:12px;line-height:1.4 }
+.personal-check-row input { width:19px;height:19px;accent-color:#c78bd8;flex:none }
+.personal-check-row span { display:grid;gap:3px }
+.personal-check-row small { color:#9f95a7;font-size:10px }
+.personal-check-row.is-complete strong { color:#9b92a2;text-decoration:line-through }
+.personal-ritual-card h3,.personal-analysis h3,.personal-goal-summary h3,.personal-settings-card h3 { margin:4px 0;color:#f4dda4;font:600 20px/1.15 var(--n-title-font) }
+.personal-ritual-card > p { color:#bdb3c3;font-size:12px;line-height:1.55 }
+.personal-analysis { display:grid;gap:10px }
+.personal-analysis .n-mystic-card { position:relative;padding-left:49px }
+.personal-analysis .n-mystic-card > small { position:absolute;left:15px;top:17px;color:#c99450;font:700 11px/1 var(--n-mono-font) }
+.personal-analysis p { margin:6px 0 0;color:#d5cbd9;font-size:13px;line-height:1.6 }
+.personal-analysis__question { border-color:rgba(230,186,92,.5)!important;background:linear-gradient(145deg,rgba(91,42,113,.65),rgba(27,23,43,.9))!important }
+.personal-danger-link { width:100%;padding:12px;border:0;background:transparent;color:#ca8492;font-size:11px;text-align:center;cursor:pointer }
+.personal-setting-row { display:flex;justify-content:space-between;gap:20px;padding:15px 0;border-bottom:1px solid rgba(229,207,234,.11) }
+.personal-setting-row:last-child { border-bottom:0 }
+.personal-setting-row > span { display:grid;gap:5px }
+.personal-setting-row strong { color:#eee2ef;font-size:13px }
+.personal-setting-row small { color:#a99ead;font-size:10px;line-height:1.45 }
+.personal-setting-row input { width:38px;height:20px;accent-color:#be7fd0 }
+@media(max-width:360px){.personal-space-actions,.personal-form-grid{grid-template-columns:1fr}.personal-goal-row{grid-template-columns:1fr}.personal-progress small{text-align:left}}
 .premium-service-tile:hover { border-color: var(--n-border-strong); filter: brightness(1.08); }
 .premium-service-tile > span:nth-child(2) { min-width: 0; flex: 1; }
 .premium-service-icon { width:62px; height:62px; flex:0 0 62px; border:1px solid rgba(225,176,80,.2); border-radius:18px; display:grid; place-items:center; background:radial-gradient(circle,rgba(100,42,140,.42),rgba(15,11,25,.18) 70%); overflow:hidden; }
