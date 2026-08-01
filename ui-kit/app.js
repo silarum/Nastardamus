@@ -781,7 +781,7 @@ function personalSpaceScreen() {
     h('div', { className: 'personal-list' }, goals.length ? goals.map(personalGoalRow) : h('p', { className: 'personal-empty', text: 'Создайте цель и разбейте её на небольшие повторяемые шаги.' })),
     h('div', { className: 'personal-space-actions' },
       MysticButton({ text: 'Добавить событие', icon: 'sparkle', variant: 'primary', onClick: () => { state.personalSpace.eventDraft = null; navigate('space-event-form'); } }),
-      MysticButton({ text: 'Новая цель', icon: 'plus', variant: 'secondary', onClick: () => { state.personalSpace.goalDraft = null; navigate('space-goal-form'); } })
+      MysticButton({ text: 'Новая цель', icon: 'sparkle', variant: 'secondary', onClick: () => { state.personalSpace.goalDraft = null; navigate('space-goal-form'); } })
     ),
     h('button', { className: 'personal-privacy-link', attrs: { type: 'button' }, on: { click: () => navigate('space-settings') } }, Icon('profile', { size: 20 }), h('span', { text: 'Память, данные и приватность' }))
   ], { active: 'home' });
@@ -926,7 +926,7 @@ function personalGoalScreen() {
     MysticCard({ className: 'premium-form-card', children: [
       field('Новый шаг', textInput({ value: draft.title, placeholder: 'Например: 20 минут практики', attrs: { maxlength: 100 }, onInput: (value) => { draft.title = value; } })),
       field('Повторение', selectField({ none: { label: 'Один раз' }, daily: { label: 'Каждый день' }, weekly: { label: 'Каждую неделю' }, monthly: { label: 'Каждый месяц' } }, draft.recurrence, (value) => { draft.recurrence = value; })),
-      MysticButton({ text: 'Добавить шаг', icon: 'plus', variant: 'secondary', onClick: () => savePersonalTask(goal) })
+      MysticButton({ text: 'Добавить шаг', icon: 'sparkle', variant: 'secondary', onClick: () => savePersonalTask(goal) })
     ] }),
     h('div', { className: 'personal-space-actions' },
       MysticButton({ text: 'Изменить цель', icon: 'profile', variant: 'secondary', onClick: () => { state.personalSpace.goalDraft = { ...goal }; navigate('space-goal-form'); } }),
