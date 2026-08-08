@@ -269,10 +269,21 @@ export default async function handler(req, res) {
             services: {
                 bot: Boolean(botToken),
                 webhookSecret: Boolean(webhookSecret),
-                readings: Boolean(process.env.DEEPSEEK_API_KEY && process.env.OPENAI_API_KEY),
+                readings: Boolean(process.env.DEEPSEEK_API_KEY),
                 supportGuide: Boolean(process.env.DEEPSEEK_API_KEY),
                 textReadings: Boolean(process.env.DEEPSEEK_API_KEY),
-                photoReadings: Boolean(process.env.OPENAI_API_KEY),
+                photoReadings: Boolean(
+                    process.env.DEEPSEEK_API_KEY
+                    && (
+                        (
+                            process.env.VISION_API_KEY
+                            && process.env.VISION_BASE_URL
+                            && process.env.VISION_MODEL
+                        )
+                        || process.env.OPENROUTER_API_KEY
+                        || process.env.OPENAI_API_KEY
+                    )
+                ),
                 fallbackReady: Boolean(process.env.OPENROUTER_API_KEY),
                 webAppUrl: Boolean(process.env.WEB_APP_URL),
                 authenticatedPreviewOnly: !unauthenticatedPreviewAllowed()

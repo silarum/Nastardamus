@@ -11,6 +11,35 @@ const INVITATION_TOKEN = 'a'.repeat(32);
 const CHARGE_ID = '743a8d3f-7654-4d1e-aeed-1fc420fc1282';
 const TINY_IMAGE = 'data:image/jpeg;base64,AA==';
 
+function pairedVisionAnalysis() {
+  return {
+    feature: 'photo_compatibility',
+    status: 'ok',
+    imageCount: 2,
+    images: [1, 2].map((index) => ({
+      index,
+      subject: 'portrait',
+      quality: 'good',
+      composition: index === 1 ? 'Крупный портрет.' : 'Поясной портрет.',
+      lighting: 'Мягкий рассеянный свет.',
+      poseOrGesture: 'Открытая поза.',
+      facialExpression: 'Нейтральное выражение.',
+      palmDetails: [],
+      visibleDetails: ['Однотонный фон'],
+      uncertainty: 'Контекст за пределами кадра неизвестен.'
+    })),
+    safety: {
+      apparentMinor: false,
+      intimateContent: false,
+      graphicViolence: false,
+      identityDocument: false,
+      unreadable: false
+    },
+    limitations: ['Только видимые признаки.'],
+    safeDisclaimer: 'Описание не устанавливает личность, чувства, здоровье или судьбу.'
+  };
+}
+
 function createResponse() {
   return {
     headers: new Map(),
@@ -74,12 +103,22 @@ test('joint result charges one chosen participant and completes for both', async
   const previousFetch = global.fetch;
   const previous = {
     BOT_TOKEN: process.env.BOT_TOKEN,
+    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
+    DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL,
+    VISION_API_KEY: process.env.VISION_API_KEY,
+    VISION_BASE_URL: process.env.VISION_BASE_URL,
+    VISION_MODEL: process.env.VISION_MODEL,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     ALLOW_UNAUTHENTICATED_PREVIEW: process.env.ALLOW_UNAUTHENTICATED_PREVIEW
   };
   const actions = [];
   process.env.BOT_TOKEN = botToken;
-  process.env.OPENAI_API_KEY = 'openai-invitation-test-key';
+  process.env.DEEPSEEK_API_KEY = 'deepseek-invitation-test-key';
+  process.env.DEEPSEEK_BASE_URL = 'https://deepseek-proxy.example/v1';
+  process.env.VISION_API_KEY = 'vision-invitation-test-key';
+  process.env.VISION_BASE_URL = 'https://vision.example/v1';
+  process.env.VISION_MODEL = 'glm-4v-flash';
+  delete process.env.OPENAI_API_KEY;
   delete process.env.ALLOW_UNAUTHENTICATED_PREVIEW;
 
   global.fetch = async (url, options = {}) => {
@@ -141,13 +180,25 @@ test('joint result charges one chosen participant and completes for both', async
       assert.ok(data, `Unexpected edge action: ${body.action}`);
       return { ok: true, status: 200, json: async () => data };
     }
-    if (url === 'https://api.openai.com/v1/responses') {
-      actions.push('provider');
+    if (url === 'https://vision.example/v1/chat/completions') {
+      actions.push('vision_provider');
       return {
         ok: true,
         status: 200,
+        headers: { get: () => null },
         json: async () => ({
-          output_text: JSON.stringify({
+          choices: [{ message: { content: JSON.stringify(pairedVisionAnalysis()) } }]
+        })
+      };
+    }
+    if (url === 'https://deepseek-proxy.example/v1/chat/completions') {
+      actions.push('deepseek_provider');
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify({
             score: 81,
             confidence: 'medium',
             summary: 'Связь усиливается через ясный разговор.',
@@ -161,7 +212,7 @@ test('joint result charges one chosen participant and completes for both', async
               { key: 'daily', label: 'Быт', score: 72, insight: 'Нужно согласовать темп.' },
               { key: 'growth', label: 'Рост', score: 86, insight: 'Есть пространство для общего шага.' }
             ]
-          })
+          }) } }]
         })
       };
     }
@@ -191,8 +242,9 @@ test('joint result charges one chosen participant and completes for both', async
     assert.equal(response.body.invitation.status, 'completed');
     assert.equal(response.body.payment.amount, 8.88);
     assert.ok(actions.indexOf('claim_joint_invitation_processing') < actions.indexOf('charge_service'));
-    assert.ok(actions.indexOf('charge_service') < actions.indexOf('provider'));
-    assert.ok(actions.indexOf('provider') < actions.indexOf('complete_joint_invitation'));
+    assert.ok(actions.indexOf('vision_provider') < actions.indexOf('charge_service'));
+    assert.ok(actions.indexOf('charge_service') < actions.indexOf('deepseek_provider'));
+    assert.ok(actions.indexOf('deepseek_provider') < actions.indexOf('complete_joint_invitation'));
     assert.equal(actions.filter((action) => action === 'charge_service').length, 1);
     assert.equal(actions.filter((action) => action === 'telegram_notification').length, 2);
     assert.equal(actions.includes('complete_service_charge'), false);
