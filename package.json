@@ -7,7 +7,7 @@
     "build:client": "node scripts/build-client.mjs",
     "check": "node scripts/check-project.mjs",
     "test": "node --test",
-    "vercel-build": "npm run build:client"
+    "vercel-build": "node scripts/vercel-build.mjs"
   },
   "engines": {
     "node": "24.x"

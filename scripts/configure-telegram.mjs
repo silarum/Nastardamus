@@ -125,8 +125,8 @@ async function configureTelegram() {
     if (currentName?.name !== BOT_NAME) {
         await callTelegram('setMyName', { name: BOT_NAME });
     }
+    await setTelegramAvatar();
     if (currentShortDescription?.short_description !== BOT_SHORT_DESCRIPTION) {
-        await setTelegramAvatar();
         await callTelegram('setMyShortDescription', {
             short_description: BOT_SHORT_DESCRIPTION
         });
