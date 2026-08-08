@@ -705,6 +705,22 @@
 .world--my-path .personal-goal-row,
 .world--my-path .personal-privacy-link { border-color: rgba(205, 161, 92, .2); background: rgba(35, 24, 17, .85); }
 
+.world--profile {
+  --world-accent: #d9b46a;
+  --world-accent-soft: rgba(205, 153, 71, .17);
+  --world-text: #f1e5ce;
+  --world-muted: #afa292;
+  --world-border: rgba(216, 174, 98, .26);
+  --world-surface: rgba(24, 19, 15, .86);
+  --world-surface-strong: rgba(12, 11, 11, .97);
+  --world-cta-a: #dfbd76;
+  --world-cta-b: #795027;
+}
+.world--profile .n-cosmic-background__art { object-position: 58% center; filter: saturate(.72) brightness(.66) contrast(1.08); }
+.world--profile .n-world-light { background: linear-gradient(180deg, rgba(8, 6, 4, .2), rgba(10, 8, 6, .62) 32%, rgba(8, 7, 7, .94) 72%, #050606 100%); }
+.world--profile .n-world-particles { opacity: .12; animation-duration: 48s; }
+.world--profile .n-app-header { background: linear-gradient(180deg, rgba(12, 10, 8, .88), rgba(12, 10, 8, .18)); }
+
 .personal-path-hero {
   position: relative;
   min-height: 184px;
