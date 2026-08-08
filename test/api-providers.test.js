@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import test from 'node:test';
 
 import botHandler from '../api/bot.js';
@@ -25,6 +26,21 @@ function preserveEnvironment(names) {
             else process.env[name] = value;
         }
     };
+}
+
+function signedInitData(botToken, userId = 991001) {
+    const params = new URLSearchParams({
+        auth_date: String(Math.floor(Date.now() / 1000)),
+        query_id: 'provider-test-query',
+        user: JSON.stringify({ id: userId, first_name: 'Тест' })
+    });
+    const check = [...params.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, value]) => `${key}=${value}`)
+        .join('\n');
+    const secret = createHmac('sha256', 'WebAppData').update(botToken).digest();
+    params.set('hash', createHmac('sha256', secret).update(check).digest('hex'));
+    return params.toString();
 }
 
 test('text readings use DeepSeek and keep its key on the server', async () => {
@@ -171,6 +187,155 @@ test('two-person compatibility remains on OpenAI', async () => {
         assert.equal(response.body.result.score, 78);
         assert.match(response.body.answer, /ресурс для сближения/i);
         assert.deepEqual(calls, ['https://api.openai.com/v1/responses']);
+    } finally {
+        restore();
+        global.fetch = previousFetch;
+    }
+});
+
+test('reading store forwards the selected action even when the client body contains action', async () => {
+    const restore = preserveEnvironment(['BOT_TOKEN', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
+    const previousFetch = global.fetch;
+    const botToken = 'telegram-store-action-test-token';
+    let forwardedBody;
+    process.env.BOT_TOKEN = botToken;
+    delete process.env.ALLOW_UNAUTHENTICATED_PREVIEW;
+    global.fetch = async (url, options) => {
+        assert.match(url, /nastardamus-user-store/);
+        forwardedBody = JSON.parse(options.body);
+        return { ok: true, status: 200, json: async () => ({ ok: true, readings: [] }) };
+    };
+
+    try {
+        const response = createResponse();
+        await proxyHandler({
+            method: 'POST',
+            headers: { 'x-telegram-init-data': signedInitData(botToken) },
+            body: { action: 'list_readings', limit: 20 }
+        }, response);
+        assert.equal(response.statusCode, 200);
+        assert.equal(forwardedBody.action, 'list_readings');
+        assert.equal(forwardedBody.telegramId, 991001);
+        assert.equal(forwardedBody.limit, 20);
+    } finally {
+        restore();
+        global.fetch = previousFetch;
+    }
+});
+
+test('sports forecast uses DeepSeek JSON mode and returns the structured result', async () => {
+    const restore = preserveEnvironment(['BOT_TOKEN', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
+    const previousFetch = global.fetch;
+    let providerRequest;
+    process.env.BOT_TOKEN = 'telegram-sports-test-token';
+    process.env.DEEPSEEK_API_KEY = 'deepseek-sports-test-key';
+    process.env.OPENAI_API_KEY = 'openai-test-key';
+    process.env.ALLOW_UNAUTHENTICATED_PREVIEW = 'true';
+    const result = {
+        prediction: 'Команда А удержит преимущество во втором тайме.',
+        alternative: 'Ранний гол команды Б изменит темп встречи.',
+        confidence: 'medium',
+        keyFactor: 'Контроль центра поля',
+        missingData: 'Нет подтверждённых составов',
+        probabilities: [
+            { outcome: 'Победа А', percent: 48 },
+            { outcome: 'Ничья', percent: 29 },
+            { outcome: 'Победа Б', percent: 23 }
+        ],
+        advice: 'Воспринимайте прогноз как сценарий, а не основание для ставки.'
+    };
+    global.fetch = async (url, options) => {
+        providerRequest = { url, body: JSON.parse(options.body) };
+        return {
+            ok: true,
+            status: 200,
+            json: async () => ({ choices: [{ message: { content: JSON.stringify(result) } }] })
+        };
+    };
+
+    try {
+        const response = createResponse();
+        await proxyHandler({
+            method: 'POST',
+            headers: {},
+            body: {
+                feature: 'sports_forecast',
+                payload: { event: 'Команда А — команда Б', context: 'Финальный матч' }
+            }
+        }, response);
+        assert.equal(response.statusCode, 200);
+        assert.deepEqual(response.body.result, result);
+        assert.match(response.body.answer, /Основной прогноз/u);
+        assert.equal(providerRequest.url, 'https://api.deepseek.com/chat/completions');
+        assert.deepEqual(providerRequest.body.response_format, { type: 'json_object' });
+        assert.match(providerRequest.body.messages[0].content, /JSON Schema/u);
+    } finally {
+        restore();
+        global.fetch = previousFetch;
+    }
+});
+
+test('OpenAI quota failure falls back to DeepSeek for text without losing structured data', async () => {
+    const restore = preserveEnvironment(['BOT_TOKEN', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
+    const previousFetch = global.fetch;
+    const calls = [];
+    process.env.BOT_TOKEN = 'telegram-fallback-test-token';
+    process.env.DEEPSEEK_API_KEY = 'deepseek-fallback-test-key';
+    process.env.OPENAI_API_KEY = 'openai-empty-quota-key';
+    process.env.ALLOW_UNAUTHENTICATED_PREVIEW = 'true';
+    const result = {
+        score: 74,
+        confidence: 'medium',
+        summary: 'Связь поддерживает честность.',
+        narrative: 'У пары есть пространство для согласования темпа.',
+        strengths: ['Внимание друг к другу', 'Общие ценности'],
+        frictions: ['Разный темп решений', 'Невысказанные ожидания'],
+        actions: ['Назвать ожидания', 'Согласовать границы', 'Выбрать общий шаг'],
+        aspects: [
+            { key: 'closeness', label: 'Близость', score: 78, insight: 'Тепло поддерживается вниманием.' },
+            { key: 'dialogue', label: 'Диалог', score: 72, insight: 'Полезна конкретика.' },
+            { key: 'daily', label: 'Быт', score: 69, insight: 'Темп стоит согласовать.' },
+            { key: 'growth', label: 'Рост', score: 77, insight: 'Общие цели сближают.' }
+        ]
+    };
+    global.fetch = async (url, options) => {
+        calls.push(url);
+        if (url === 'https://api.openai.com/v1/responses') {
+            return {
+                ok: false,
+                status: 429,
+                headers: { get: (name) => name === 'x-request-id' ? 'req_quota_test' : null },
+                json: async () => ({ error: { message: 'quota exceeded', code: 'insufficient_quota' } })
+            };
+        }
+        assert.equal(url, 'https://api.deepseek.com/chat/completions');
+        assert.deepEqual(JSON.parse(options.body).response_format, { type: 'json_object' });
+        return {
+            ok: true,
+            status: 200,
+            json: async () => ({ choices: [{ message: { content: JSON.stringify(result) } }] })
+        };
+    };
+
+    try {
+        const response = createResponse();
+        await proxyHandler({
+            method: 'POST',
+            headers: {},
+            body: {
+                feature: 'compatibility',
+                payload: {
+                    first: { name: 'Анна', date: '1990-01-01' },
+                    second: { name: 'Иван', date: '1991-02-02' }
+                }
+            }
+        }, response);
+        assert.equal(response.statusCode, 200);
+        assert.equal(response.body.result.score, 74);
+        assert.deepEqual(calls, [
+            'https://api.openai.com/v1/responses',
+            'https://api.deepseek.com/chat/completions'
+        ]);
     } finally {
         restore();
         global.fetch = previousFetch;

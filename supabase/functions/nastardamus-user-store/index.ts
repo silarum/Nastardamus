@@ -1005,18 +1005,34 @@ Deno.serve(async (req: Request) => {
       const invitationToken = cleanInvitationToken(body?.invitationToken);
       if (!invitationToken) return json(400, { error: "invalid_invitation_token" });
       const chargeId = String(body?.chargeId || "");
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(chargeId)) {
-        return json(400, { error: "invalid_charge_id" });
+      const charged = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(chargeId);
+      const accessSource = String(body?.accessSource || "");
+      const freeUsageKey = String(body?.freeUsageKey || "");
+      if (!charged && !["global_free", "vip", "free_check"].includes(accessSource)) {
+        return json(400, { error: "invalid_reading_access" });
       }
-      const response = await rest("rpc/nastardamus_complete_joint_invitation", {
+      if (accessSource === "free_check" && !/^[a-z0-9:_-]{1,100}$/.test(freeUsageKey)) {
+        return json(400, { error: "invalid_free_usage_key" });
+      }
+      const response = await rest(charged
+        ? "rpc/nastardamus_complete_joint_invitation"
+        : "rpc/nastardamus_complete_joint_invitation_access", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          p_token: invitationToken,
-          p_telegram_id: telegramId,
-          p_result_text: String(body?.result || ""),
-          p_service_charge_id: chargeId
-        })
+        body: JSON.stringify(charged
+          ? {
+              p_token: invitationToken,
+              p_telegram_id: telegramId,
+              p_result_text: String(body?.result || ""),
+              p_service_charge_id: chargeId
+            }
+          : {
+              p_token: invitationToken,
+              p_telegram_id: telegramId,
+              p_result_text: String(body?.result || ""),
+              p_access_source: accessSource,
+              p_free_usage_key: accessSource === "free_check" ? freeUsageKey : null
+            })
       });
       const completed = await response.json();
       await rest(
@@ -1410,16 +1426,17 @@ Deno.serve(async (req: Request) => {
       await reconcileLatestProviderPayment(telegramId).catch((error) => {
         console.error("SBP reconciliation failed", error instanceof Error ? error.message : error);
       });
-      const [walletResponse, ledgerResponse, withdrawalResponse, entitlementResponse, topupResponse, externalPaymentResponse, settings, providerResponse, vipResponse] = await Promise.all([
+      const [walletResponse, ledgerResponse, withdrawalResponse, entitlementResponse, topupResponse, externalPaymentResponse, settings, providerResponse, vipResponse, vipPlanResponse] = await Promise.all([
         rest(`nastardamus_wallets?telegram_id=eq.${telegramId}&select=telegram_id,balance_units,locked_units,free_spins,updated_at&limit=1`),
         rest(`nastardamus_wallet_ledger?telegram_id=eq.${telegramId}&select=id,entry_type,amount_units,balance_after_units,locked_after_units,metadata,created_at&order=created_at.desc&limit=30`),
         rest(`nastardamus_withdrawal_requests?telegram_id=eq.${telegramId}&select=id,gross_units,fee_units,net_units,destination,status,created_at,updated_at&order=created_at.desc&limit=20`),
         rest(`nastardamus_service_entitlements?telegram_id=eq.${telegramId}&quantity=gt.0&select=service_id,quantity,updated_at&order=updated_at.desc`),
         rest(`nastardamus_sbp_topups?telegram_id=eq.${telegramId}&select=id,silarum_units,ruble_kopecks,payment_reference,status,provider_type,provider_payment_id,provider_status,confirmation_url,verification_state,created_at,updated_at,paid_at,expires_at&order=created_at.desc&limit=20`),
-        rest(`nastardamus_payment_orders?telegram_id=eq.${telegramId}&select=id,provider,provider_payment_id,silarum_units,provider_amount,provider_currency,payment_reference,payment_url,status,paid_at,expires_at,created_at,updated_at&order=created_at.desc&limit=20`),
+        rest(`nastardamus_payment_orders?telegram_id=eq.${telegramId}&select=id,provider,provider_payment_id,silarum_units,provider_amount,provider_currency,payment_reference,payment_url,status,metadata,paid_at,expires_at,created_at,updated_at&order=created_at.desc&limit=20`),
         readSettings(),
         rest("nastardamus_payment_providers?key=eq.sbp&enabled=eq.true&select=merchant_id,secret_ciphertext,secret_iv&limit=1"),
-        rest(`nastardamus_vip_subscriptions?telegram_id=eq.${telegramId}&status=eq.active&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=id,plan_id,starts_at,expires_at&order=expires_at.desc&limit=1`)
+        rest(`nastardamus_vip_subscriptions?telegram_id=eq.${telegramId}&status=eq.active&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=id,plan_id,starts_at,expires_at&order=expires_at.desc&limit=1`),
+        rest("nastardamus_vip_plans?is_active=eq.true&select=id,title,description,duration_days,price_units,benefits,display_order&order=display_order.asc")
       ]);
       const wallets = await walletResponse.json();
       const ledger = await ledgerResponse.json();
@@ -1429,6 +1446,24 @@ Deno.serve(async (req: Request) => {
       const externalPayments = await externalPaymentResponse.json();
       const providers = await providerResponse.json();
       const vipRows = await vipResponse.json();
+      const vipPlanRows = await vipPlanResponse.json();
+      const vipPlans = Array.isArray(settings.vipPlans) && settings.vipPlans.length
+        ? settings.vipPlans.filter((plan: Record<string, unknown>) => plan?.enabled !== false)
+        : (vipPlanRows || []).map((plan: Record<string, unknown>) => {
+            const benefits = plan.benefits && typeof plan.benefits === "object"
+              ? plan.benefits as Record<string, unknown>
+              : {};
+            return {
+              id: plan.id,
+              title: plan.title,
+              description: plan.description || "",
+              durationDays: Number(plan.duration_days || 30),
+              price: Number(plan.price_units || 0) / 100,
+              includedReadings: Number(benefits.included_readings || 0),
+              displayOrder: Number(plan.display_order || 100),
+              enabled: true
+            };
+          });
       const automaticSbpReady = settings.sbpAutomationEnabled !== false
         && Boolean(providers?.[0]?.merchant_id && providers?.[0]?.secret_ciphertext && providers?.[0]?.secret_iv);
       return json(200, {
@@ -1442,6 +1477,7 @@ Deno.serve(async (req: Request) => {
         vip: vipRows?.[0] || null,
         config: {
           paymentsEnabled: settings.paymentsEnabled !== false,
+          everythingFree: settings.everythingFree === true,
           sbpTopupsEnabled: settings.sbpTopupsEnabled === true,
           sbpAutomatic: automaticSbpReady,
           sbpMinimumSilarum: Number(settings.sbpMinimumSilarum ?? 10),
@@ -1467,6 +1503,7 @@ Deno.serve(async (req: Request) => {
           paymentRates: settings.paymentRates && typeof settings.paymentRates === "object"
             ? settings.paymentRates
             : { starsPerSilarum: 50, tonPerSilarum: 0, usdtPerSilarum: 0 },
+          vipPlans,
           vip: vipRows?.[0] || null
         }
       });
@@ -1489,9 +1526,19 @@ Deno.serve(async (req: Request) => {
       const settings = await readSettings();
       if (settings.paymentsEnabled === false) return json(403, { error: "payments_disabled" });
       const methodKey = provider === "telegram_stars" ? "stars" : provider;
-      const method = settings.paymentMethods?.[methodKey] || {};
+      const defaultMethods: Record<string, Record<string, unknown>> = {
+        stars: { enabled: true, miniApp: true },
+        ton: { enabled: false, miniApp: false },
+        usdt: { enabled: false, miniApp: false }
+      };
+      const method = settings.paymentMethods?.[methodKey] || defaultMethods[methodKey] || {};
       if (method.enabled !== true) return json(403, { error: "payment_method_disabled" });
-      const rates = settings.paymentRates || {};
+      const rates = {
+        starsPerSilarum: 50,
+        tonPerSilarum: 0,
+        usdtPerSilarum: 0,
+        ...(settings.paymentRates || {})
+      };
       const silarum = amountUnits / 100;
       const rate = provider === "telegram_stars"
         ? Number(rates.starsPerSilarum || 0)
@@ -1530,6 +1577,34 @@ Deno.serve(async (req: Request) => {
         rows = await existing.json();
       }
       return json(200, { ok: true, order: rows?.[0] });
+    }
+
+    if (action === "set_external_payment_url") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const orderId = String(body?.orderId || "");
+      const paymentUrl = String(body?.paymentUrl || "").trim();
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(paymentUrl);
+      } catch {
+        return json(400, { error: "invalid_payment_url" });
+      }
+      if (!UUID_PATTERN.test(orderId) || parsedUrl.protocol !== "https:" || !["t.me", "telegram.me"].includes(parsedUrl.hostname.toLowerCase())) {
+        return json(400, { error: "invalid_payment_url" });
+      }
+      const response = await rest(
+        `nastardamus_payment_orders?id=eq.${orderId}&telegram_id=eq.${telegramId}&provider=eq.telegram_stars&status=eq.pending`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+          body: JSON.stringify({ payment_url: parsedUrl.toString(), updated_at: new Date().toISOString() })
+        }
+      );
+      const order = (await response.json())?.[0];
+      if (!order) return json(404, { error: "payment_order_not_found" });
+      return json(200, { ok: true, order });
     }
 
     if (action === "purchase_vip") {
@@ -1739,6 +1814,7 @@ Deno.serve(async (req: Request) => {
           },
           dailyHoroscopeEnabled: settings.dailyHoroscopeEnabled !== false,
           paymentsEnabled: settings.paymentsEnabled !== false,
+          everythingFree: settings.everythingFree === true,
           sbpTopupsEnabled: settings.sbpTopupsEnabled === true,
           sbpMinimumSilarum: Number(settings.sbpMinimumSilarum ?? 10),
           sbpMaximumSilarum: Number(settings.sbpMaximumSilarum ?? 1000),
@@ -2170,7 +2246,8 @@ Deno.serve(async (req: Request) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || (time && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time))) return json(400, { error: "invalid_event_date" });
       if (goalId && !UUID_PATTERN.test(goalId)) return json(400, { error: "invalid_goal_id" });
       if (goalId) await assertOwnedId("nastardamus_personal_goals", "goal_id", goalId, telegramId);
-      const payload = { event_id: eventId, telegram_id: telegramId, title: cleanPersonalText(event.title, 100, true), event_date: date, event_time: time || null, description: cleanPersonalText(event.description, 500), category: PERSONAL_CATEGORIES.has(event.category) ? event.category : "other", priority: ["low", "medium", "high"].includes(event.priority) ? event.priority : "medium", status: PERSONAL_STATUSES.has(event.status) ? event.status : "active", reminder: event.reminder === true && Boolean(time), goal_id: goalId || null, analysis: cleanJsonObject(event.analysis), enrichments: cleanJsonObject(event.enrichments), updated_at: new Date().toISOString() };
+      const cleanAnalysis = cleanJsonObject(event.analysis);
+      const payload = { event_id: eventId, telegram_id: telegramId, title: cleanPersonalText(event.title, 100, true), event_date: date, event_time: time || null, description: cleanPersonalText(event.description, 500), category: PERSONAL_CATEGORIES.has(event.category) ? event.category : "other", priority: ["low", "medium", "high"].includes(event.priority) ? event.priority : "medium", status: PERSONAL_STATUSES.has(event.status) ? event.status : "active", reminder: event.reminder === true && Boolean(time), goal_id: goalId || null, analysis: Object.keys(cleanAnalysis).length ? cleanAnalysis : null, enrichments: cleanJsonObject(event.enrichments), updated_at: new Date().toISOString() };
       const response = await rest("nastardamus_personal_events?on_conflict=event_id", { method: "POST", headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(payload) });
       return json(200, { ok: true, event: personalEventView((await response.json())?.[0] || payload) });
     }
@@ -2215,6 +2292,28 @@ Deno.serve(async (req: Request) => {
       return json(200, { ok: true });
     }
 
+    if (action === "delete_personal_item") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const itemType = String(body?.itemType || "");
+      const itemId = String(body?.itemId || "");
+      const targets: Record<string, { table: string; column: string }> = {
+        event: { table: "nastardamus_personal_events", column: "event_id" },
+        goal: { table: "nastardamus_personal_goals", column: "goal_id" },
+        task: { table: "nastardamus_personal_tasks", column: "task_id" }
+      };
+      const target = targets[itemType];
+      if (!target || !UUID_PATTERN.test(itemId)) return json(400, { error: "invalid_personal_item" });
+      const owned = await rest(`${target.table}?${target.column}=eq.${encodeURIComponent(itemId)}&telegram_id=eq.${telegramId}&select=${target.column}&limit=1`);
+      if (!(await owned.json())?.[0]) return json(404, { error: "personal_item_not_found" });
+      await rest(`${target.table}?${target.column}=eq.${encodeURIComponent(itemId)}&telegram_id=eq.${telegramId}`, {
+        method: "DELETE",
+        headers: { Prefer: "return=minimal" }
+      });
+      return json(200, { ok: true });
+    }
+
     if (action === "clear_personal_space") {
       if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
       await Promise.all([
@@ -2256,7 +2355,7 @@ Deno.serve(async (req: Request) => {
       return json(200, { ok: true, ...result });
     }
 
-    if (action === "claim_telegram_update") {
+    if (action === "claim_telegram_update" || action === "release_telegram_update") {
       const updateId = Number(body?.updateId);
       const botScope = String(body?.botScope || "app");
       if (!Number.isSafeInteger(updateId) || updateId < 0) {
@@ -2265,7 +2364,8 @@ Deno.serve(async (req: Request) => {
       if (!/^[a-z0-9_-]{1,40}$/.test(botScope)) {
         return json(400, { error: "invalid_bot_scope" });
       }
-      const response = await rest("rpc/nastardamus_claim_telegram_update", {
+      const release = action === "release_telegram_update";
+      const response = await rest(release ? "rpc/nastardamus_release_telegram_update" : "rpc/nastardamus_claim_telegram_update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2273,8 +2373,8 @@ Deno.serve(async (req: Request) => {
           p_update_id: updateId
         })
       });
-      const claimed = await response.json();
-      return json(200, { ok: true, claimed: claimed === true });
+      const value = await response.json();
+      return json(200, { ok: true, [release ? "released" : "claimed"]: value === true });
     }
 
     if (action === "request_withdrawal") {
@@ -2360,6 +2460,10 @@ Deno.serve(async (req: Request) => {
     if (message.includes("invitation_image_unavailable") || message.includes("invitation_image_upload_")) {
       return json(503, { error: "invitation_image_unavailable" });
     }
+    if (message.includes("invalid_personal_") || message.includes("invalid_event_") || message.includes("invalid_goal") || message.includes("invalid_task")) {
+      return json(400, { error: "invalid_personal_data" });
+    }
+    if (message.includes("personal_item_forbidden")) return json(403, { error: "personal_item_forbidden" });
     return json(502, { error: "wallet_store_failed" });
   }
 });

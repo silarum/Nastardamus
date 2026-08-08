@@ -72,7 +72,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.ok(homeText.indexOf('Руны') < homeText.indexOf('Таро'));
     assert.ok(homeText.indexOf('Таро') < homeText.indexOf('Амур'));
     assert.ok(homeText.indexOf('Спортивные знамения') < homeText.lastIndexOf('Колесо Фортуны'));
-    assert.ok(homeText.includes('Личное пространство Эзотериума'));
+    assert.ok(homeText.includes('Мой путь с Эзотериумом'));
     assert.match(
       mount.querySelector('.premium-sports-banner > img').getAttribute('src'),
       /sports-prophecy-banner\.webp$/
@@ -92,7 +92,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     click(document, 'Назад');
     assert.equal(mount.dataset.screen, 'home');
 
-    click(document, 'Личное пространство Эзотериума');
+    click(document, 'Мой путь с Эзотериумом');
     assert.equal(mount.dataset.screen, 'space');
     assert.ok(document.body.textContent.toLocaleLowerCase('ru').includes('энергия дня'));
     assert.ok(document.body.textContent.includes('Ближайшие события'));
@@ -101,7 +101,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     const eventTitle = document.querySelector('input[placeholder="Например: важный разговор"]');
     eventTitle.value = 'Разговор о новом проекте';
     eventTitle.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-    click(document, 'Сохранить и проанализировать');
+    click(document, 'Сохранить и спросить Эзотериума');
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(mount.dataset.screen, 'space-event');
     assert.ok(document.body.textContent.includes('Энергия события'));

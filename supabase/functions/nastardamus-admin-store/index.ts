@@ -355,6 +355,97 @@ Deno.serve(async (req: Request) => {
       return json(200, { ok: true, credit: await response.json() });
     }
 
+    if (action === "resolve_wallet_target") {
+      const target = cleanText(body.target, 80).replace(/^@/, "");
+      let response: Response;
+      if (/^\d{1,20}$/.test(target) && Number.isSafeInteger(Number(target)) && Number(target) > 0) {
+        response = await rest(
+          `nastardamus_users?telegram_id=eq.${Number(target)}`
+            + "&select=telegram_id,username,first_name&limit=1"
+        );
+        const row = (await response.json())?.[0];
+        return json(200, {
+          ok: true,
+          user: row ? {
+            telegramId: Number(row.telegram_id),
+            username: row.username || null,
+            firstName: row.first_name || null
+          } : { telegramId: Number(target), username: null, firstName: null }
+        });
+      }
+      if (!/^[A-Za-z0-9_]{3,64}$/.test(target)) {
+        return json(400, { error: "invalid_wallet_target" });
+      }
+      response = await rest(
+        `nastardamus_users?username=ilike.${encodeURIComponent(target)}`
+          + "&select=telegram_id,username,first_name&limit=1"
+      );
+      const row = (await response.json())?.[0];
+      return json(200, {
+        ok: true,
+        user: row ? {
+          telegramId: Number(row.telegram_id),
+          username: row.username || null,
+          firstName: row.first_name || null
+        } : null
+      });
+    }
+
+    if (action === "adjust_user_wallet") {
+      const adminId = Number(body.adminId);
+      const telegramId = Number(body.telegramId);
+      const amountUnits = Number(body.amountUnits);
+      const idempotencyKey = cleanText(body.idempotencyKey, 128);
+      if (!Number.isSafeInteger(adminId) || adminId <= 0) {
+        return json(400, { error: "invalid_admin_id" });
+      }
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      if (
+        !Number.isSafeInteger(amountUnits)
+        || amountUnits === 0
+        || amountUnits > 100000000
+        || amountUnits < -100000000
+      ) {
+        return json(400, { error: "invalid_amount" });
+      }
+      if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/.test(idempotencyKey)) {
+        return json(400, { error: "invalid_idempotency_key" });
+      }
+      const response = await rest("rpc/nastardamus_admin_adjust_wallet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_admin_id: adminId,
+          p_telegram_id: telegramId,
+          p_amount_units: amountUnits,
+          p_idempotency_key: idempotencyKey,
+          p_note: cleanText(body.note, 300) || null
+        })
+      });
+      return json(200, { ok: true, adjustment: await response.json() });
+    }
+
+    if (action === "finance_report") {
+      const [ledgerResponse, withdrawalResponse, sbpResponse, externalResponse] = await Promise.all([
+        rest("nastardamus_wallet_ledger?select=telegram_id,entry_type,amount_units,reference_type,reference_id,metadata,created_at&order=created_at.desc&limit=5000"),
+        rest("nastardamus_withdrawal_requests?select=telegram_id,gross_units,fee_units,net_units,destination,status,created_at,updated_at&order=created_at.desc&limit=2000"),
+        rest("nastardamus_sbp_topups?select=telegram_id,silarum_units,ruble_kopecks,payment_reference,status,provider_type,created_at,paid_at&order=created_at.desc&limit=2000"),
+        rest("nastardamus_payment_orders?select=telegram_id,provider,silarum_units,provider_amount,provider_currency,payment_reference,status,created_at,paid_at&order=created_at.desc&limit=2000")
+      ]);
+      return json(200, {
+        ok: true,
+        report: {
+          ledger: await ledgerResponse.json(),
+          withdrawals: await withdrawalResponse.json(),
+          sbp: await sbpResponse.json(),
+          external: await externalResponse.json(),
+          generatedAt: new Date().toISOString()
+        }
+      });
+    }
+
     if (action === "review_sbp_topup") {
       const orderId = String(body.orderId || "");
       const decision = String(body.decision || "");
@@ -630,7 +721,7 @@ Deno.serve(async (req: Request) => {
       return json(200, { ok: true });
     }
 
-    if (action === "claim_telegram_update") {
+    if (action === "claim_telegram_update" || action === "release_telegram_update") {
       const updateId = Number(body.updateId);
       const botScope = String(body.botScope || "admin");
       if (!Number.isSafeInteger(updateId) || updateId < 0) {
@@ -639,7 +730,8 @@ Deno.serve(async (req: Request) => {
       if (!/^[a-z0-9_-]{1,40}$/.test(botScope)) {
         return json(400, { error: "invalid_bot_scope" });
       }
-      const response = await rest("rpc/nastardamus_claim_telegram_update", {
+      const release = action === "release_telegram_update";
+      const response = await rest(release ? "rpc/nastardamus_release_telegram_update" : "rpc/nastardamus_claim_telegram_update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -647,8 +739,8 @@ Deno.serve(async (req: Request) => {
           p_update_id: updateId
         })
       });
-      const claimed = await response.json();
-      return json(200, { ok: true, claimed: claimed === true });
+      const value = await response.json();
+      return json(200, { ok: true, [release ? "released" : "claimed"]: value === true });
     }
 
     return json(400, { error: "unknown_action" });

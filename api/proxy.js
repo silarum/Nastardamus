@@ -1,5 +1,7 @@
 import { buildReadingMessages, isVisionFeature, structuredSchemaForFeature } from '../lib/readings.js';
 import { requestDeepSeekChat } from '../lib/deepseek.js';
+import { buildPersonalAnalysisMessages, parsePersonalAnalysis } from '../lib/personal-analysis.js';
+import { normalizePersonalEvent } from '../lib/personal-space.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 import {
     enforceRateLimit,
@@ -11,7 +13,9 @@ import {
 const DEFAULT_OPENAI_MODEL = 'gpt-5.6';
 const DEEPSEEK_READING_FEATURES = new Set([
     'tarot',
-    'natal'
+    'natal',
+    'daily_horoscope',
+    'sports_forecast'
 ]);
 const OPENAI_READING_FEATURES = new Set([
     'compatibility',
@@ -20,9 +24,7 @@ const OPENAI_READING_FEATURES = new Set([
     'photo_compatibility',
     'palm_reading',
     'rune_reading',
-    'amur_compatibility',
-    'daily_horoscope',
-    'sports_forecast'
+    'amur_compatibility'
 ]);
 const READING_STORE_ACTIONS = new Set([
     'get_reading_catalog',
@@ -46,6 +48,7 @@ const READING_STORE_ACTIONS = new Set([
     'upsert_personal_task',
     'save_personal_checkin',
     'save_space_preferences',
+    'delete_personal_item',
     'clear_personal_space'
 ]);
 const USER_STORE_URL = process.env.USER_STORE_URL
@@ -55,7 +58,11 @@ const DEFAULT_PUBLIC_POLICY = Object.freeze({
         palmLinkEnabled: false,
         jointReadingsEnabled: true,
         manualPhotoReview: true,
-        adultOnly: true
+        adultOnly: true,
+        everythingFree: false,
+        tarotCatalog: [],
+        compatibilityCatalog: [],
+        vip: null
     },
     moderation: {
         enabled: true,
@@ -127,7 +134,7 @@ async function userStore(botToken, action, payload = {}) {
             'Content-Type': 'application/json',
             'X-App-Bot-Token': botToken
         },
-        body: JSON.stringify({ action, ...payload }),
+        body: JSON.stringify({ ...payload, action }),
         signal: AbortSignal.timeout(10_000)
     });
     const data = await response.json().catch(() => ({}));
@@ -313,7 +320,11 @@ async function requestOpenAI(messages, vision, structured = null) {
     });
     const data = await response.json().catch(() => null);
     if (!response.ok) {
-        throw new Error(data?.error?.message || `openai_${response.status}`);
+        const error = new Error(data?.error?.message || `openai_${response.status}`);
+        error.status = response.status;
+        error.code = data?.error?.code || data?.error?.type || '';
+        error.requestId = response.headers?.get?.('x-request-id') || null;
+        throw error;
     }
     const answer = extractOpenAIText(data);
     if (!answer) throw new Error('empty_openai_response');
@@ -325,6 +336,115 @@ async function requestOpenAI(messages, vision, structured = null) {
         throw new Error('invalid_structured_response');
     }
     return { answer: answerFromStructured(structured.feature, result), result };
+}
+
+function parseJsonObject(value) {
+    const source = String(value || '').trim();
+    const unfenced = source
+        .replace(/^```(?:json)?\s*/iu, '')
+        .replace(/\s*```$/u, '')
+        .trim();
+    const candidates = [unfenced];
+    const firstBrace = unfenced.indexOf('{');
+    const lastBrace = unfenced.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+        candidates.push(unfenced.slice(firstBrace, lastBrace + 1));
+    }
+    for (const candidate of candidates) {
+        try {
+            const parsed = JSON.parse(candidate);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+        } catch {
+            // Try the next safe JSON candidate.
+        }
+    }
+    throw new Error('invalid_structured_response');
+}
+
+function matchesSchema(value, schema) {
+    if (!schema || typeof schema !== 'object') return true;
+    if (Array.isArray(schema.enum) && !schema.enum.includes(value)) return false;
+    if (schema.type === 'string') return typeof value === 'string';
+    if (schema.type === 'integer') {
+        return Number.isInteger(value)
+            && (schema.minimum === undefined || value >= schema.minimum)
+            && (schema.maximum === undefined || value <= schema.maximum);
+    }
+    if (schema.type === 'array') {
+        return Array.isArray(value)
+            && (schema.minItems === undefined || value.length >= schema.minItems)
+            && (schema.maxItems === undefined || value.length <= schema.maxItems)
+            && value.every((item) => matchesSchema(item, schema.items));
+    }
+    if (schema.type === 'object') {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+        if ((schema.required || []).some((key) => !(key in value))) return false;
+        if (schema.additionalProperties === false) {
+            const allowed = new Set(Object.keys(schema.properties || {}));
+            if (Object.keys(value).some((key) => !allowed.has(key))) return false;
+        }
+        return Object.entries(schema.properties || {})
+            .every(([key, childSchema]) => !(key in value) || matchesSchema(value[key], childSchema));
+    }
+    return true;
+}
+
+async function requestDeepSeekReading(messages, feature, structured = null) {
+    if (!structured) {
+        const response = await requestDeepSeekChat({
+            messages,
+            temperature: 0.84,
+            maxTokens: 1400
+        });
+        return { answer: response.answer, result: null };
+    }
+    const jsonInstruction = [
+        '',
+        '# Технический формат JSON',
+        'Верни только один валидный JSON-объект: без Markdown, пояснений до или после объекта.',
+        'Используй в точности поля и типы следующей JSON Schema:',
+        JSON.stringify(structured.schema)
+    ].join('\n');
+    const jsonMessages = messages.map((message, index) => index === 0 && message.role === 'system'
+        ? { ...message, content: `${message.content}${jsonInstruction}` }
+        : message);
+    const response = await requestDeepSeekChat({
+        messages: jsonMessages,
+        temperature: 0.45,
+        maxTokens: 1800,
+        responseFormat: 'json_object'
+    });
+    const result = parseJsonObject(response.answer);
+    if (!matchesSchema(result, structured.schema)) {
+        throw new Error('invalid_structured_response');
+    }
+    const answer = answerFromStructured(feature, result);
+    if (!answer) throw new Error('invalid_structured_response');
+    return { answer, result };
+}
+
+async function generateReading({ provider, feature, messages, vision, schema }) {
+    const structured = schema ? { ...schema, feature } : null;
+    if (provider === 'deepseek') {
+        if (process.env.DEEPSEEK_API_KEY) {
+            return requestDeepSeekReading(messages, feature, structured);
+        }
+        return requestOpenAI(messages, false, structured);
+    }
+    if (!process.env.OPENAI_API_KEY) {
+        return requestDeepSeekReading(messages, feature, structured);
+    }
+    try {
+        return await requestOpenAI(messages, vision, structured);
+    } catch (error) {
+        if (vision || !process.env.DEEPSEEK_API_KEY) throw error;
+        console.warn('OpenAI text request failed; using DeepSeek fallback', {
+            status: error?.status || null,
+            code: error?.code || null,
+            requestId: error?.requestId || null
+        });
+        return requestDeepSeekReading(messages, feature, structured);
+    }
 }
 
 function providerForFeature(feature) {
@@ -363,12 +483,80 @@ function paymentDetails(policy, walletData, serviceId) {
     };
 }
 
+function catalogAccessForReading(policy, feature, payload) {
+    const settings = policy?.settings || {};
+    if (feature === 'tarot') {
+        const id = String(payload?.spread || '');
+        const item = Array.isArray(settings.tarotCatalog)
+            ? settings.tarotCatalog.find((entry) => String(entry?.id) === id)
+            : null;
+        return item ? { kind: 'tarot', id, item } : null;
+    }
+    let id = '';
+    if (feature === 'compatibility') id = 'data';
+    if (feature === 'photo_compatibility') id = payload?.source === 'palmlink' ? 'palm' : 'photo';
+    if (!id) return null;
+    const item = Array.isArray(settings.compatibilityCatalog)
+        ? settings.compatibilityCatalog.find((entry) => String(entry?.id) === id)
+        : null;
+    return item ? { kind: 'compatibility', id, item } : null;
+}
+
+function hasActiveVip(policy) {
+    const vip = policy?.settings?.vip;
+    if (!vip) return false;
+    const expiresAt = Date.parse(String(vip.expires_at || ''));
+    return !Number.isFinite(expiresAt) || expiresAt > Date.now();
+}
+
+async function resolveReadingAccess(botToken, telegramId, policy, feature, payload) {
+    if (policy?.settings?.everythingFree === true) {
+        return { source: 'global_free', amount: 0, freeUsageKey: null };
+    }
+    const catalog = catalogAccessForReading(policy, feature, payload);
+    if (!catalog) return null;
+    const vipAccess = ({ vip: 'included', vip_only: 'only', public: 'optional' })[
+        String(catalog.item.vip_access || '')
+    ] || String(catalog.item.vip_access || 'optional');
+    const vip = hasActiveVip(policy);
+    if (vip && ['included', 'only'].includes(vipAccess)) {
+        return { source: 'vip', amount: 0, freeUsageKey: null };
+    }
+    if (!vip && vipAccess === 'only') {
+        throw new Error('vip_required');
+    }
+    const dailyLimit = Math.max(0, Math.floor(Number(catalog.item.free_checks || 0)));
+    if (dailyLimit > 0) {
+        const freeUsageKey = `${catalog.kind}:${catalog.id}`;
+        const claimed = await userStore(botToken, 'claim_free_usage', {
+            telegramId,
+            serviceId: freeUsageKey,
+            dailyLimit
+        });
+        if (claimed.claimed === true) {
+            return { source: 'free_check', amount: 0, freeUsageKey };
+        }
+    }
+    return null;
+}
+
+async function releaseReadingAccess(botToken, telegramId, access) {
+    if (access?.source !== 'free_check' || !access.freeUsageKey) return;
+    await userStore(botToken, 'release_free_usage', {
+        telegramId,
+        serviceId: access.freeUsageKey
+    }).catch((error) => {
+        console.error('Free reading usage release failed:', error?.message || error);
+    });
+}
+
 async function autoCompleteJointInvitation(botToken, {
     invitationToken,
     initiatorTelegramId
 }) {
     let claimed = null;
     let charge = null;
+    let access = null;
     try {
         const claim = await userStore(botToken, 'claim_joint_invitation_processing', {
             telegramId: initiatorTelegramId,
@@ -396,14 +584,23 @@ async function autoCompleteJointInvitation(botToken, {
         const policy = await userStore(botToken, 'get_public_config', { telegramId: initiatorTelegramId });
         validateVisionConsent('photo_compatibility', payload, policy);
         await moderateVisionInput('photo_compatibility', payload, policy);
-        const charged = await userStore(botToken, 'charge_service', {
-            telegramId: initiatorTelegramId,
-            serviceId,
-            idempotencyKey: `joint-${invitationToken}`
-        });
-        charge = charged.charge;
-        if (!charge?.charge_id || charge.status === 'refunded' || charge.status === 'fulfilled') {
-            throw new Error('payment_retry_required');
+        access = await resolveReadingAccess(
+            botToken,
+            initiatorTelegramId,
+            policy,
+            'photo_compatibility',
+            payload
+        );
+        if (!access) {
+            const charged = await userStore(botToken, 'charge_service', {
+                telegramId: initiatorTelegramId,
+                serviceId,
+                idempotencyKey: `joint-${invitationToken}`
+            });
+            charge = charged.charge;
+            if (!charge?.charge_id || charge.status === 'refunded' || charge.status === 'fulfilled') {
+                throw new Error('payment_retry_required');
+            }
         }
         const messages = buildReadingMessages('photo_compatibility', payload);
         const schema = structuredSchemaForFeature('photo_compatibility');
@@ -413,7 +610,9 @@ async function autoCompleteJointInvitation(botToken, {
             invitationToken,
             result: generated.answer,
             resultPayload: generated.result || {},
-            chargeId: charge.charge_id
+            ...(charge?.charge_id
+                ? { chargeId: charge.charge_id }
+                : { accessSource: access.source, freeUsageKey: access.freeUsageKey })
         });
         await Promise.allSettled((completed.chats || []).map((chat) =>
             notifyInvitationChat(
@@ -432,6 +631,7 @@ async function autoCompleteJointInvitation(botToken, {
                 reason: 'automatic_invitation_delivery_error'
             }).catch(() => null);
         }
+        await releaseReadingAccess(botToken, initiatorTelegramId, access);
         if (claimed) {
             await releaseInvitation(botToken, initiatorTelegramId, { token: invitationToken }, error?.message || 'automatic_invitation_failed');
         }
@@ -457,14 +657,60 @@ export default async function handler(req, res) {
 
     const telegramId = auth.ok ? Number(auth.user.id) : null;
     const action = String(req.body?.action || '');
+    if (action === 'personal_analysis') {
+        if (!auth.ok) return sendJson(res, 401, { error: 'telegram_auth_required' });
+        if (!process.env.DEEPSEEK_API_KEY) {
+            return sendJson(res, 503, { error: 'assistant_unavailable' });
+        }
+        let event;
+        try {
+            event = normalizePersonalEvent(req.body?.event, { allowPast: true });
+            if (!event.eventId) throw new TypeError('event_id_required');
+        } catch {
+            return sendJson(res, 400, { error: 'invalid_personal_event' });
+        }
+        try {
+            const rateLimit = await enforceRateLimit(req, {
+                botToken,
+                telegramId,
+                scope: 'ai:personal-path',
+                limit: 12,
+                windowSeconds: 60 * 60,
+                persistent: true
+            });
+            setRateLimitHeaders(res, rateLimit);
+            if (!rateLimit.allowed) return sendJson(res, 429, { error: 'rate_limited' });
+            const history = await userStore(botToken, 'get_personal_space', { telegramId })
+                .catch(() => ({ events: [], goals: [], checkins: [] }));
+            const response = await requestDeepSeekChat({
+                messages: buildPersonalAnalysisMessages({
+                    event,
+                    name: auth.user.first_name || auth.user.username || 'Искатель',
+                    history
+                }),
+                temperature: 0.55,
+                maxTokens: 1100,
+                responseFormat: 'json_object'
+            });
+            return sendJson(res, 200, { ok: true, analysis: parsePersonalAnalysis(response.answer) });
+        } catch (error) {
+            if (error?.message === 'rate_limit_backend_failed') {
+                return sendJson(res, 503, { error: 'rate_limit_backend_failed' });
+            }
+            console.error('Personal path analysis failed:', {
+                status: error?.status || null,
+                code: error?.code || null,
+                requestId: error?.requestId || null,
+                type: error?.message === 'invalid_personal_analysis' ? 'invalid_response' : 'provider_error'
+            });
+            return sendJson(res, 502, { error: 'assistant_unavailable' });
+        }
+    }
     if (READING_STORE_ACTIONS.has(action)) {
         if (!auth.ok) return sendJson(res, 401, { error: 'telegram_auth_required' });
         try {
-            const data = await userStore(botToken, action, {
-                ...req.body,
-                action: undefined,
-                telegramId
-            });
+            const { action: _ignoredAction, ...payload } = req.body || {};
+            const data = await userStore(botToken, action, { ...payload, telegramId });
             return sendJson(res, 200, data);
         } catch (error) {
             console.error('Reading store action failed:', error?.message || error);
@@ -658,31 +904,35 @@ export default async function handler(req, res) {
         await releaseInvitation(botToken, telegramId, invitationContext, 'unsupported_feature');
         return sendJson(res, 400, { error: 'unsupported_feature' });
     }
-    if (provider === 'deepseek' && !process.env.DEEPSEEK_API_KEY) {
+    if (provider === 'deepseek' && !process.env.DEEPSEEK_API_KEY && !process.env.OPENAI_API_KEY) {
         await releaseInvitation(botToken, telegramId, invitationContext, 'deepseek_not_configured');
         return sendJson(res, 503, { error: 'deepseek_not_configured' });
     }
-    if (provider === 'openai' && !process.env.OPENAI_API_KEY) {
+    if (provider === 'openai' && !process.env.OPENAI_API_KEY && (vision || !process.env.DEEPSEEK_API_KEY)) {
         await releaseInvitation(botToken, telegramId, invitationContext, 'openai_not_configured');
         return sendJson(res, 503, { error: 'openai_not_configured' });
     }
 
     let charge = null;
+    let access = null;
     if (auth.ok && serviceId) {
         if (!idempotencyKey) {
             await releaseInvitation(botToken, telegramId, invitationContext, 'invalid_idempotency_key');
             return sendJson(res, 400, { error: 'invalid_idempotency_key' });
         }
         try {
-            const charged = await userStore(botToken, 'charge_service', {
-                telegramId,
-                serviceId,
-                idempotencyKey
-            });
-            charge = charged.charge;
-            if (!charge?.charge_id || charge.status === 'refunded' || charge.status === 'fulfilled') {
-                await releaseInvitation(botToken, telegramId, invitationContext, 'payment_retry_required');
-                return sendJson(res, 409, { error: 'payment_retry_required' });
+            access = await resolveReadingAccess(botToken, telegramId, policy, feature, requestPayload);
+            if (!access) {
+                const charged = await userStore(botToken, 'charge_service', {
+                    telegramId,
+                    serviceId,
+                    idempotencyKey
+                });
+                charge = charged.charge;
+                if (!charge?.charge_id || charge.status === 'refunded' || charge.status === 'fulfilled') {
+                    await releaseInvitation(botToken, telegramId, invitationContext, 'payment_retry_required');
+                    return sendJson(res, 409, { error: 'payment_retry_required' });
+                }
             }
         } catch (error) {
             const code = error?.message || 'payment_backend_failed';
@@ -697,6 +947,9 @@ export default async function handler(req, res) {
             if (['payments_disabled', 'service_disabled'].includes(code)) {
                 return sendJson(res, 403, { error: code });
             }
+            if (code === 'vip_required') {
+                return sendJson(res, 403, { error: code });
+            }
             if (code === 'service_price_not_configured') {
                 return sendJson(res, 503, { error: code });
             }
@@ -707,26 +960,18 @@ export default async function handler(req, res) {
 
     try {
         const schema = structuredSchemaForFeature(feature);
-        const generated = provider === 'deepseek'
-            ? { answer: (await requestDeepSeekChat({
-                messages,
-                temperature: 0.84,
-                maxTokens: 1400
-            })).answer, result: null }
-            : await requestOpenAI(
-                messages,
-                vision,
-                schema ? { ...schema, feature } : null
-            );
+        const generated = await generateReading({ provider, feature, messages, vision, schema });
         const answer = generated.answer;
         let completedInvitation = null;
-        if (invitationContext && charge?.charge_id) {
+        if (invitationContext && (charge?.charge_id || access)) {
             const completed = await userStore(botToken, 'complete_joint_invitation', {
                 telegramId,
                 invitationToken: invitationContext.token,
                 result: answer,
                 resultPayload: generated.result || {},
-                chargeId: charge.charge_id
+                ...(charge?.charge_id
+                    ? { chargeId: charge.charge_id }
+                    : { accessSource: access.source, freeUsageKey: access.freeUsageKey })
             });
             completedInvitation = completed.invitation;
             await Promise.allSettled((completed.chats || []).map((chat) =>
@@ -746,9 +991,9 @@ export default async function handler(req, res) {
         return sendJson(res, 200, {
             answer,
             ...(generated.result ? { result: generated.result } : {}),
-            ...(charge ? { payment: {
-                source: charge.payment_source,
-                amount: Number(charge.price_units || 0) / 100
+            ...(charge || access ? { payment: {
+                source: charge?.payment_source || access.source,
+                amount: charge ? Number(charge.price_units || 0) / 100 : 0
             } } : {}),
             ...(completedInvitation ? { invitation: completedInvitation } : {})
         });
@@ -763,13 +1008,14 @@ export default async function handler(req, res) {
                 console.error('Automatic service refund failed:', refundError?.message || refundError);
             });
         }
+        await releaseReadingAccess(botToken, telegramId, access);
         await releaseInvitation(botToken, telegramId, invitationContext, 'provider_or_delivery_error');
         return sendJson(res, 502, {
-            error: provider === 'deepseek'
-                ? 'deepseek_provider_unavailable'
-                : vision
-                    ? 'vision_provider_unavailable'
-                    : 'openai_provider_unavailable'
+            error: vision
+                ? 'vision_provider_unavailable'
+                : provider === 'deepseek'
+                    ? 'deepseek_provider_unavailable'
+                    : 'reading_provider_unavailable'
         });
     }
 }

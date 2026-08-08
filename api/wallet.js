@@ -22,7 +22,7 @@ async function userStore(botToken, action, payload = {}) {
       'Content-Type': 'application/json',
       'X-App-Bot-Token': botToken
     },
-    body: JSON.stringify({ action, ...payload }),
+    body: JSON.stringify({ ...payload, action }),
     signal: AbortSignal.timeout(15_000)
   });
   const data = await response.json().catch(() => ({}));
@@ -36,6 +36,71 @@ async function userStore(botToken, action, payload = {}) {
 
 function unitsToSilarum(value) {
   return Number(value || 0) / 100;
+}
+
+function serializeExternalPayment(entry = {}) {
+  return {
+    id: entry.id,
+    provider: entry.provider,
+    providerPaymentId: entry.provider_payment_id || entry.providerPaymentId || null,
+    silarum: unitsToSilarum(entry.silarum_units ?? entry.silarumUnits),
+    providerAmount: Number(entry.provider_amount ?? entry.providerAmount ?? 0),
+    providerCurrency: String(entry.provider_currency || entry.providerCurrency || ''),
+    reference: entry.payment_reference || entry.reference || '',
+    paymentUrl: entry.payment_url || entry.paymentUrl || null,
+    destination: String(entry.metadata?.destination || entry.destination || ''),
+    network: String(entry.metadata?.network || entry.network || ''),
+    status: String(entry.status || 'pending'),
+    paidAt: entry.paid_at || entry.paidAt || null,
+    expiresAt: entry.expires_at || entry.expiresAt || null,
+    createdAt: entry.created_at || entry.createdAt || null,
+    updatedAt: entry.updated_at || entry.updatedAt || null
+  };
+}
+
+function serializeVip(entry) {
+  if (!entry) return null;
+  return {
+    id: entry.id || null,
+    planId: entry.plan_id || entry.planId || null,
+    startsAt: entry.starts_at || entry.startsAt || null,
+    expiresAt: entry.expires_at || entry.expiresAt || null
+  };
+}
+
+function serializePaymentMethod(value = {}) {
+  return {
+    enabled: value?.enabled === true,
+    miniApp: value?.miniApp === true,
+    paymentUrl: String(value?.paymentUrl || ''),
+    destination: String(value?.destination || ''),
+    network: String(value?.network || '')
+  };
+}
+
+async function createStarsInvoiceLink(botToken, order) {
+  const amount = Math.round(Number(order?.provider_amount || 0));
+  if (!order?.id || !Number.isSafeInteger(amount) || amount <= 0) {
+    throw new Error('invalid_payment_order');
+  }
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/createInvoiceLink`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: 'SILARUM для Nastardamus',
+      description: `Пополнение на ${unitsToSilarum(order.silarum_units)} SILARUM`,
+      payload: `silarum:${order.id}`,
+      provider_token: '',
+      currency: 'XTR',
+      prices: [{ label: 'SILARUM', amount }]
+    }),
+    signal: AbortSignal.timeout(15_000)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok || typeof data.result !== 'string') {
+    throw new Error('telegram_invoice_unavailable');
+  }
+  return data.result;
 }
 
 function serialize(data) {
@@ -88,8 +153,11 @@ function serialize(data) {
       paidAt: entry.paid_at,
       expiresAt: entry.expires_at
     })),
+    externalPayments: (data.externalPayments || []).map(serializeExternalPayment),
+    vip: serializeVip(data.vip || data.config?.vip),
     config: {
       paymentsEnabled: data.config?.paymentsEnabled !== false,
+      everythingFree: data.config?.everythingFree === true,
       sbpTopupsEnabled: data.config?.sbpTopupsEnabled === true,
       sbpAutomatic: data.config?.sbpAutomatic === true,
       sbpMinimumSilarum: Number(data.config?.sbpMinimumSilarum ?? 10),
@@ -103,7 +171,27 @@ function serialize(data) {
       sbpInstructions: String(data.config?.sbpInstructions || ''),
       withdrawalsEnabled: data.config?.withdrawalsEnabled === true,
       withdrawalFee: Number(data.config?.withdrawalFee ?? 25),
-      minimumWithdrawal: Number(data.config?.minimumWithdrawal ?? 25)
+      minimumWithdrawal: Number(data.config?.minimumWithdrawal ?? 25),
+      paymentMethods: {
+        stars: serializePaymentMethod(data.config?.paymentMethods?.stars),
+        ton: serializePaymentMethod(data.config?.paymentMethods?.ton),
+        usdt: serializePaymentMethod(data.config?.paymentMethods?.usdt),
+        sbp: serializePaymentMethod(data.config?.paymentMethods?.sbp)
+      },
+      paymentRates: {
+        starsPerSilarum: Number(data.config?.paymentRates?.starsPerSilarum || 0),
+        tonPerSilarum: Number(data.config?.paymentRates?.tonPerSilarum || 0),
+        usdtPerSilarum: Number(data.config?.paymentRates?.usdtPerSilarum || 0)
+      },
+      vipPlans: (data.config?.vipPlans || []).filter((plan) => plan?.enabled !== false).map((plan) => ({
+        id: String(plan.id || ''),
+        title: String(plan.title || ''),
+        description: String(plan.description || ''),
+        durationDays: Number(plan.durationDays || 30),
+        price: Number(plan.price || 0),
+        includedReadings: Number(plan.includedReadings || 0),
+        displayOrder: Number(plan.displayOrder || 100)
+      }))
     }
   };
 }
@@ -139,8 +227,11 @@ export default async function handler(req, res) {
       withdrawals: [],
       entitlements: [],
       topups: [],
+      externalPayments: [],
+      vip: null,
       config: {
         paymentsEnabled: true,
+        everythingFree: false,
         sbpTopupsEnabled: false,
         sbpAutomatic: false,
         sbpMinimumSilarum: 10,
@@ -148,7 +239,10 @@ export default async function handler(req, res) {
         sbpRoublesPerSilarum: 0,
         withdrawalsEnabled: false,
         withdrawalFee: 25,
-        minimumWithdrawal: 25
+        minimumWithdrawal: 25,
+        paymentMethods: {},
+        paymentRates: {},
+        vipPlans: []
       }
     });
   }
@@ -162,15 +256,25 @@ export default async function handler(req, res) {
     }
 
     const action = String(req.body?.action || '');
-    if (!['request_withdrawal', 'create_sbp_topup', 'mark_sbp_topup_sent'].includes(action)) {
+    if (![
+      'request_withdrawal',
+      'create_sbp_topup',
+      'mark_sbp_topup_sent',
+      'create_external_payment_order',
+      'purchase_vip'
+    ].includes(action)) {
       return sendJson(res, 400, { error: 'unknown_action' });
     }
 
     const rateLimit = await enforceRateLimit(req, {
       botToken,
       telegramId: userId,
-      scope: action === 'request_withdrawal' ? 'wallet:withdrawal' : 'wallet:topup',
-      limit: action === 'request_withdrawal' ? 3 : 8,
+      scope: action === 'request_withdrawal'
+        ? 'wallet:withdrawal'
+        : action === 'purchase_vip'
+          ? 'wallet:vip'
+          : 'wallet:topup',
+      limit: action === 'request_withdrawal' ? 3 : action === 'purchase_vip' ? 5 : 8,
       windowSeconds: 60 * 60
     });
     setRateLimitHeaders(res, rateLimit);
@@ -185,6 +289,16 @@ export default async function handler(req, res) {
         return sendJson(res, 400, { error: 'invalid_order_id' });
       }
       result = await userStore(botToken, action, { telegramId: userId, orderId });
+    } else if (action === 'purchase_vip') {
+      const planId = String(req.body?.planId || '').trim().toLowerCase();
+      const idempotencyKey = normalizeIdempotencyKey(
+        getRequestHeader(req, 'x-idempotency-key') || req.body?.idempotencyKey
+      );
+      if (!/^[a-z0-9][a-z0-9_-]{1,47}$/.test(planId)) {
+        return sendJson(res, 400, { error: 'invalid_vip_plan' });
+      }
+      if (!idempotencyKey) return sendJson(res, 400, { error: 'invalid_idempotency_key' });
+      result = await userStore(botToken, action, { telegramId: userId, planId, idempotencyKey });
     } else {
       const amount = Number(req.body?.amount);
       const idempotencyKey = normalizeIdempotencyKey(
@@ -204,13 +318,34 @@ export default async function handler(req, res) {
       if (action === 'request_withdrawal') {
         payload.destination = String(req.body?.destination || '').trim();
       }
+      if (action === 'create_external_payment_order') {
+        const provider = String(req.body?.provider || '');
+        if (!['telegram_stars', 'ton', 'usdt'].includes(provider)) {
+          return sendJson(res, 400, { error: 'invalid_payment_provider' });
+        }
+        payload.provider = provider;
+      }
       result = await userStore(botToken, action, payload);
+      if (action === 'create_external_payment_order' && payload.provider === 'telegram_stars') {
+        const paymentUrl = await createStarsInvoiceLink(botToken, result.order);
+        const updated = await userStore(botToken, 'set_external_payment_url', {
+          telegramId: userId,
+          orderId: result.order.id,
+          paymentUrl
+        });
+        result.order = updated.order;
+      }
     }
     const refreshed = await userStore(botToken, 'get_wallet', { telegramId: userId });
+    const serialized = serialize(refreshed);
     return sendJson(res, 200, {
       ok: true,
-      ...(action === 'request_withdrawal' ? { withdrawal: result.withdrawal } : { order: result.order }),
-      ...serialize(refreshed)
+      ...(action === 'request_withdrawal'
+        ? { withdrawal: result.withdrawal }
+        : action === 'purchase_vip'
+          ? { subscription: serializeVip(result.subscription) }
+          : { order: action === 'create_external_payment_order' ? serializeExternalPayment(result.order) : result.order }),
+      ...serialized
     });
   } catch (error) {
     console.error('Wallet API failed:', error);
@@ -218,11 +353,14 @@ export default async function handler(req, res) {
     if ([
       'withdrawals_disabled', 'below_minimum', 'insufficient_funds', 'invalid_destination',
       'invalid_idempotency_key', 'invalid_order_id', 'payments_disabled', 'sbp_topups_disabled',
-      'below_topup_minimum', 'above_topup_maximum', 'topup_not_found', 'topup_not_pending', 'topup_expired'
+      'below_topup_minimum', 'above_topup_maximum', 'topup_not_found', 'topup_not_pending', 'topup_expired',
+      'invalid_payment_provider', 'payment_method_disabled', 'invalid_vip_plan', 'vip_plan_not_found'
     ].includes(code)) {
       return sendJson(res, error.status || 400, { error: code });
     }
-    if (code === 'sbp_not_configured') return sendJson(res, 503, { error: code });
+    if (['sbp_not_configured', 'payment_rate_not_configured', 'telegram_invoice_unavailable'].includes(code)) {
+      return sendJson(res, 503, { error: code });
+    }
     if (code === 'rate_limit_backend_failed') {
       return sendJson(res, 503, { error: code });
     }

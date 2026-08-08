@@ -87,7 +87,7 @@ async function edgeStore(botToken, action, payload = {}) {
       'Content-Type': 'application/json',
       'X-Admin-Bot-Token': botToken
     },
-    body: JSON.stringify({ action, ...payload }),
+    body: JSON.stringify({ ...payload, action }),
     signal: AbortSignal.timeout(12_000)
   });
   const data = await response.json().catch(() => ({}));
