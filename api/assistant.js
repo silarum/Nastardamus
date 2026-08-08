@@ -1,5 +1,11 @@
 import { runAgent } from '../lib/ai-runtime.js';
 import { parseEsoteriumResponse } from '../lib/esoterium.js';
+import {
+  buildDailyGreetingAgentMessage,
+  cleanDailyGreetingAnswer,
+  fallbackDailyGreeting,
+  normalizeDailyGreetingInput
+} from '../lib/daily-greeting.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 import {
   enforceRateLimit,
@@ -7,7 +13,7 @@ import {
   unauthenticatedPreviewAllowed
 } from '../lib/request-security.js';
 
-const PUBLIC_AGENTS = new Set(['support-guide', 'onboarding-guide']);
+const PUBLIC_AGENTS = new Set(['support-guide', 'onboarding-guide', 'daily-greeting']);
 
 function sendJson(res, status, body) {
   res.setHeader('Cache-Control', 'no-store');
@@ -43,20 +49,31 @@ export default async function handler(req, res) {
   const slug = String(req.body?.agent || 'support-guide');
   if (!PUBLIC_AGENTS.has(slug)) return sendJson(res, 403, { error: 'agent_not_public' });
 
-  const message = String(req.body?.message || '').trim().slice(0, 6000);
+  const greetingContext = slug === 'daily-greeting'
+    ? normalizeDailyGreetingInput(req.body?.context)
+    : null;
+  const greetingFallback = greetingContext ? fallbackDailyGreeting(greetingContext) : '';
+  const message = greetingContext
+    ? buildDailyGreetingAgentMessage(greetingContext)
+    : String(req.body?.message || '').trim().slice(0, 6000);
   if (!message) return sendJson(res, 400, { error: 'empty_message' });
 
   try {
     const rateLimit = await enforceRateLimit(req, {
       botToken,
       telegramId: auth.ok ? Number(auth.user.id) : null,
-      scope: 'ai:assistant',
-      limit: 40,
+      scope: greetingContext ? 'ai:daily-greeting' : 'ai:assistant',
+      limit: greetingContext ? 16 : 40,
       windowSeconds: 60 * 60,
       persistent: auth.ok
     });
     setRateLimitHeaders(res, rateLimit);
-    if (!rateLimit.allowed) return sendJson(res, 429, { error: 'rate_limited' });
+    if (!rateLimit.allowed) {
+      if (greetingContext) {
+        return sendJson(res, 200, { ok: true, answer: greetingFallback, source: 'fallback' });
+      }
+      return sendJson(res, 429, { error: 'rate_limited' });
+    }
 
     const result = await runAgent({
       botToken,
@@ -66,7 +83,20 @@ export default async function handler(req, res) {
     });
     const handoff = /\[HANDOFF\]/i.test(result.answer);
     const parsed = parseEsoteriumResponse(result.answer.replace(/\s*\[HANDOFF\]\s*/gi, ''));
-    const answer = parsed.answer;
+    const answer = greetingContext
+      ? cleanDailyGreetingAnswer(parsed.answer, greetingFallback)
+      : parsed.answer;
+    if (greetingContext) {
+      const locale = greetingContext.locale === 'ru' ? 'ru' : greetingContext.locale;
+      const includesName = answer.toLocaleLowerCase(locale)
+        .includes(greetingContext.userName.toLocaleLowerCase(locale));
+      return sendJson(res, 200, {
+        ok: true,
+        answer: includesName ? answer : greetingFallback,
+        source: includesName ? 'live' : 'fallback',
+        agent: result.agent
+      });
+    }
     return sendJson(res, 200, {
       ok: true,
       answer,
@@ -75,6 +105,14 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     console.error('Assistant request failed:', error, error?.causes || null);
+    if (greetingContext) {
+      return sendJson(res, 200, {
+        ok: true,
+        answer: greetingFallback,
+        source: 'fallback',
+        agent: 'daily-greeting'
+      });
+    }
     if (error?.message === 'rate_limit_backend_failed') {
       return sendJson(res, 503, { error: 'rate_limit_backend_failed' });
     }

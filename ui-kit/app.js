@@ -21,6 +21,10 @@ import {
   goalProgress, nextPersonalEvents, normalizePersonalEvent, normalizePersonalGoal,
   normalizePersonalTask, personalDateKey, personalGreeting, taskDueOn
 } from '../lib/personal-space.js';
+import {
+  DAILY_GREETING_PRACTICES, dailyGreetingDateKey, dailyGreetingDayPart,
+  fallbackDailyGreeting, selectDailyGreetingPractice
+} from '../lib/daily-greeting.js';
 
 let tg = null;
 let telegramConfigured = false;
@@ -34,11 +38,18 @@ const PROFILE_KEY = 'nastardamus-profile-v1';
 const PERSONAL_SPACE_KEY = 'nastardamus-personal-space-v1';
 const EXPERIENCE_SETTINGS_KEY = 'nastardamus-experience-settings-v1';
 const LANGUAGE_KEY = 'nastardamus-language-v1';
+const DAILY_GREETING_KEY = 'nastardamus-daily-greeting-v1';
 const TAROT_REVEAL_MS = 2300;
 const CURRENT_YEAR = new Date().getFullYear();
 const storedProfile = readJSON(PROFILE_KEY, {});
 const storedPersonalSpace = readJSON(PERSONAL_SPACE_KEY, {});
+const storedDailyGreeting = readJSON(DAILY_GREETING_KEY, {});
 const initialLocale = normalizeLocale(readJSON(LANGUAGE_KEY, 'ru'));
+const initialGreetingDate = dailyGreetingDateKey();
+const initialGreetingPractice = selectDailyGreetingPractice(
+  initialGreetingDate,
+  `${storedProfile.name || ''}:${storedProfile.gender || ''}`
+);
 applyDocumentLocale(initialLocale);
 
 const ZODIAC_SIGNS = {
@@ -209,6 +220,24 @@ const state = {
   initiationConsents: {
     personalization: storedProfile.consents?.personalization === true,
     privacy: storedProfile.consents?.privacy === true
+  },
+  dailyGreeting: {
+    date: initialGreetingDate,
+    dayPart: dailyGreetingDayPart(),
+    todayFirstLogin: storedDailyGreeting.lastSeenDate !== initialGreetingDate,
+    practiceId: initialGreetingPractice,
+    answer: fallbackDailyGreeting({
+      userName: storedProfile.name,
+      userGender: storedProfile.gender,
+      locale: initialLocale,
+      todayFirstLogin: storedDailyGreeting.lastSeenDate !== initialGreetingDate,
+      dayPart: dailyGreetingDayPart(),
+      practiceId: initialGreetingPractice,
+      date: initialGreetingDate
+    }),
+    status: 'fallback',
+    requestKey: '',
+    visitMarked: false
   },
   wallet: null,
   walletStatus: 'loading',
@@ -695,9 +724,13 @@ function setAppLocale(value) {
   state.locale = locale;
   applyDocumentLocale(locale);
   writeJSON(LANGUAGE_KEY, locale);
+  state.dailyGreeting.answer = fallbackDailyGreeting(dailyGreetingContext());
+  state.dailyGreeting.status = 'fallback';
+  state.dailyGreeting.requestKey = '';
   pulse();
   render();
   notify('Язык изменён');
+  loadDailyGreeting({ force: true });
 }
 
 function currentClockStyle() {
@@ -809,8 +842,134 @@ function loadingCard(message = 'Эзотериум соединяет знаки
 
 function welcomeScreen() {
   const step = Math.max(0, Math.min(9, Number(state.onboardingStep) || 0));
+  if (state.profile.completed && step === 0) return dailyGreetingScreen();
   if (step === 0) return initiationThresholdScreen();
   return shell([initiationStepScreen(step)], { tabs: false });
+}
+
+function dailyGreetingContext() {
+  return {
+    userName: firstName(),
+    userGender: state.userGender,
+    locale: state.locale,
+    todayFirstLogin: state.dailyGreeting.todayFirstLogin,
+    dayPart: state.dailyGreeting.dayPart,
+    practiceId: state.dailyGreeting.practiceId,
+    date: state.dailyGreeting.date
+  };
+}
+
+function markDailyGreetingVisit() {
+  if (state.dailyGreeting.visitMarked) return;
+  state.dailyGreeting.visitMarked = true;
+  writeJSON(DAILY_GREETING_KEY, {
+    lastSeenDate: state.dailyGreeting.date,
+    lastSeenAt: new Date().toISOString()
+  });
+}
+
+function dailyGreetingScreen() {
+  markDailyGreetingVisit();
+  const greeting = state.dailyGreeting;
+  const practice = DAILY_GREETING_PRACTICES[greeting.practiceId] || DAILY_GREETING_PRACTICES.tarot_day;
+  const top = h('header', { className: 'oracle-welcome__top' }, BrandLogo(), languagePicker({ compact: true }));
+  const firstVisit = greeting.todayFirstLogin === true;
+
+  return shell([
+    h('section', {
+      className: `oracle-daily-greeting ${firstVisit ? 'is-first' : 'is-return'}`,
+      attrs: { 'aria-label': 'Личное приветствие Эзотериума' }
+    },
+    top,
+    h('div', { className: 'oracle-daily-greeting__stage', attrs: { 'aria-hidden': 'true' } },
+      h('span', { className: 'oracle-daily-greeting__halo' }),
+      h('span', { className: 'oracle-daily-greeting__seal', text: '✦' })
+    ),
+    h('article', { className: 'oracle-daily-greeting__panel' },
+      h('p', {
+        className: 'oracle-welcome__eyebrow',
+        text: firstVisit ? 'ПЕРВЫЙ ЗНАК ДНЯ' : 'ВЫ СНОВА В КРУГЕ'
+      }),
+      h('p', {
+        className: `oracle-daily-greeting__speech${greeting.status === 'loading' ? ' is-listening' : ''}`,
+        attrs: { 'aria-live': 'polite' },
+        text: greeting.answer
+      }),
+      h('span', { className: 'oracle-daily-greeting__signature', text: 'Эзотериум' }),
+      h('div', { className: 'oracle-daily-greeting__actions' },
+        firstVisit ? MysticButton({
+          text: practice.cta[state.locale] || practice.cta.ru,
+          icon: 'sparkle',
+          variant: 'primary',
+          onClick: openDailyGreetingPractice
+        }) : null,
+        MysticButton({
+          text: firstVisit ? 'Войти без практики' : 'Продолжить',
+          icon: firstVisit ? 'compass' : 'sparkle',
+          variant: firstVisit ? 'outline' : 'primary',
+          onClick: finishWelcome
+        })
+      )
+    ))
+  ], { tabs: false });
+}
+
+function openDailyGreetingPractice() {
+  const practiceId = state.dailyGreeting.practiceId;
+  pulse('medium');
+  if (practiceId === 'tarot_day') {
+    selectTarotSpread('card-of-day');
+    return;
+  }
+  if (practiceId === 'resource') {
+    state.personalSpace.consultationStep = 0;
+    state.personalSpace.consultationResult = null;
+    navigate('space-consultation');
+    return;
+  }
+  if (practiceId === 'rune_flow') {
+    state.runeSpread = 'one';
+    state.runeCount = 1;
+    state.runeQuestion = '';
+    state.runeSelection = [];
+    state.runeResult = null;
+    state.runeView = 'spreads';
+    navigate('runes');
+    return;
+  }
+  navigate('horoscope');
+}
+
+async function loadDailyGreeting({ force = false } = {}) {
+  if (!state.profile.completed) return;
+  const context = dailyGreetingContext();
+  const requestKey = JSON.stringify(context);
+  if (!force && (state.dailyGreeting.status === 'loading' || state.dailyGreeting.requestKey === requestKey)) return;
+
+  state.dailyGreeting.answer = fallbackDailyGreeting(context);
+  state.dailyGreeting.requestKey = requestKey;
+  if (!tg?.initData) {
+    state.dailyGreeting.status = 'fallback';
+    if (state.screen === 'welcome') render();
+    return;
+  }
+
+  state.dailyGreeting.status = 'loading';
+  if (state.screen === 'welcome') render();
+  try {
+    const data = await api('/api/assistant', {
+      method: 'POST',
+      body: { agent: 'daily-greeting', context }
+    });
+    if (state.dailyGreeting.requestKey !== requestKey) return;
+    state.dailyGreeting.answer = String(data.answer || '').trim() || fallbackDailyGreeting(context);
+    state.dailyGreeting.status = data.source === 'live' ? 'ready' : 'fallback';
+  } catch {
+    if (state.dailyGreeting.requestKey !== requestKey) return;
+    state.dailyGreeting.answer = fallbackDailyGreeting(context);
+    state.dailyGreeting.status = 'fallback';
+  }
+  if (state.screen === 'welcome') render();
 }
 
 function initiationThresholdScreen() {
@@ -6958,6 +7117,7 @@ function loadTelegramData({ force = false } = {}) {
   loadPublicConfig();
   loadWallet({ force });
   loadPreferences();
+  loadDailyGreeting({ force });
   loadReadingCatalog();
   loadCloudReadings({ force });
   loadPersonalSpace({ force });
