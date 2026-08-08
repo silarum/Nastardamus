@@ -88,8 +88,9 @@ test('startup renders the branded elder splash without waiting for Telegram', ()
   assert.doesNotMatch(html, /setTimeout\(window\.hideNastardamusBoot/);
   assert.match(
     appSource,
-    /screen:\s*requestedScreen\s*\|\|\s*\(requestedInvitationToken\s*\?\s*'invitation'\s*:\s*\(storedProfile\.completed\s*\?\s*'home'\s*:\s*'welcome'\)\)/
+    /screen:\s*requestedScreen\s*\|\|\s*\(requestedInvitationToken\s*\?\s*'invitation'\s*:\s*'welcome'\)/
   );
+  assert.doesNotMatch(appSource, /state\.screen === 'welcome' && state\.profile\.completed/);
   assert.match(appSource, /function hideBootScreen\(\)/);
 });
 
