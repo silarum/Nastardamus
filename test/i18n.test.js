@@ -39,3 +39,10 @@ test('the compact profile cabinet is complete in all three languages', () => {
   assert.equal(translateText('Память, звук и графика', 'en'), 'Memory, sound and visuals');
   assert.equal(translateText('Выбрать фото', 'zh'), '选择图片');
 });
+
+test('daily greeting controls remain complete in English and Chinese', () => {
+  assert.equal(translateText('ПЕРВЫЙ ЗНАК ДНЯ', 'en'), 'FIRST SIGN OF THE DAY');
+  assert.equal(translateText('Войти без практики', 'en'), 'Enter without a practice');
+  assert.equal(translateText('ВЫ СНОВА В КРУГЕ', 'zh'), '你再次回到这里');
+  assert.equal(translateText('Открыть руну «Поток силы»', 'zh'), '开启「力量之流」');
+});

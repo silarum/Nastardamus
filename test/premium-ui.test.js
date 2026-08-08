@@ -74,10 +74,9 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
 
     const mount = document.getElementById('premium-app');
     assert.equal(mount.dataset.screen, 'welcome');
-    assert.ok(mount.textContent.includes('Я — Эзотериум'));
-    click(document, 'Узнать, что я умею');
-    assert.ok(mount.textContent.includes('Чем я могу быть вам полезен'));
-    click(document, 'Войти в Nastardamus');
+    assert.ok(mount.textContent.includes('ПЕРВЫЙ ЗНАК ДНЯ'));
+    assert.ok(mount.textContent.includes('мой проницательный Никита'));
+    click(document, 'Войти без практики');
     assert.equal(mount.dataset.screen, 'home');
     assert.equal(mount.querySelectorAll('.n-app-shell').length, 1);
     assert.equal(mount.querySelectorAll('.n-balance-card').length, 0, 'Balance must not be shown on the home screen');
@@ -339,7 +338,7 @@ test('bundled startup shows registration and enters the redesigned home', async 
   }
 });
 
-test('a returning user completes the Esoterium introduction before entering Nastardamus', async () => {
+test('a repeat visitor receives a short continuation instead of repeating the introduction', async () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const bundle = readFileSync(new URL('../ui-kit/app.bundle.js', import.meta.url), 'utf8');
   const dom = new JSDOM(html, {
@@ -350,23 +349,27 @@ test('a returning user completes the Esoterium introduction before entering Nast
 
   try {
     dom.window.localStorage.setItem('nastardamus-profile-v1', JSON.stringify({
+      name: 'Михаил',
+      gender: 'male',
       age: 37,
       city: 'Москва',
       completed: true
     }));
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    dom.window.localStorage.setItem('nastardamus-daily-greeting-v1', JSON.stringify({ lastSeenDate: today }));
     dom.window.scrollTo = () => {};
     dom.window.eval(bundle);
 
     const mount = dom.window.document.getElementById('premium-app');
     assert.equal(mount.dataset.screen, 'welcome');
-    assert.ok(mount.textContent.includes('Я — Эзотериум'));
+    assert.ok(mount.textContent.includes('ВЫ СНОВА В КРУГЕ'));
+    assert.ok(mount.textContent.includes('А ты снова здесь, Михаил'));
 
     await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
     assert.equal(mount.dataset.screen, 'welcome');
 
-    click(dom.window.document, 'Узнать, что я умею');
-    assert.ok(mount.textContent.includes('Чем я могу быть вам полезен'));
-    click(dom.window.document, 'Войти в Nastardamus');
+    click(dom.window.document, 'Продолжить');
     assert.equal(mount.dataset.screen, 'home');
   } finally {
     dom.window.close();

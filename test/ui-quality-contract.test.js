@@ -109,6 +109,10 @@ test('startup renders the branded elder splash without waiting for Telegram', ()
   );
   assert.match(appSource, /Я — Эзотериум/);
   assert.match(appSource, /Чем я могу быть вам полезен/);
+  assert.match(appSource, /function dailyGreetingScreen\(\)/);
+  assert.match(appSource, /todayFirstLogin/);
+  assert.match(appSource, /function openDailyGreetingPractice\(\)/);
+  assert.match(worlds, /\.oracle-daily-greeting__speech/);
   assert.doesNotMatch(appSource, /state\.screen === 'welcome' && state\.profile\.completed/);
   assert.match(appSource, /function hideBootScreen\(\)/);
 });
