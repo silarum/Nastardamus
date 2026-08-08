@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import {
   buildBotReply,
   buildMarketingKeyboard,
@@ -70,4 +71,31 @@ test('direct web entry is gated before the application bundle starts', () => {
   assert.match(gate, /WebApp\?\.initData/u);
   assert.match(gate, /Вход только через Telegram/u);
   assert.match(gate, /BelonTip_bot/u);
+});
+
+test('the obsolete GitHub Pages Telegram button redirects to the canonical app before assets load', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const redirect = readFileSync(new URL('../ui-kit/canonical-entry.js', import.meta.url), 'utf8');
+  assert.ok(html.indexOf('./ui-kit/canonical-entry.js') < html.indexOf('/images/splash-v2.webp'));
+
+  let redirectedTo = '';
+  let stopped = false;
+  const location = {
+    href: 'https://silarum.github.io/Nastardamus/?screen=tarot#reading',
+    replace(value) { redirectedTo = value; }
+  };
+  runInNewContext(redirect, {
+    URL,
+    window: {
+      location,
+      document: {
+        currentScript: { src: 'https://silarum.github.io/Nastardamus/ui-kit/canonical-entry.js' },
+        documentElement: { dataset: {} }
+      },
+      stop() { stopped = true; }
+    }
+  });
+
+  assert.equal(stopped, true);
+  assert.equal(redirectedTo, 'https://nastardamus.vercel.app/?screen=tarot#reading');
 });

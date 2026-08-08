@@ -124,7 +124,7 @@ const requestedInviteGoal = ['love', 'friendship', 'business', 'creative'].inclu
   ? params.get('invite')
   : 'love';
 const state = {
-  screen: requestedScreen || (requestedInvitationToken ? 'invitation' : (storedProfile.completed ? 'home' : 'welcome')),
+  screen: requestedScreen || (requestedInvitationToken ? 'invitation' : 'welcome'),
   wallet: null,
   walletStatus: 'loading',
   walletMessage: '',
@@ -525,6 +525,8 @@ function loadingCard(message = 'Эзотериум соединяет знаки
 }
 
 function welcomeScreen() {
+  const returning = state.profile.completed === true;
+  const firstName = String(tg?.initDataUnsafe?.user?.first_name || '').trim().slice(0, 40);
   const age = textInput({
     value: state.profile.age,
     type: 'number',
@@ -547,30 +549,54 @@ function welcomeScreen() {
         h('img', { attrs: { src: '/images/splash-v2.webp', alt: '' } }),
         h('div', { className: 'premium-onboarding__brand' },
           BrandLogo(),
-          h('p', { className: 'premium-kicker', text: 'ВАШ ЛИЧНЫЙ ПУТЬ' }),
-          h('h1', { text: 'Настроим Эзотериум под вас' }),
-          h('p', { text: 'Возраст и город помогают делать советы уместнее. Мы не используем их для рекламы.' })
+          h('p', { className: 'premium-kicker', text: returning ? 'ПРИВЕТСТВИЕ ЭЗОТЕРИУМА' : 'ВАШ ЛИЧНЫЙ ПУТЬ' }),
+          h('h1', { text: returning ? `${firstName ? `${firstName}, к` : 'К'}руг снова открыт` : 'Позвольте Эзотериуму узнать вас' }),
+          h('p', {
+            text: returning
+              ? 'Я сохранил нить нашего разговора. Прочтите приветствие и войдите лишь тогда, когда сами будете готовы.'
+              : 'Перед первым входом назовите возраст и город — так мои слова будут точнее и ближе к вашему ритму.'
+          })
         )
       ),
       MysticCard({ className: 'premium-onboarding__form', children: [
         h('div', { className: 'premium-onboarding__step' },
-          h('span', { text: '01' }),
-          h('div', {}, h('strong', { text: 'Немного о вас' }), h('small', { text: 'Займёт меньше минуты' }))
+          h('span', { text: returning ? '✦' : '01' }),
+          h('div', {},
+            h('strong', { text: returning ? 'Слово перед входом' : 'Немного о вас' }),
+            h('small', { text: returning ? 'Переход произойдёт только по вашему нажатию' : 'Займёт меньше минуты' })
+          )
         ),
-        field('Возраст', age, 'От 13 до 120 лет'),
-        field('Город', city, 'Для ритма дня и коротких советов'),
-        field('Знак зодиака', sign),
+        returning
+          ? h('p', {
+              className: 'premium-onboarding__greeting',
+              text: 'Добро пожаловать. Оставьте шум внешнего мира за порогом. Здесь нет случайных вопросов: каждый знак становится яснее, когда вы входите в круг осознанно.'
+            })
+          : [
+              field('Возраст', age, 'От 13 до 120 лет'),
+              field('Город', city, 'Для ритма дня и коротких советов'),
+              field('Знак зодиака', sign)
+            ],
         MysticButton({
-          text: state.busy ? 'Сохраняем профиль…' : 'Войти в Nastardamus',
+          text: state.busy ? 'Сохраняем профиль…' : returning ? 'Войти в круг' : 'Сохранить и войти в круг',
           icon: 'sparkle',
           variant: 'primary',
           disabled: state.busy,
-          onClick: saveOnboardingProfile
+          onClick: returning ? enterCircle : saveOnboardingProfile
         }),
-        h('small', { className: 'premium-onboarding__note', text: 'Толкования созданы для размышления и развлечения. Настройки можно изменить в профиле.' })
+        h('small', {
+          className: 'premium-onboarding__note',
+          text: returning
+            ? 'Без вашего нажатия приложение не откроется автоматически.'
+            : 'Настройки можно изменить позже в профиле.'
+        })
       ] })
     )
   ], { tabs: false });
+}
+
+function enterCircle() {
+  pulse('medium');
+  navigate('home', { replace: true });
 }
 
 async function saveOnboardingProfile() {
@@ -4372,17 +4398,11 @@ async function loadPreferences() {
       };
       writeJSON(HOROSCOPE_KEY, state.horoscope);
       writeJSON(PROFILE_KEY, { ...state.profile, gender: state.userGender });
-      if (state.screen === 'welcome' && state.profile.completed) {
-        state.screen = 'home';
-        const url = new URL(location.href);
-        url.searchParams.set('screen', 'home');
-        history.replaceState({}, '', url);
-      }
     }
   } catch {
     // Local preference remains available if the profile endpoint is temporarily unavailable.
   }
-  if (state.screen === 'profile' || state.screen === 'horoscope') render();
+  if (state.screen === 'welcome' || state.screen === 'profile' || state.screen === 'horoscope') render();
 }
 
 function genderPreferenceCard() {

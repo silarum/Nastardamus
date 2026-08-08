@@ -969,6 +969,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .premium-onboarding__step > span { width:36px; height:36px; border:1px solid var(--n-border-strong); border-radius:12px; display:grid; place-items:center; color:var(--n-gold-light); background:rgba(88,36,121,.4); font:600 13px/1 var(--n-title-font); }
 .premium-onboarding__step strong,.premium-onboarding__step small { display:block; }
 .premium-onboarding__step small,.premium-onboarding__note { color:var(--n-muted); font-size:10px; line-height:1.4; }
+.premium-onboarding__greeting { margin:0; padding:14px 15px; border:1px solid rgba(226,176,80,.22); border-radius:17px; background:rgba(14,9,25,.58); color:#e8dcec; font-size:13px; line-height:1.68; }
 
 .premium-avatar-button { overflow:hidden; }
 .premium-avatar-button img { width:100%; height:100%; object-fit:cover; border-radius:50%; }

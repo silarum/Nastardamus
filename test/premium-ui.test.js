@@ -246,7 +246,7 @@ test('bundled startup shows registration and enters the redesigned home', async 
     city.value = 'Казань';
     age.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
     city.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-    click(dom.window.document, 'Войти в Nastardamus');
+    click(dom.window.document, 'Сохранить и войти в круг');
     await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
     assert.equal(mount.dataset.screen, 'home');
     assert.equal(new URL(dom.window.location.href).searchParams.get('screen'), 'home');
@@ -256,6 +256,39 @@ test('bundled startup shows registration and enters the redesigned home', async 
 
     await new Promise((resolve) => dom.window.setTimeout(resolve, 300));
     assert.equal(dom.window.document.getElementById('boot-screen'), null);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test('a returning user stays on the Esoterium greeting until entering the circle', async () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const bundle = readFileSync(new URL('../ui-kit/app.bundle.js', import.meta.url), 'utf8');
+  const dom = new JSDOM(html, {
+    url: 'https://nastardamus.example/',
+    pretendToBeVisual: true,
+    runScripts: 'outside-only'
+  });
+
+  try {
+    dom.window.localStorage.setItem('nastardamus-profile-v1', JSON.stringify({
+      age: 37,
+      city: 'Москва',
+      completed: true
+    }));
+    dom.window.scrollTo = () => {};
+    dom.window.eval(bundle);
+
+    const mount = dom.window.document.getElementById('premium-app');
+    assert.equal(mount.dataset.screen, 'welcome');
+    assert.ok(mount.textContent.includes('ПРИВЕТСТВИЕ ЭЗОТЕРИУМА'));
+    assert.ok(mount.textContent.includes('Без вашего нажатия приложение не откроется автоматически'));
+
+    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    assert.equal(mount.dataset.screen, 'welcome');
+
+    click(dom.window.document, 'Войти в круг');
+    assert.equal(mount.dataset.screen, 'home');
   } finally {
     dom.window.close();
   }
