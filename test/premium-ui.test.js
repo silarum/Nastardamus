@@ -173,11 +173,43 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(mount.dataset.screen, 'profile');
     assert.ok(document.body.textContent.includes('Откройте приложение внутри Telegram'));
-    click(document, 'Женщина');
-    assert.equal(app.state.userGender, 'female');
-    assert.equal(JSON.parse(dom.window.localStorage.getItem('nastardamus-profile-v1')).gender, 'female');
-    assert.ok(document.body.textContent.includes('Фото профиля'));
-    assert.ok(document.body.textContent.includes('Загрузить своё'));
+    assert.equal(mount.querySelectorAll('.profile-command-grid > button').length, 4);
+    assert.equal(document.body.textContent.includes('Возраст'), false);
+    assert.equal(document.body.textContent.includes('Город'), false);
+    assert.equal(document.body.textContent.includes('Как к вам обращаться?'), false);
+    assert.equal(app.state.userGender, 'male');
+    app.state.walletStatus = 'ready';
+    app.state.wallet = {
+      wallet: { balance: 18.5, available: 16, locked: 2.5, freeSpins: 1 },
+      vip: { planId: 'vip-month', expiresAt: '2030-08-08T12:00:00.000Z' },
+      config: {
+        paymentMethods: { stars: { enabled: true } }, withdrawalsEnabled: true,
+        vipPlans: [{ id: 'vip-month', title: 'VIP на месяц', description: 'Полный круг практик', price: 33 }]
+      },
+      entitlements: [{ service_id: 'tarot', quantity: 2 }],
+      ledger: [
+        { type: 'purchase', amount: 10, createdAt: '2026-08-08T10:00:00.000Z' },
+        { type: 'service_charge', amount: -2, createdAt: '2026-08-08T09:00:00.000Z' },
+        { type: 'wheel_prize', amount: 1, createdAt: '2026-08-07T09:00:00.000Z' },
+        { type: 'adjustment', amount: 5, createdAt: '2026-08-06T09:00:00.000Z' }
+      ]
+    };
+    app.render();
+    assert.ok(document.body.textContent.includes('16,00'));
+    click(document, 'Все операции');
+    assert.equal(mount.querySelectorAll('.profile-ledger-full .profile-ledger-line').length, 4);
+    click(document, 'Закрыть');
+    click(document, 'Доступ');
+    assert.ok(document.body.textContent.includes('VIP АКТИВЕН'));
+    click(document, 'Дары');
+    assert.ok(document.body.textContent.includes('Доступно без списания'));
+    click(document, 'Среда');
+    assert.ok(document.body.textContent.includes('Образ профиля'));
+    click(document, 'Образ профиля');
+    assert.equal(mount.querySelectorAll('.profile-sheet[role="dialog"]').length, 1);
+    assert.ok(document.body.textContent.includes('Выбрать фото'));
+    click(document, 'Закрыть');
+    assert.equal(mount.querySelectorAll('.profile-sheet').length, 0);
 
     click(document, 'Главная');
     assert.equal(mount.dataset.screen, 'home');
