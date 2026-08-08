@@ -103,6 +103,16 @@ const DEFAULT_WHEEL_REWARDS = Object.freeze([
 
 const DEFAULT_SETTINGS = Object.freeze({
   paymentsEnabled: true,
+  everythingFree: false,
+  starsEnabled: true,
+  starsPerSilarum: 50,
+  paymentMethods: {
+    stars: { enabled: true, miniApp: true },
+    ton: { enabled: false, miniApp: false },
+    usdt: { enabled: false, miniApp: false },
+    sbp: { enabled: false, miniApp: false }
+  },
+  paymentRates: { starsPerSilarum: 50, tonPerSilarum: 0, usdtPerSilarum: 0 },
   sbpTopupsEnabled: false,
   sbpAutomationEnabled: true,
   sbpMinimumSilarum: 10,
@@ -276,8 +286,31 @@ function sanitizeWheelRewards(input) {
 function sanitizeSettings(input = {}) {
   const minimumTopup = clampNumber(input.sbpMinimumSilarum, 0.01, 1_000_000, 10);
   const maximumTopup = clampNumber(input.sbpMaximumSilarum, minimumTopup, 1_000_000, Math.max(1000, minimumTopup));
+  const starsEnabled = input.starsEnabled === undefined
+    ? input.paymentMethods?.stars?.enabled !== false
+    : input.starsEnabled === true;
+  const starsPerSilarum = clampNumber(
+    input.starsPerSilarum ?? input.paymentRates?.starsPerSilarum,
+    0.01,
+    1_000_000,
+    50
+  );
   return {
     paymentsEnabled: input.paymentsEnabled !== false,
+    everythingFree: input.everythingFree === true,
+    starsEnabled,
+    starsPerSilarum,
+    paymentMethods: {
+      stars: { enabled: starsEnabled, miniApp: true },
+      ton: { enabled: input.paymentMethods?.ton?.enabled === true, miniApp: false },
+      usdt: { enabled: input.paymentMethods?.usdt?.enabled === true, miniApp: false },
+      sbp: { enabled: input.sbpTopupsEnabled === true, miniApp: false }
+    },
+    paymentRates: {
+      starsPerSilarum,
+      tonPerSilarum: clampNumber(input.paymentRates?.tonPerSilarum, 0, 1_000_000, 0),
+      usdtPerSilarum: clampNumber(input.paymentRates?.usdtPerSilarum, 0, 1_000_000, 0)
+    },
     sbpTopupsEnabled: Boolean(input.sbpTopupsEnabled),
     sbpAutomationEnabled: input.sbpAutomationEnabled !== false,
     sbpMinimumSilarum: minimumTopup,
@@ -348,7 +381,7 @@ async function edgeStore(botToken, action, payload = {}) {
       'Content-Type': 'application/json',
       'X-Admin-Bot-Token': botToken
     },
-    body: JSON.stringify({ action, ...payload }),
+    body: JSON.stringify({ ...payload, action }),
     signal: AbortSignal.timeout(12_000)
   });
   const data = await response.json().catch(() => ({}));
@@ -431,6 +464,55 @@ async function creditAdminSelf({ adminId, amountUnits, idempotencyKey, note }, b
   })).credit;
 }
 
+async function resolveWalletTarget(target, botToken) {
+  const normalized = cleanText(target, 80).replace(/^@/, '');
+  if (/^\d{1,20}$/.test(normalized)) {
+    const telegramId = Number(normalized);
+    if (Number.isSafeInteger(telegramId) && telegramId > 0) {
+      return { telegramId, username: null, firstName: null };
+    }
+  }
+  if (!/^[A-Za-z0-9_]{3,64}$/.test(normalized)) return null;
+  const direct = await directSupabaseRequest(
+    `nastardamus_users?username=ilike.${encodeURIComponent(normalized)}`
+      + '&select=telegram_id,username,first_name&limit=1'
+  );
+  if (direct) {
+    const row = (await direct.json())?.[0];
+    return row ? {
+      telegramId: Number(row.telegram_id),
+      username: row.username || null,
+      firstName: row.first_name || null
+    } : null;
+  }
+  return (await edgeStore(botToken, 'resolve_wallet_target', { target: normalized })).user || null;
+}
+
+async function adjustUserWallet({ adminId, telegramId, amountUnits, idempotencyKey, note }, botToken) {
+  const direct = await directSupabaseRequest('rpc/nastardamus_admin_adjust_wallet', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation'
+    },
+    body: JSON.stringify({
+      p_admin_id: adminId,
+      p_telegram_id: telegramId,
+      p_amount_units: amountUnits,
+      p_idempotency_key: idempotencyKey,
+      p_note: note
+    })
+  });
+  if (direct) return await direct.json();
+  return (await edgeStore(botToken, 'adjust_user_wallet', {
+    adminId,
+    telegramId,
+    amountUnits,
+    idempotencyKey,
+    note
+  })).adjustment;
+}
+
 async function reviewPayment({ orderId, decision, adminId, note }, botToken) {
   const direct = await directSupabaseRequest('rpc/nastardamus_review_sbp_topup', {
     method: 'POST',
@@ -505,6 +587,71 @@ async function readControlProfile(userId, botToken, telegramUser) {
   return readAdminProfile({ userId, botToken, telegramUser });
 }
 
+function enhanceControlFile(control, source) {
+  let body = source;
+  if (control === 'page') {
+    body = body.replace(
+      '<label class="switch-row"><span><strong>Платные услуги включены</strong><small>Полный ответ выдаётся после списания цены услуги</small></span><input name="paymentsEnabled" type="checkbox" checked></label>',
+      '<label class="switch-row"><span><strong>Платные услуги включены</strong><small>Полный ответ выдаётся после списания цены услуги</small></span><input name="paymentsEnabled" type="checkbox" checked></label>\n'
+        + '<label class="switch-row"><span><strong>Всё бесплатно</strong><small>Глобальный режим: ответы выдаются без списания SILARUM, включая совместные чтения</small></span><input name="everythingFree" type="checkbox"></label>\n'
+        + '<label class="switch-row"><span><strong>Telegram Stars</strong><small>Безопасное пополнение SILARUM встроенным счётом Telegram</small></span><input name="starsEnabled" type="checkbox" checked></label>\n'
+        + '<label>Telegram Stars за 1 SILARUM<input name="starsPerSilarum" type="number" min="0.01" max="1000000" step="1" value="50"></label>'
+    );
+    const queueMarker = '<section class="card panel">\n          <div class="panel-head"><div><p class="eyebrow">Очередь</p><h2>Последние заявки</h2></div>';
+    body = body.replace(
+      queueMarker,
+      '<form id="wallet-adjust-form" class="card panel">\n'
+        + '          <div class="panel-head"><div><p class="eyebrow">Баланс пользователя</p><h2>Начислить или списать SILARUM</h2></div><span class="badge rose">Финансовый журнал</span></div>\n'
+        + '          <p class="panel-copy">Найдите пользователя по Telegram ID или @username. Положительная сумма начисляет, отрицательная списывает; повтор с тем же ключом не дублируется.</p>\n'
+        + '          <div class="two-cols">\n'
+        + '            <label>Telegram ID или @username<input name="target" maxlength="80" required placeholder="7018304698 или @username"></label>\n'
+        + '            <label>Изменение, SILARUM<input name="amount" type="number" min="-1000000" max="1000000" step="0.01" required placeholder="100 или -25"></label>\n'
+        + '          </div>\n'
+        + '          <label>Причина<input name="note" maxlength="300" required placeholder="Причина корректировки для аудита"></label>\n'
+        + '          <div class="form-actions"><button type="submit">Применить изменение</button></div>\n'
+        + '        </form>\n        '
+        + queueMarker
+    );
+  }
+  if (control === 'js') {
+    body = body.replace(
+      'async function loadTeam() {',
+      `const walletAdjustForm = document.getElementById('wallet-adjust-form');
+walletAdjustForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const amount = Number(walletAdjustForm.elements.amount.value);
+  const target = walletAdjustForm.elements.target.value.trim();
+  const operation = amount > 0 ? 'Начислить' : 'Списать';
+  if (!amount || !target) return notify('Укажите пользователя и ненулевую сумму');
+  if (!window.confirm(operation + ' ' + formatPaymentMoney(Math.abs(amount)) + ' SILARUM для ' + target + '?')) return;
+  const button = walletAdjustForm.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const result = await api('/api/admin', 'POST', {
+      paymentAction: 'adjust_user_wallet',
+      target,
+      amount,
+      note: walletAdjustForm.elements.note.value,
+      idempotencyKey: createActionKey('admin-adjust')
+    });
+    const user = result.user || {};
+    const label = user.username ? '@' + user.username : String(user.telegramId || target);
+    notify('Баланс ' + label + ' изменён на ' + formatPaymentMoney(amount) + ' SILARUM');
+    walletAdjustForm.reset();
+  } catch (error) {
+    const code = error.data?.error;
+    notify(code === 'wallet_user_not_found' ? 'Пользователь не найден' : code === 'insufficient_funds' ? 'Нельзя списать заблокированные средства' : 'Не удалось изменить баланс');
+  } finally {
+    button.disabled = false;
+  }
+});
+
+async function loadTeam() {`
+    );
+  }
+  return body;
+}
+
 async function handleControlRequest(req, res, botToken) {
   const control = String(req.query?.control || '');
 
@@ -552,7 +699,8 @@ async function handleControlRequest(req, res, botToken) {
       const profile = await readControlProfile(session.userId, botToken);
       if (hasAdminPanelAccess(profile)) {
         const file = CONTROL_FILES[control];
-        return sendControl(res, 200, file.body, file.contentType);
+        const body = enhanceControlFile(control, file.body);
+        return sendControl(res, 200, body, file.contentType);
       }
     } catch (error) {
       console.error('Protected control resource failed:', error);
@@ -583,7 +731,7 @@ export default async function handler(req, res) {
       services: {
         adminBot: Boolean(botToken),
         telegramSecret: Boolean(process.env.TELEGRAM_WEBHOOK_SECRET),
-        readings: Boolean(process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY),
+        readings: Boolean(process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY),
         webAppUrl: Boolean(process.env.WEB_APP_URL),
         persistence: await checkPersistence(botToken)
       }
@@ -642,7 +790,7 @@ export default async function handler(req, res) {
         canManageSettings: hasPermission(profile, 'settings.manage'),
         services: {
           bot: Boolean(botToken),
-          readings: Boolean(process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY),
+          readings: Boolean(process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY),
           webAppUrl: Boolean(process.env.WEB_APP_URL)
         },
         settings: current.settings
@@ -704,6 +852,45 @@ export default async function handler(req, res) {
       const credit = await creditAdminSelf({ adminId: userId, amountUnits, idempotencyKey, note }, botToken);
       await writeAudit(userId, 'admin_self_credited', { amountUnits, note }, botToken);
       return sendJson(res, 200, { ok: true, credit });
+    }
+
+    if (req.body?.paymentAction === 'adjust_user_wallet') {
+      if (!hasPermission(profile, 'finance.manage')) {
+        return sendJson(res, 403, { error: 'permission_denied' });
+      }
+      const amount = Number(req.body?.amount);
+      const amountUnits = Math.round(amount * 100);
+      const idempotencyKey = cleanText(req.body?.idempotencyKey, 128);
+      const note = cleanText(req.body?.note, 300);
+      if (
+        !Number.isFinite(amount)
+        || amount === 0
+        || Math.abs(amount) > 1_000_000
+        || !Number.isSafeInteger(amountUnits)
+        || amountUnits === 0
+        || Math.abs(amount * 100 - amountUnits) > 1e-7
+      ) {
+        return sendJson(res, 400, { error: 'invalid_amount' });
+      }
+      if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/.test(idempotencyKey)) {
+        return sendJson(res, 400, { error: 'invalid_idempotency_key' });
+      }
+      const user = await resolveWalletTarget(req.body?.target, botToken);
+      if (!user?.telegramId) return sendJson(res, 404, { error: 'wallet_user_not_found' });
+      const adjustment = await adjustUserWallet({
+        adminId: userId,
+        telegramId: user.telegramId,
+        amountUnits,
+        idempotencyKey,
+        note
+      }, botToken);
+      await writeAudit(userId, 'user_wallet_adjusted', {
+        targetTelegramId: user.telegramId,
+        amountUnits,
+        note,
+        idempotentReplay: adjustment?.idempotent_replay === true
+      }, botToken);
+      return sendJson(res, 200, { ok: true, user, adjustment });
     }
 
     if (!hasPermission(profile, 'settings.manage')) {

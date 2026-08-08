@@ -190,6 +190,7 @@ const state = {
     wheelDailySpins: 1,
     dailyHoroscopeEnabled: true,
     paymentsEnabled: true,
+    everythingFree: false,
     sbpTopupsEnabled: false,
     botUsername: 'BelonTip_bot'
   },
@@ -197,6 +198,7 @@ const state = {
   wheelPrize: null,
   wheelRotation: 0,
   topupAmount: '',
+  topupMethod: 'sbp',
   topupReturnScreen: 'services',
   userGender: normalizeGender(storedProfile.gender),
   profile: {
@@ -388,10 +390,12 @@ function formatMoney(value) {
 }
 
 function serviceConfig(id) {
-  return state.publicConfig.serviceCatalog?.[id] || { enabled: true, price: null };
+  const service = state.publicConfig.serviceCatalog?.[id] || { enabled: true, price: null };
+  return state.publicConfig.everythingFree === true ? { ...service, price: 0 } : service;
 }
 
 function serviceBadge(id, fallback = '') {
+  if (state.publicConfig.everythingFree === true) return 'Бесплатно';
   const price = serviceConfig(id).price;
   return price === null || price === undefined || price === ''
     ? fallback
@@ -404,6 +408,7 @@ function serviceEntitlement(id) {
 
 function confirmServicePayment(serviceId) {
   if (!tg?.initData) return true;
+  if (state.publicConfig.everythingFree === true) return true;
   const service = serviceConfig(serviceId);
   const gift = serviceEntitlement(serviceId);
   if (gift) {
@@ -542,7 +547,7 @@ function welcomeScreen() {
         h('img', { attrs: { src: '/images/splash-v2.webp', alt: '' } }),
         h('div', { className: 'premium-onboarding__brand' },
           BrandLogo(),
-          h('p', { className: 'premium-kicker', text: 'ВАШЕ ЛИЧНОЕ ПРОСТРАНСТВО' }),
+          h('p', { className: 'premium-kicker', text: 'ВАШ ЛИЧНЫЙ ПУТЬ' }),
           h('h1', { text: 'Настроим Эзотериум под вас' }),
           h('p', { text: 'Возраст и город помогают делать советы уместнее. Мы не используем их для рекламы.' })
         )
@@ -629,7 +634,7 @@ function persistPersonalSpace() {
 
 async function personalStore(action, payload = {}) {
   if (!tg?.initData) return { ok: true, local: true };
-  return api('/api/proxy', { method: 'POST', body: { action, ...payload } });
+  return api('/api/proxy', { method: 'POST', body: { ...payload, action } });
 }
 
 async function loadPersonalSpace({ force = false } = {}) {
@@ -763,7 +768,7 @@ function personalSpaceScreen() {
   const events = nextPersonalEvents(state.personalSpace.events);
   const goals = state.personalSpace.goals.filter((goal) => goal.status === 'active').slice(0, 4);
   return shell([
-    screenHeader('Личное пространство', 'События, цели и живой ритм дня', 'home'),
+    screenHeader('Мой путь', 'События, цели и живой ритм дня', 'home'),
     h('section', { className: 'personal-space-greeting' },
       h('p', { text: personalGreeting(firstName()) }),
       state.personalSpace.status === 'offline' ? h('small', { text: 'Офлайн-копия · данные синхронизируются позже' }) : null
@@ -815,11 +820,31 @@ function personalEventFormScreen() {
       field('Приоритет', selectField(PERSONAL_PRIORITIES, draft.priority, (value) => { draft.priority = value; })),
       h('label', { className: 'personal-check-row' }, reminder, h('span', { text: draft.time ? 'Напомнить перед событием' : 'Укажите время, чтобы включить напоминание' }))
     ] }),
-    MysticButton({ text: state.busy ? 'Сохраняем…' : 'Сохранить и проанализировать', icon: 'sparkle', variant: 'primary', disabled: state.busy, onClick: savePersonalEvent })
+    h('div', { className: 'personal-space-actions' },
+      MysticButton({ text: 'Сохранить', icon: 'history', variant: 'secondary', disabled: state.busy, onClick: () => savePersonalEvent({ askEsoterium: false }) }),
+      MysticButton({ text: state.busy ? 'Эзотериум отвечает…' : 'Сохранить и спросить Эзотериума', icon: 'sparkle', variant: 'primary', disabled: state.busy, onClick: () => savePersonalEvent({ askEsoterium: true }) })
+    )
   ], { active: 'home' });
 }
 
-async function savePersonalEvent() {
+async function analyzePersonalEventLive(event) {
+  if (!tg?.initData) {
+    return { analysis: analyzePersonalEvent(event), source: 'local' };
+  }
+  const data = await api('/api/proxy', { method: 'POST', body: { action: 'personal_analysis', event } });
+  return { analysis: data.analysis, source: 'esoterium' };
+}
+
+function storePersonalEventLocally(event) {
+  state.personalSpace.events = [
+    ...state.personalSpace.events.filter((item) => item.eventId !== event.eventId),
+    event
+  ];
+  state.personalSpace.selectedEventId = event.eventId;
+  persistPersonalSpace();
+}
+
+async function savePersonalEvent({ askEsoterium = false } = {}) {
   if (state.busy) return;
   let event;
   try {
@@ -829,39 +854,104 @@ async function savePersonalEvent() {
     return notify(messages[error.message] || 'Проверьте обязательные поля');
   }
   event.eventId ||= globalThis.crypto?.randomUUID?.() || `${Date.now()}00000000-0000-4000-8000-000000000000`.slice(-36);
-  event.analysis = analyzePersonalEvent(event);
   state.busy = true; render();
+  let analysisError = null;
   try {
-    const data = await personalStore('upsert_personal_event', { event });
-    const saved = data.event || event;
-    state.personalSpace.events = [...state.personalSpace.events.filter((item) => item.eventId !== saved.eventId), saved];
-    state.personalSpace.selectedEventId = saved.eventId;
+    if (askEsoterium) {
+      try {
+        const generated = await analyzePersonalEventLive(event);
+        event.analysis = generated.analysis;
+        event.enrichments = {
+          ...(event.enrichments || {}),
+          analysisSource: generated.source,
+          analyzedAt: new Date().toISOString()
+        };
+      } catch (error) {
+        analysisError = error;
+      }
+    }
+    storePersonalEventLocally(event);
+    try {
+      const data = await personalStore('upsert_personal_event', { event });
+      if (data.event) storePersonalEventLocally(data.event);
+    } catch {
+      notify('Событие сохранено на устройстве. Синхронизация повторится позже.');
+    }
     state.personalSpace.eventDraft = null;
-    persistPersonalSpace();
     navigate('space-event', { replace: true });
-  } catch (error) {
-    notify(apiErrorMessage(error));
+    if (analysisError) notify(apiErrorMessage(analysisError));
   } finally { state.busy = false; render(); }
 }
 
 function personalEventScreen() {
   const event = state.personalSpace.events.find((item) => item.eventId === state.personalSpace.selectedEventId);
   if (!event) return shell([screenHeader('Событие', '', 'space'), h('p', { className: 'personal-empty', text: 'Событие не найдено.' })], { active: 'home' });
-  const analysis = event.analysis || analyzePersonalEvent(event);
-  const parts = [
+  const analysis = event.analysis;
+  const parts = analysis ? [
     ['Энергия события', analysis.energy], ['Возможности', analysis.opportunities], ['Риски', analysis.risks],
     ['Рекомендация', analysis.recommendation], ['Вопрос Эзотериума', analysis.question]
-  ];
+  ] : [];
   return shell([
     screenHeader(event.title, `${formatPersonalDate(event.date)}${event.time ? ` · ${event.time}` : ''}`, 'space'),
     event.description ? MysticCard({ children: [h('p', { text: event.description })] }) : null,
-    h('section', { className: 'personal-analysis' }, parts.map(([title, copy], index) => MysticCard({ className: index === 4 ? 'personal-analysis__question' : '', children: [h('small', { text: `0${index + 1}` }), h('h3', { text: title }), h('p', { text: copy })] }))),
+    analysis
+      ? h('section', { className: 'personal-analysis' }, parts.map(([title, copy], index) => MysticCard({ className: index === 4 ? 'personal-analysis__question' : '', children: [h('small', { text: `0${index + 1}` }), h('h3', { text: title }), h('p', { text: copy })] })))
+      : MysticCard({ className: 'personal-analysis__empty', children: [
+          h('small', { className: 'premium-kicker', text: 'СОВЕТ НЕ ЗАПРАШИВАЛИ' }),
+          h('h3', { text: 'Событие уже сохранено' }),
+          h('p', { text: 'Можно оставить его в календаре или попросить Эзотериума связать детали события с вашим недавним путём.' })
+        ] }),
+    MysticButton({
+      text: state.busy ? 'Эзотериум отвечает…' : analysis ? 'Обновить совет Эзотериума' : 'Спросить Эзотериума',
+      icon: 'sparkle', variant: analysis ? 'secondary' : 'primary', disabled: state.busy,
+      onClick: () => requestPersonalEventAdvice(event)
+    }),
     h('div', { className: 'personal-space-actions' },
       MysticButton({ text: 'Изменить', icon: 'profile', variant: 'secondary', onClick: () => { state.personalSpace.eventDraft = { ...event }; navigate('space-event-form'); } }),
       MysticButton({ text: 'Завершить', icon: 'sparkle', variant: 'primary', onClick: () => updatePersonalEventStatus(event, 'completed') })
     ),
-    h('button', { className: 'personal-danger-link', attrs: { type: 'button' }, on: { click: () => updatePersonalEventStatus(event, 'archived') }, text: 'Удалить событие' })
+    h('button', { className: 'personal-danger-link', attrs: { type: 'button' }, on: { click: () => deletePersonalEvent(event) }, text: 'Удалить событие' })
   ], { active: 'home' });
+}
+
+async function requestPersonalEventAdvice(event) {
+  if (state.busy) return;
+  state.busy = true; render();
+  try {
+    const generated = await analyzePersonalEventLive(event);
+    const updated = {
+      ...event,
+      analysis: generated.analysis,
+      enrichments: {
+        ...(event.enrichments || {}),
+        analysisSource: generated.source,
+        analyzedAt: new Date().toISOString()
+      }
+    };
+    storePersonalEventLocally(updated);
+    try {
+      const data = await personalStore('upsert_personal_event', { event: updated });
+      if (data.event) storePersonalEventLocally(data.event);
+    } catch {
+      notify('Совет сохранён на устройстве. Синхронизация повторится позже.');
+    }
+    notify(generated.source === 'esoterium' ? 'Совет Эзотериума сохранён в «Моём пути»' : 'Сохранён локальный ориентир');
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  } finally { state.busy = false; render(); }
+}
+
+async function deletePersonalEvent(event) {
+  if (!window.confirm('Удалить это событие и сохранённый совет без возможности восстановления?')) return;
+  try {
+    await personalStore('delete_personal_item', { itemType: 'event', itemId: event.eventId });
+    state.personalSpace.events = state.personalSpace.events.filter((item) => item.eventId !== event.eventId);
+    persistPersonalSpace();
+    navigate('space', { replace: true });
+    notify('Событие удалено');
+  } catch (error) {
+    notify(apiErrorMessage(error));
+  }
 }
 
 async function updatePersonalEventStatus(event, status) {
@@ -980,7 +1070,7 @@ function personalSettingsScreen() {
     ] }),
     MysticCard({ children: [h('small', { className: 'premium-kicker', text: 'ВАШ ТАРИФ' }), h('h3', { text: String(state.personalSpace.settings.plan || 'free').toLocaleUpperCase('ru') }), h('p', { text: 'События, цели, задачи и локальная энергия дня доступны уже сейчас.' })] }),
     MysticButton({ text: 'Экспортировать мои данные', icon: 'history', variant: 'secondary', onClick: exportPersonalSpace }),
-    h('button', { className: 'personal-danger-link', attrs: { type: 'button' }, on: { click: clearPersonalSpace }, text: 'Удалить все данные личного пространства' }),
+    h('button', { className: 'personal-danger-link', attrs: { type: 'button' }, on: { click: clearPersonalSpace }, text: 'Удалить все данные «Моего пути»' }),
     h('p', { className: 'premium-info-note', text: 'После удаления серверные события, цели, задачи и ритуалы нельзя восстановить.' })
   ], { active: 'home' });
 }
@@ -1002,7 +1092,7 @@ async function clearPersonalSpace() {
   try {
     await personalStore('clear_personal_space');
     state.personalSpace.events = []; state.personalSpace.goals = []; state.personalSpace.tasks = []; state.personalSpace.checkins = [];
-    persistPersonalSpace(); navigate('space', { replace: true }); notify('Личное пространство очищено');
+    persistPersonalSpace(); navigate('space', { replace: true }); notify('«Мой путь» очищен');
   } catch (error) { notify(apiErrorMessage(error)); }
 }
 
@@ -1030,7 +1120,7 @@ function homeScreen() {
     h('span', { className: 'personal-space-entry__sigil', text: '✦' }),
     h('span', {},
       h('small', { text: 'НОВЫЙ ЦЕНТРАЛЬНЫЙ БЛОК' }),
-      h('strong', { text: 'Личное пространство Эзотериума' }),
+      h('strong', { text: 'Мой путь с Эзотериумом' }),
       h('span', { text: 'Энергия дня, события, цели и ваш живой ритм.' })
     ),
     h('b', { text: 'Открыть →' })),
@@ -3591,7 +3681,7 @@ function profileScreen() {
   const ledger = state.wallet?.ledger || [];
   const entitlements = state.wallet?.entitlements || [];
   return shell([
-    screenHeader('Профиль', 'Личное пространство и счёт', 'home'),
+    screenHeader('Профиль', 'Мой путь и лицевой счёт', 'home'),
     GreetingCard({
       username: firstName(),
       message: state.walletStatus === 'error' ? state.walletMessage : 'Ваш счёт и личные настройки',
@@ -3605,12 +3695,13 @@ function profileScreen() {
       MysticCard({ children: [h('small', { text: 'Заблокировано' }), h('strong', { text: formatMoney(wallet.locked) })] }),
       MysticCard({ children: [h('small', { text: 'Вращения' }), h('strong', { text: String(wallet.freeSpins || 0) })] })
     ),
+    vipProfileCard(),
     h('div', { className: 'premium-profile-actions' },
       MysticButton({
-        text: state.wallet?.config?.sbpTopupsEnabled ? 'Купить SILARUM по СБП' : 'Покупка SILARUM настраивается',
+        text: availableTopupMethods(state.wallet?.config).length ? 'Купить SILARUM' : 'Покупка SILARUM настраивается',
         icon: 'coin',
         variant: 'primary',
-        disabled: !state.wallet?.config?.sbpTopupsEnabled,
+        disabled: !availableTopupMethods(state.wallet?.config).length,
         onClick: () => navigate('topup')
       }),
       MysticButton({ text: state.horoscope.enabled ? 'Гороскоп приходит ежедневно' : 'Настроить ежедневный гороскоп', icon: 'orbit', variant: 'gold', onClick: () => navigate('horoscope') }),
@@ -3632,6 +3723,55 @@ function profileScreen() {
     SectionTitle({ text: 'Последние операции' }),
     ledger.length ? h('div', { className: 'premium-ledger' }, ledger.slice(0, 20).map(ledgerRow)) : MysticCard({ className: 'premium-empty-state premium-empty-state--small', children: [h('p', { text: 'Операций пока нет.' })] })
   ], { active: 'profile' });
+}
+
+function vipProfileCard() {
+  const vip = state.wallet?.vip;
+  const plans = state.wallet?.config?.vipPlans || [];
+  if (vip) {
+    return MysticCard({ className: 'premium-vip-card', children: [
+      h('small', { className: 'premium-kicker', text: 'VIP АКТИВЕН' }),
+      h('h3', { text: plans.find((plan) => plan.id === vip.planId)?.title || 'Пространство VIP' }),
+      h('p', { text: `Доступ действует до ${formatDate(vip.expiresAt)}.` })
+    ] });
+  }
+  if (!plans.length) return null;
+  return MysticCard({ className: 'premium-vip-card', children: [
+    h('small', { className: 'premium-kicker', text: 'ПРОСТРАНСТВО VIP' }),
+    h('h3', { text: 'Больше глубоких практик в одном доступе' }),
+    h('div', { className: 'premium-entitlements' }, plans.map((plan) => h('div', { className: 'premium-entitlement' },
+      h('span', {},
+        h('strong', { text: plan.title }),
+        h('small', { text: `${plan.description}${plan.includedReadings ? ` · ${plan.includedReadings} чтений` : ''}` })
+      ),
+      MysticButton({
+        text: `${formatMoney(plan.price)} S`, icon: 'sparkle', variant: 'gold',
+        disabled: state.busy, onClick: () => purchaseVip(plan)
+      })
+    )))
+  ] });
+}
+
+async function purchaseVip(plan) {
+  if (state.busy) return;
+  if (!window.confirm(`Подключить «${plan.title}» за ${formatMoney(plan.price)} SILARUM?`)) return;
+  state.busy = true; render();
+  try {
+    const data = await api('/api/wallet', {
+      method: 'POST',
+      body: { action: 'purchase_vip', planId: plan.id, idempotencyKey: uniqueId('vip') }
+    });
+    state.wallet = data;
+    state.walletStatus = 'ready';
+    notify(`VIP подключён до ${formatDate(data.vip?.expiresAt || data.subscription?.expiresAt)}`);
+  } catch (error) {
+    if (error?.message === 'insufficient_funds') {
+      state.topupAmount = String(Math.max(1, Number(plan.price || 0) - Number(state.wallet?.wallet?.available || 0)));
+      state.topupReturnScreen = 'profile';
+      navigate('topup');
+    }
+    notify(apiErrorMessage(error));
+  } finally { state.busy = false; render(); }
 }
 
 function profileIdentityCard() {
@@ -3753,35 +3893,64 @@ function topupStatusLabel(status, verificationState = 'manual') {
   })[status] || 'Создано';
 }
 
+function availableTopupMethods(config = {}) {
+  const methods = [];
+  if (config.sbpTopupsEnabled === true) methods.push({ id: 'sbp', provider: 'sbp', label: 'СБП' });
+  if (config.paymentMethods?.stars?.enabled === true) methods.push({ id: 'stars', provider: 'telegram_stars', label: 'Telegram Stars' });
+  return methods;
+}
+
+function externalProviderLabel(provider) {
+  return ({ telegram_stars: 'Telegram Stars', ton: 'TON', usdt: 'USDT' })[provider] || provider;
+}
+
 function topupScreen() {
   const config = state.wallet?.config || {};
+  const methods = availableTopupMethods(config);
+  if (!methods.some((method) => method.id === state.topupMethod)) state.topupMethod = methods[0]?.id || 'sbp';
+  const selectedMethod = methods.find((method) => method.id === state.topupMethod);
   const topups = state.wallet?.topups || [];
-  const activeOrder = topups.find((order) => ['pending', 'awaiting_confirmation'].includes(order.status));
-  const minimum = Number(config.sbpMinimumSilarum || 10);
-  const maximum = Number(config.sbpMaximumSilarum || 1000);
-  const rate = Number(config.sbpRoublesPerSilarum || 0);
+  const externalPayments = state.wallet?.externalPayments || [];
+  const activeOrder = selectedMethod?.id === 'sbp'
+    ? topups.find((order) => ['pending', 'awaiting_confirmation'].includes(order.status))
+    : externalPayments.find((order) => order.provider === selectedMethod?.provider && order.status === 'pending' && order.paymentUrl);
+  const minimum = selectedMethod?.id === 'sbp' ? Number(config.sbpMinimumSilarum || 10) : 1;
+  const maximum = selectedMethod?.id === 'sbp' ? Number(config.sbpMaximumSilarum || 1000) : 1_000_000;
+  const rate = selectedMethod?.id === 'sbp'
+    ? Number(config.sbpRoublesPerSilarum || 0)
+    : Number(config.paymentRates?.starsPerSilarum || 0);
   const amount = Number(state.topupAmount || minimum);
-  const rubles = Number.isFinite(amount) && amount > 0 ? amount * rate : 0;
+  const providerTotal = Number.isFinite(amount) && amount > 0 ? amount * rate : 0;
 
-  if (config.sbpTopupsEnabled !== true) {
+  if (!methods.length) {
     return shell([
-      screenHeader('Покупка SILARUM', 'Оплата по СБП', state.topupReturnScreen || 'profile'),
+      screenHeader('Покупка SILARUM', 'Доступные способы оплаты', state.topupReturnScreen || 'profile'),
       MysticCard({ className: 'premium-empty-state', children: [
         Icon('payment', { size: 44 }),
-        h('h2', { text: 'СБП пока не настроена' }),
-        h('p', { text: 'Администратору нужно включить покупки и указать курс, получателя, банк и реквизиты. До этого заявки не создаются.' })
+        h('h2', { text: 'Оплата пока не настроена' }),
+        h('p', { text: 'Администратору нужно включить хотя бы один способ оплаты и указать курс. До этого заявки не создаются.' })
       ] })
     ], { active: 'profile' });
   }
 
   return shell([
-    screenHeader('Купить SILARUM', 'Безопасная заявка на оплату по СБП', state.topupReturnScreen || 'profile'),
+    screenHeader('Купить SILARUM', `Оплата · ${selectedMethod?.label || ''}`, state.topupReturnScreen || 'profile'),
+    methods.length > 1 ? h('div', { className: 'premium-filter-row' }, methods.map((method) => h('button', {
+      className: `premium-filter-chip ${state.topupMethod === method.id ? 'is-active' : ''}`,
+      attrs: { type: 'button' },
+      on: { click: () => { state.topupMethod = method.id; render(); } },
+      text: method.label
+    }))) : null,
     MysticCard({ className: 'premium-wallet-summary', children: [
       h('small', { text: 'Ваш доступный баланс' }),
       h('strong', { text: `${formatMoney(state.wallet?.wallet?.available)} SILARUM` }),
-      h('p', { text: `От ${formatMoney(minimum)} до ${formatMoney(maximum)} SILARUM · 1 SILARUM = ${formatMoney(rate)} ₽` })
+      h('p', { text: selectedMethod?.id === 'sbp'
+        ? `От ${formatMoney(minimum)} до ${formatMoney(maximum)} SILARUM · 1 SILARUM = ${formatMoney(rate)} ₽`
+        : `1 SILARUM = ${formatMoney(rate)} Stars` })
     ] }),
-    activeOrder ? topupOrderCard(activeOrder, config) : MysticCard({ className: 'premium-form-card', children: [
+    activeOrder
+      ? selectedMethod?.id === 'sbp' ? topupOrderCard(activeOrder, config) : externalPaymentOrderCard(activeOrder)
+      : MysticCard({ className: 'premium-form-card', children: [
       field('Количество SILARUM', textInput({
         type: 'number',
         value: state.topupAmount || String(minimum),
@@ -3789,19 +3958,21 @@ function topupScreen() {
         onInput: (value) => { state.topupAmount = value; }
       })),
       h('div', { className: 'premium-topup-total' },
-        h('small', { text: 'К оплате по СБП' }),
-        h('strong', { text: `${formatMoney(rubles)} ₽` })
+        h('small', { text: `К оплате · ${selectedMethod?.label}` }),
+        h('strong', { text: `${formatMoney(providerTotal)} ${selectedMethod?.id === 'sbp' ? '₽' : 'Stars'}` })
       ),
       h('p', {
         className: 'premium-info-note',
-        text: config.sbpAutomatic
-          ? 'После оплаты статус сверится автоматически, и SILARUM появятся на счёте без ручного подтверждения.'
-          : 'Сначала создайте заявку. SILARUM зачислятся только после фактического поступления перевода и проверки.'
+        text: selectedMethod?.id === 'stars'
+          ? 'Telegram откроет системное окно Stars. SILARUM зачислятся только после подтверждённой оплаты.'
+          : config.sbpAutomatic
+            ? 'После оплаты статус сверится автоматически, и SILARUM появятся на счёте без ручного подтверждения.'
+            : 'Сначала создайте заявку. SILARUM зачислятся только после фактического поступления перевода и проверки.'
       })
     ] }),
     activeOrder
       ? MysticButton({ text: 'Обновить статус', icon: 'coin', variant: 'outline', onClick: () => loadWallet({ force: true }) })
-      : MysticButton({ text: state.busy ? 'Создаём заявку…' : 'Создать заявку СБП', icon: 'payment', variant: 'primary', disabled: state.busy, onClick: submitTopup }),
+      : MysticButton({ text: state.busy ? 'Создаём заявку…' : `Продолжить · ${selectedMethod?.label}`, icon: 'payment', variant: 'primary', disabled: state.busy, onClick: submitTopup }),
     topups.length ? SectionTitle({ text: 'Последние пополнения' }) : null,
     topups.length ? h('div', { className: 'premium-ledger' }, topups.slice(0, 5).map((order) =>
       MysticCard({ className: 'premium-ledger-row', children: [
@@ -3809,8 +3980,32 @@ function topupScreen() {
         h('span', {}, h('strong', { text: topupStatusLabel(order.status, order.verificationState) }), h('small', { text: `${order.reference} · ${formatDate(order.createdAt)}` })),
         h('b', { className: order.status === 'paid' ? 'is-positive' : '', text: `${formatMoney(order.silarum)} S` })
       ] })
+    )) : null,
+    externalPayments.length ? SectionTitle({ text: 'Оплаты через Telegram' }) : null,
+    externalPayments.length ? h('div', { className: 'premium-ledger' }, externalPayments.slice(0, 5).map((order) =>
+      MysticCard({ className: 'premium-ledger-row', children: [
+        Icon(order.status === 'paid' ? 'coin' : 'payment', { size: 24 }),
+        h('span', {}, h('strong', { text: topupStatusLabel(order.status) }), h('small', { text: `${externalProviderLabel(order.provider)} · ${order.reference}` })),
+        h('b', { className: order.status === 'paid' ? 'is-positive' : '', text: `${formatMoney(order.silarum)} S` })
+      ] })
     )) : null
   ], { active: 'profile' });
+}
+
+function externalPaymentOrderCard(order) {
+  return MysticCard({ className: 'premium-topup-order', children: [
+    h('p', { className: 'premium-kicker', text: topupStatusLabel(order.status).toUpperCase() }),
+    h('h2', { text: `${formatMoney(order.providerAmount)} ${order.providerCurrency}` }),
+    h('dl', { className: 'premium-payment-details' },
+      h('div', {}, h('dt', { text: 'Способ' }), h('dd', { text: externalProviderLabel(order.provider) })),
+      h('div', {}, h('dt', { text: 'Код заявки' }), h('dd', { text: order.reference })),
+      h('div', {}, h('dt', { text: 'Будет зачислено' }), h('dd', { text: `${formatMoney(order.silarum)} SILARUM` }))
+    ),
+    order.paymentUrl ? MysticButton({
+      text: 'Открыть оплату в Telegram', icon: 'payment', variant: 'gold',
+      onClick: () => tg?.openInvoice ? tg.openInvoice(order.paymentUrl, () => loadWallet({ force: true })) : tg?.openLink ? tg.openLink(order.paymentUrl) : window.open(order.paymentUrl, '_blank', 'noopener')
+    }) : null
+  ] });
 }
 
 function topupOrderCard(order, config) {
@@ -3852,18 +4047,22 @@ function topupOrderCard(order, config) {
 }
 
 async function submitTopup() {
-  const amount = Number(state.topupAmount || state.wallet?.config?.sbpMinimumSilarum);
+  const amount = Number(state.topupAmount || (state.topupMethod === 'sbp' ? state.wallet?.config?.sbpMinimumSilarum : 1));
   state.busy = true; render();
   try {
     const data = await api('/api/wallet', {
       method: 'POST',
-      body: { action: 'create_sbp_topup', amount, idempotencyKey: uniqueId('topup') }
+      body: state.topupMethod === 'stars'
+        ? { action: 'create_external_payment_order', provider: 'telegram_stars', amount, idempotencyKey: uniqueId('stars') }
+        : { action: 'create_sbp_topup', amount, idempotencyKey: uniqueId('topup') }
     });
     state.wallet = data;
     state.walletStatus = 'ready';
-    notify(data.order?.paymentUrl || data.order?.confirmation_url
-      ? 'Заявка создана. Откройте оплату СБП.'
-      : 'Заявка создана. Переведите точную сумму по реквизитам.');
+    notify(state.topupMethod === 'stars'
+      ? 'Счёт Stars создан. Откройте системное окно оплаты.'
+      : data.order?.paymentUrl || data.order?.confirmation_url
+        ? 'Заявка создана. Откройте оплату СБП.'
+        : 'Заявка создана. Переведите точную сумму по реквизитам.');
   } catch (error) {
     notify(apiErrorMessage(error));
   } finally {
@@ -4024,7 +4223,10 @@ function apiErrorMessage(error) {
   const messages = {
     service_not_configured: 'Сервис ответов ещё не настроен.',
     assistant_unavailable: 'Помощник временно недоступен.',
+    deepseek_not_configured: 'Текстовые ответы Эзотериума временно не настроены.',
+    openai_not_configured: 'Фото-чтение Эзотериума временно не настроено.',
     deepseek_provider_unavailable: 'Эзотериум временно не отвечает. Попробуйте немного позже.',
+    openai_provider_unavailable: 'Эзотериум временно не отвечает. Попробуйте немного позже.',
     vision_provider_unavailable: 'Фото-чтение временно недоступно.',
     reading_provider_unavailable: 'Толкование временно недоступно.',
     photo_consent_required: 'Подтвердите согласие на обработку фотографии.',
@@ -4052,6 +4254,13 @@ function apiErrorMessage(error) {
     payment_retry_required: 'Повторите оплату новым запросом.',
     sbp_topups_disabled: 'Пополнение по СБП сейчас закрыто.',
     sbp_not_configured: 'Реквизиты СБП ещё не настроены.',
+    payment_method_disabled: 'Этот способ оплаты сейчас отключён.',
+    payment_rate_not_configured: 'Курс для этого способа оплаты ещё не настроен.',
+    telegram_invoice_unavailable: 'Не удалось открыть счёт Telegram Stars. Попробуйте немного позже.',
+    invalid_payment_provider: 'Выберите доступный способ оплаты.',
+    invalid_vip_plan: 'Выберите доступный тариф VIP.',
+    vip_plan_not_found: 'Этот тариф VIP больше недоступен.',
+    vip_required: 'Для этого чтения нужен активный VIP.',
     below_topup_minimum: 'Сумма ниже минимального порога СБП.',
     above_topup_maximum: 'Сумма выше максимального порога СБП.',
     topup_not_found: 'Заявка на пополнение не найдена.',
@@ -4070,7 +4279,7 @@ function apiErrorMessage(error) {
     invitation_image_unavailable: 'Фото участника временно недоступно. Попробуйте открыть приглашение снова.',
     invitation_processing_not_found: 'Состояние приглашения изменилось. Обновите страницу.'
   };
-  return messages[error?.message] || 'Не удалось выполнить действие. Проверьте соединение и повторите.';
+  return messages[error?.message] || 'Не удалось выполнить действие. Повторите попытку немного позже.';
 }
 
 async function loadWallet({ force = false } = {}) {
@@ -4123,7 +4332,13 @@ async function loadReadingCatalog() {
         positions: Array.isArray(spread.positions) ? spread.positions : current.positions || [],
         category: spread.category || current.category || 'insight',
         serviceId: spread.service_id || current.serviceId || 'tarot',
-        access: ['only', 'vip_only'].includes(spread.vip_access) ? 'VIP' : Number(spread.price_units || 0) > 0 ? 'SILARUM' : 'Доступно',
+        access: state.publicConfig.everythingFree === true
+          ? 'Бесплатно'
+          : ['only', 'vip_only'].includes(spread.vip_access)
+            ? 'VIP'
+            : Number(spread.free_checks || 0) > 0
+              ? `${Number(spread.free_checks)} бесплатно`
+              : Number(spread.price_units || 0) > 0 ? 'SILARUM' : 'Доступно',
         cover: current.cover || 'high-priestess.webp'
       };
     }

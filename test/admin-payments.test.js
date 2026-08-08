@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import adminHandler from '../api/admin.js';
@@ -142,4 +143,91 @@ test('admin self-credit rejects fractions smaller than one hundredth', async () 
     global.fetch = previousFetch;
     restore();
   }
+});
+
+test('owner can debit a user resolved by Telegram username with an audited idempotent adjustment', async () => {
+  const ownerId = 880072800003;
+  const targetId = 990070010003;
+  const botToken = 'telegram-admin-adjustment-test-token';
+  const restore = preserveEnvironment([
+    'BOT_TOKEN',
+    'ADMIN_BOT_TOKEN',
+    'ADMIN_TELEGRAM_IDS',
+    'SUPABASE_URL',
+    'SUPABASE_SERVICE_ROLE_KEY'
+  ]);
+  const previousFetch = global.fetch;
+  const calls = [];
+
+  process.env.BOT_TOKEN = botToken;
+  delete process.env.ADMIN_BOT_TOKEN;
+  process.env.ADMIN_TELEGRAM_IDS = String(ownerId);
+  process.env.SUPABASE_URL = 'https://project.supabase.co';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-adjustment-key';
+  global.fetch = async (url, options) => {
+    calls.push({ url: String(url), body: options.body ? JSON.parse(options.body) : null });
+    if (String(url).includes('/nastardamus_users?username=ilike.test_user')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [{ telegram_id: targetId, username: 'test_user', first_name: 'Ирина' }]
+      };
+    }
+    if (String(url).includes('/rpc/nastardamus_admin_adjust_wallet')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          telegram_id: targetId,
+          amount_units: -2550,
+          balance_units: 7450,
+          idempotent_replay: false
+        })
+      };
+    }
+    if (String(url).includes('/nastardamus_admin_audit')) {
+      return { ok: true, status: 201, json: async () => ({}) };
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+
+  try {
+    const response = createResponse();
+    await adminHandler({
+      method: 'POST',
+      headers: { 'x-telegram-init-data': signedInitData(botToken, ownerId) },
+      body: {
+        paymentAction: 'adjust_user_wallet',
+        target: '@test_user',
+        amount: -25.5,
+        idempotencyKey: 'admin-adjust-20260808-0001',
+        note: 'Исправление ошибочного начисления'
+      }
+    }, response);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.user.telegramId, targetId);
+    assert.equal(response.body.adjustment.amount_units, -2550);
+    const adjustmentCall = calls.find(({ url }) => url.includes('/rpc/nastardamus_admin_adjust_wallet'));
+    assert.equal(adjustmentCall.body.p_admin_id, ownerId);
+    assert.equal(adjustmentCall.body.p_telegram_id, targetId);
+    assert.equal(adjustmentCall.body.p_amount_units, -2550);
+    assert.equal(adjustmentCall.body.p_idempotency_key, 'admin-adjust-20260808-0001');
+    assert.ok(calls.some(({ url }) => url.includes('/nastardamus_admin_audit')));
+  } finally {
+    global.fetch = previousFetch;
+    restore();
+  }
+});
+
+test('admin wallet adjustment migration protects the ledger mutation', () => {
+  const sql = readFileSync(
+    new URL('../supabase/migrations/20260808123000_add_admin_wallet_adjustment.sql', import.meta.url),
+    'utf8'
+  );
+  assert.match(sql, /pg_advisory_xact_lock/);
+  assert.match(sql, /admin-adjust:/);
+  assert.match(sql, /balance_units \+ p_amount_units/);
+  assert.match(sql, /revoke all[\s\S]*from public, anon, authenticated/);
+  assert.match(sql, /grant execute[\s\S]*to service_role/);
 });

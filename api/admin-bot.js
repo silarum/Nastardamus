@@ -42,6 +42,24 @@ async function claimTelegramUpdate(botToken, updateId) {
   return data.claimed === true;
 }
 
+async function releaseTelegramUpdate(botToken, updateId) {
+  const response = await fetch(ADMIN_STORE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Admin-Bot-Token': botToken
+    },
+    body: JSON.stringify({
+      action: 'release_telegram_update',
+      botScope: 'admin',
+      updateId
+    }),
+    signal: AbortSignal.timeout(10_000)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok) throw new Error(data.error || `update_store_${response.status}`);
+}
+
 function adminPanelUrl() {
   const base = process.env.WEB_APP_URL || 'https://nastardamus.vercel.app';
   return new URL('/admin/', base).toString();
@@ -147,11 +165,13 @@ export default async function handler(req, res) {
     return sendJson(res, 401, { error: 'invalid_webhook_secret' });
   }
 
+  let claimedUpdateId = null;
   try {
     const updateId = Number(req.body?.update_id);
     if (Number.isSafeInteger(updateId)) {
       const claimed = await claimTelegramUpdate(botToken, updateId);
       if (!claimed) return sendJson(res, 200, { ok: true, duplicate: true });
+      claimedUpdateId = updateId;
     }
 
     if (req.body?.callback_query?.id) {
@@ -175,6 +195,11 @@ export default async function handler(req, res) {
     return sendJson(res, 200, { ok: true });
   } catch (error) {
     console.error('Admin bot webhook failed:', error);
+    if (claimedUpdateId !== null) {
+      await releaseTelegramUpdate(botToken, claimedUpdateId).catch((releaseError) => {
+        console.error('Admin Telegram update release failed:', releaseError?.message || releaseError);
+      });
+    }
     return sendJson(res, 502, { error: 'telegram_request_failed' });
   }
 }

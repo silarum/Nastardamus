@@ -20,7 +20,7 @@ async function userStore(botToken, action, payload = {}) {
   const response = await fetch(USER_STORE_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-App-Bot-Token': botToken },
-    body: JSON.stringify({ action, ...payload }),
+    body: JSON.stringify({ ...payload, action }),
     signal: AbortSignal.timeout(12_000)
   });
   const data = await response.json().catch(() => ({}));

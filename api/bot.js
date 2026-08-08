@@ -43,7 +43,7 @@ async function edgeStore(botToken, action, payload = {}) {
             'Content-Type': 'application/json',
             'X-Admin-Bot-Token': botToken
         },
-        body: JSON.stringify({ action, ...payload }),
+        body: JSON.stringify({ ...payload, action }),
         signal: AbortSignal.timeout(12_000)
     });
     const data = await response.json().catch(() => ({}));
@@ -68,6 +68,32 @@ async function claimTelegramUpdate(botToken, updateId) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.ok) throw new Error(data.error || `update_store_${response.status}`);
     return data.claimed === true;
+}
+
+async function userStore(botToken, action, payload = {}) {
+    const response = await fetch(USER_STORE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-App-Bot-Token': botToken },
+        body: JSON.stringify({ ...payload, action }),
+        signal: AbortSignal.timeout(12_000)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) throw new Error(data.error || `user_store_${response.status}`);
+    return data;
+}
+
+async function releaseTelegramUpdate(botToken, updateId) {
+    if (!Number.isSafeInteger(updateId)) return;
+    await userStore(botToken, 'release_telegram_update', {
+        botScope: 'app',
+        updateId
+    });
+}
+
+function paymentOrderId(payload) {
+    const match = /^silarum:([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/iu
+        .exec(String(payload || ''));
+    return match?.[1] || '';
 }
 
 async function registerUser(botToken, message) {
@@ -202,7 +228,7 @@ export default async function handler(req, res) {
                 await callTelegram(botToken, 'setWebhook', {
                     url: webhookUrl,
                     secret_token: webhookSecret,
-                    allowed_updates: ['message', 'callback_query'],
+                    allowed_updates: ['message', 'callback_query', 'pre_checkout_query'],
                     drop_pending_updates: false
                 });
                 await callTelegram(botToken, 'setChatMenuButton', {
@@ -267,11 +293,39 @@ export default async function handler(req, res) {
     if (receivedSecret !== webhookSecret) return sendJson(res, 401, { error: 'invalid_webhook_secret' });
     if (!req.body || typeof req.body !== 'object') return sendJson(res, 400, { error: 'invalid_update' });
 
+    let claimedUpdateId = null;
     try {
         const updateId = Number(req.body.update_id);
         if (Number.isSafeInteger(updateId)) {
             const claimed = await claimTelegramUpdate(botToken, updateId);
             if (!claimed) return sendJson(res, 200, { ok: true, duplicate: true });
+            claimedUpdateId = updateId;
+        }
+
+        const checkout = req.body.pre_checkout_query;
+        if (checkout?.id) {
+            const orderId = paymentOrderId(checkout.invoice_payload);
+            try {
+                if (!orderId) throw new Error('invalid_payment_checkout');
+                await userStore(botToken, 'verify_external_payment', {
+                    orderId,
+                    telegramId: Number(checkout.from?.id),
+                    totalAmount: Number(checkout.total_amount),
+                    currency: String(checkout.currency || '')
+                });
+                await callTelegram(botToken, 'answerPreCheckoutQuery', {
+                    pre_checkout_query_id: checkout.id,
+                    ok: true
+                });
+            } catch (error) {
+                console.error('Telegram Stars checkout rejected:', error?.message || error);
+                await callTelegram(botToken, 'answerPreCheckoutQuery', {
+                    pre_checkout_query_id: checkout.id,
+                    ok: false,
+                    error_message: 'Не удалось подтвердить сумму. Вернитесь в Nastardamus и создайте новую заявку.'
+                });
+            }
+            return sendJson(res, 200, { ok: true });
         }
 
         const callback = req.body.callback_query;
@@ -289,6 +343,33 @@ export default async function handler(req, res) {
         }
 
         const message = req.body.message;
+        const payment = message?.successful_payment;
+        if (payment) {
+            const orderId = paymentOrderId(payment.invoice_payload);
+            if (!orderId) throw new Error('invalid_payment_confirmation');
+            const completed = await userStore(botToken, 'complete_external_payment', {
+                orderId,
+                providerPaymentId: String(payment.telegram_payment_charge_id || ''),
+                providerPayload: {
+                    telegramId: Number(message.from?.id),
+                    currency: String(payment.currency || ''),
+                    totalAmount: Number(payment.total_amount),
+                    providerChargeId: String(payment.provider_payment_charge_id || '')
+                }
+            });
+            const credited = Number(completed.payment?.silarum_units || 0) / 100;
+            await callTelegram(botToken, 'sendMessage', {
+                chat_id: message.chat.id,
+                text: `✦ Оплата получена. На счёт зачислено ${credited} SILARUM.`,
+                reply_markup: {
+                    inline_keyboard: [[{
+                        text: 'Открыть Nastardamus',
+                        web_app: { url: process.env.WEB_APP_URL || 'https://nastardamus.vercel.app' }
+                    }]]
+                }
+            });
+            return sendJson(res, 200, { ok: true });
+        }
         if (!message?.text || !message.chat?.id) return sendJson(res, 200, { ok: true });
         if (/^\/start(?:@\w+)?(?:\s|$)/u.test(message.text)) {
             const webAppUrl = process.env.WEB_APP_URL || 'https://nastardamus.vercel.app';
@@ -323,6 +404,11 @@ export default async function handler(req, res) {
         return sendJson(res, 200, { ok: true });
     } catch (error) {
         console.error('Telegram webhook failed:', error);
+        if (claimedUpdateId !== null) {
+            await releaseTelegramUpdate(botToken, claimedUpdateId).catch((releaseError) => {
+                console.error('Telegram update release failed:', releaseError?.message || releaseError);
+            });
+        }
         return sendJson(res, 502, { error: 'telegram_request_failed' });
     }
 }

@@ -161,6 +161,205 @@ test('provider failure automatically refunds a successful service charge', async
   }
 });
 
+test('global free mode reveals a reading without creating a service charge', async () => {
+  const botToken = 'telegram-global-free-test-token';
+  const previousFetch = global.fetch;
+  const previous = {
+    BOT_TOKEN: process.env.BOT_TOKEN,
+    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY
+  };
+  const actions = [];
+  process.env.BOT_TOKEN = botToken;
+  process.env.DEEPSEEK_API_KEY = 'deepseek-global-free-key';
+  global.fetch = async (url, options) => {
+    const body = JSON.parse(options.body);
+    if (String(url).includes('nastardamus-user-store')) {
+      actions.push(body.action);
+      if (body.action === 'take_rate_limit') {
+        return { ok: true, status: 200, json: async () => ({ ok: true, allowed: true, remaining: 20 }) };
+      }
+      assert.equal(body.action, 'get_public_config');
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          settings: {
+            everythingFree: true,
+            serviceCatalog: { natal: { id: 'natal', enabled: true, price: 7.77 } }
+          },
+          moderation: { enabled: false }
+        })
+      };
+    }
+    actions.push('provider');
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: 'Бесплатный ответ Эзотериума.' } }] })
+    };
+  };
+
+  try {
+    const response = createResponse();
+    await proxyHandler({
+      method: 'POST',
+      headers: { 'x-telegram-init-data': signedInitData(botToken, 777003) },
+      body: {
+        feature: 'natal',
+        idempotencyKey: 'reading-free-1234567890',
+        payload: { date: '1990-01-01', time: '12:00' }
+      }
+    }, response);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.payment.source, 'global_free');
+    assert.equal(response.body.payment.amount, 0);
+    assert.equal(actions.includes('charge_service'), false);
+    assert.deepEqual(actions, ['take_rate_limit', 'get_public_config', 'provider']);
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('failed provider releases a claimed daily free reading', async () => {
+  const botToken = 'telegram-free-claim-test-token';
+  const previousFetch = global.fetch;
+  const previous = {
+    BOT_TOKEN: process.env.BOT_TOKEN,
+    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY
+  };
+  const actions = [];
+  process.env.BOT_TOKEN = botToken;
+  process.env.DEEPSEEK_API_KEY = 'deepseek-free-claim-key';
+  global.fetch = async (url, options) => {
+    const body = JSON.parse(options.body);
+    if (String(url).includes('nastardamus-user-store')) {
+      actions.push(body.action);
+      if (body.action === 'take_rate_limit') {
+        return { ok: true, status: 200, json: async () => ({ ok: true, allowed: true, remaining: 20 }) };
+      }
+      if (body.action === 'get_public_config') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            settings: {
+              everythingFree: false,
+              tarotCatalog: [{ id: 'card-of-day', free_checks: 1, vip_access: 'optional' }],
+              serviceCatalog: { tarot: { id: 'tarot', enabled: true, price: 5 } }
+            },
+            moderation: { enabled: false }
+          })
+        };
+      }
+      if (body.action === 'claim_free_usage') {
+        assert.equal(body.serviceId, 'tarot:card-of-day');
+        return { ok: true, status: 200, json: async () => ({ ok: true, claimed: true }) };
+      }
+      assert.equal(body.action, 'release_free_usage');
+      assert.equal(body.serviceId, 'tarot:card-of-day');
+      return { ok: true, status: 200, json: async () => ({ ok: true, released: true }) };
+    }
+    actions.push('provider_failed');
+    return { ok: false, status: 503, json: async () => ({ error: { message: 'offline' } }) };
+  };
+
+  try {
+    const response = createResponse();
+    await proxyHandler({
+      method: 'POST',
+      headers: { 'x-telegram-init-data': signedInitData(botToken, 777004) },
+      body: {
+        feature: 'tarot',
+        idempotencyKey: 'reading-free-failure-123456',
+        payload: {
+          spread: 'card-of-day',
+          question: 'На что обратить внимание?',
+          cards: ['Звезда'],
+          positions: ['Энергия дня']
+        }
+      }
+    }, response);
+    assert.equal(response.statusCode, 502);
+    assert.equal(response.body.error, 'deepseek_provider_unavailable');
+    assert.equal(actions.includes('charge_service'), false);
+    assert.ok(actions.indexOf('claim_free_usage') < actions.indexOf('provider_failed'));
+    assert.ok(actions.lastIndexOf('provider_failed') < actions.indexOf('release_free_usage'));
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('VIP-only catalog reading is rejected before provider or wallet calls', async () => {
+  const botToken = 'telegram-vip-only-test-token';
+  const previousFetch = global.fetch;
+  const previous = {
+    BOT_TOKEN: process.env.BOT_TOKEN,
+    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY
+  };
+  const actions = [];
+  process.env.BOT_TOKEN = botToken;
+  process.env.DEEPSEEK_API_KEY = 'deepseek-vip-only-key';
+  global.fetch = async (url, options) => {
+    assert.ok(String(url).includes('nastardamus-user-store'));
+    const body = JSON.parse(options.body);
+    actions.push(body.action);
+    if (body.action === 'take_rate_limit') {
+      return { ok: true, status: 200, json: async () => ({ ok: true, allowed: true, remaining: 20 }) };
+    }
+    assert.equal(body.action, 'get_public_config');
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        settings: {
+          vip: null,
+          tarotCatalog: [{ id: 'shadow-side', free_checks: 0, vip_access: 'only' }],
+          serviceCatalog: { tarot: { id: 'tarot', enabled: true, price: 5 } }
+        },
+        moderation: { enabled: false }
+      })
+    };
+  };
+
+  try {
+    const response = createResponse();
+    await proxyHandler({
+      method: 'POST',
+      headers: { 'x-telegram-init-data': signedInitData(botToken, 777005) },
+      body: {
+        feature: 'tarot',
+        idempotencyKey: 'reading-vip-only-1234567',
+        payload: {
+          spread: 'shadow-side',
+          question: 'Что скрыто?',
+          cards: ['Луна'],
+          positions: ['Тень']
+        }
+      }
+    }, response);
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, 'vip_required');
+    assert.deepEqual(actions, ['take_rate_limit', 'get_public_config']);
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('payment migration keeps tables private and mutations service-role only', () => {
   const sql = readFileSync(
     new URL('../supabase/migrations/20260728065724_add_sbp_payments_and_service_charges.sql', import.meta.url),
