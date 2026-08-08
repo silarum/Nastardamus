@@ -1,5 +1,6 @@
 import { buildReadingMessages, isVisionFeature, structuredSchemaForFeature } from '../lib/readings.js';
 import { requestDeepSeekChat } from '../lib/deepseek.js';
+import { analyzeVisionImages, injectVisionAnalysis } from '../lib/vision.js';
 import { buildPersonalAnalysisMessages, parsePersonalAnalysis } from '../lib/personal-analysis.js';
 import { normalizePersonalEvent } from '../lib/personal-space.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
@@ -10,14 +11,11 @@ import {
     unauthenticatedPreviewAllowed
 } from '../lib/request-security.js';
 
-const DEFAULT_OPENAI_MODEL = 'gpt-5.6';
-const DEEPSEEK_READING_FEATURES = new Set([
+const READING_FEATURES = new Set([
     'tarot',
     'natal',
     'daily_horoscope',
-    'sports_forecast'
-]);
-const OPENAI_READING_FEATURES = new Set([
+    'sports_forecast',
     'compatibility',
     'photo_energy',
     'photo_damage',
@@ -92,39 +90,6 @@ async function callTelegram(botToken, method, payload) {
     const data = await response.json().catch(() => null);
     if (!response.ok || !data?.ok) throw new Error(`telegram_${method}_${response.status}`);
     return data.result;
-}
-
-function toOpenAIInput(messages) {
-    return messages.map((message) => ({
-        role: message.role,
-        content: typeof message.content === 'string'
-            ? [{ type: 'input_text', text: message.content }]
-            : message.content.map((part) => {
-                if (part.type === 'text') {
-                    return { type: 'input_text', text: part.text };
-                }
-                if (part.type === 'image_url') {
-                    return {
-                        type: 'input_image',
-                        image_url: part.image_url.url,
-                        detail: 'high'
-                    };
-                }
-                throw new TypeError('unsupported message content');
-            })
-    }));
-}
-
-function extractOpenAIText(data) {
-    if (typeof data?.output_text === 'string' && data.output_text.trim()) {
-        return data.output_text.trim();
-    }
-    return (data?.output || [])
-        .flatMap((item) => Array.isArray(item?.content) ? item.content : [])
-        .filter((part) => typeof part?.text === 'string')
-        .map((part) => part.text)
-        .join('\n')
-        .trim();
 }
 
 async function userStore(botToken, action, payload = {}) {
@@ -217,9 +182,9 @@ function validateVisionConsent(feature, payload, policy) {
     }
 }
 
-async function moderateVisionInput(feature, payload, policy) {
+async function moderateVisionInput(feature, payload, policy, requestId) {
     if (!isVisionFeature(feature) || policy.moderation?.enabled === false) return;
-    if (!process.env.OPENAI_API_KEY) throw new Error('photo_moderation_unavailable');
+    if (!process.env.OPENAI_API_KEY) return;
 
     const input = [
         {
@@ -231,20 +196,47 @@ async function moderateVisionInput(feature, payload, policy) {
             image_url: { url: image }
         }))
     ];
-    const response = await fetch('https://api.openai.com/v1/moderations', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
-        },
-        body: JSON.stringify({ model: 'omni-moderation-latest', input }),
-        signal: AbortSignal.timeout(30_000)
-    });
-    const data = await response.json().catch(() => null);
-    if (!response.ok) throw new Error('photo_moderation_unavailable');
+    let response;
+    let data;
+    try {
+        response = await fetch('https://api.openai.com/v1/moderations', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+            },
+            body: JSON.stringify({ model: 'omni-moderation-latest', input }),
+            signal: AbortSignal.timeout(30_000)
+        });
+        data = await response.json().catch(() => null);
+    } catch (error) {
+        console.warn('Optional photo moderation unavailable; Vision safety remains active', {
+            requestId,
+            feature,
+            code: error?.name === 'TimeoutError' ? 'timeout' : 'request_failed'
+        });
+        return;
+    }
+    if (!response.ok) {
+        console.warn('Optional photo moderation unavailable; Vision safety remains active', {
+            requestId,
+            feature,
+            status: response.status,
+            code: data?.error?.code || data?.error?.type || 'provider_error',
+            providerRequestId: response.headers?.get?.('x-request-id') || null
+        });
+        return;
+    }
 
     const result = data?.results?.[0];
-    if (!result) throw new Error('photo_moderation_unavailable');
+    if (!result) {
+        console.warn('Optional photo moderation unavailable; Vision safety remains active', {
+            requestId,
+            feature,
+            code: 'empty_response'
+        });
+        return;
+    }
     const scores = Object.values(result.category_scores || {})
         .map(Number)
         .filter(Number.isFinite);
@@ -290,52 +282,6 @@ function answerFromStructured(feature, result) {
         ].filter(Boolean).join('\n\n');
     }
     return String(result.narrative || result.summary || result.headline || '').trim();
-}
-
-async function requestOpenAI(messages, vision, structured = null) {
-    const body = {
-        model: process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL,
-        input: toOpenAIInput(messages),
-        max_output_tokens: vision ? 1800 : 1500,
-        store: false
-    };
-    if (structured) {
-        body.text = {
-            format: {
-                type: 'json_schema',
-                name: structured.name,
-                strict: true,
-                schema: structured.schema
-            }
-        };
-    }
-    const response = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(vision ? 45_000 : 30_000)
-    });
-    const data = await response.json().catch(() => null);
-    if (!response.ok) {
-        const error = new Error(data?.error?.message || `openai_${response.status}`);
-        error.status = response.status;
-        error.code = data?.error?.code || data?.error?.type || '';
-        error.requestId = response.headers?.get?.('x-request-id') || null;
-        throw error;
-    }
-    const answer = extractOpenAIText(data);
-    if (!answer) throw new Error('empty_openai_response');
-    if (!structured) return { answer, result: null };
-    let result;
-    try {
-        result = JSON.parse(answer);
-    } catch {
-        throw new Error('invalid_structured_response');
-    }
-    return { answer: answerFromStructured(structured.feature, result), result };
 }
 
 function parseJsonObject(value) {
@@ -423,34 +369,28 @@ async function requestDeepSeekReading(messages, feature, structured = null) {
     return { answer, result };
 }
 
-async function generateReading({ provider, feature, messages, vision, schema }) {
+async function generateReading({ feature, messages, visionAnalysis, schema }) {
     const structured = schema ? { ...schema, feature } : null;
-    if (provider === 'deepseek') {
-        if (process.env.DEEPSEEK_API_KEY) {
-            return requestDeepSeekReading(messages, feature, structured);
-        }
-        return requestOpenAI(messages, false, structured);
-    }
-    if (!process.env.OPENAI_API_KEY) {
-        return requestDeepSeekReading(messages, feature, structured);
-    }
-    try {
-        return await requestOpenAI(messages, vision, structured);
-    } catch (error) {
-        if (vision || !process.env.DEEPSEEK_API_KEY) throw error;
-        console.warn('OpenAI text request failed; using DeepSeek fallback', {
-            status: error?.status || null,
-            code: error?.code || null,
-            requestId: error?.requestId || null
-        });
-        return requestDeepSeekReading(messages, feature, structured);
-    }
+    const finalMessages = visionAnalysis
+        ? injectVisionAnalysis(messages, visionAnalysis)
+        : messages;
+    return requestDeepSeekReading(finalMessages, feature, structured);
 }
 
 function providerForFeature(feature) {
-    if (DEEPSEEK_READING_FEATURES.has(feature)) return 'deepseek';
-    if (OPENAI_READING_FEATURES.has(feature)) return 'openai';
-    return null;
+    return READING_FEATURES.has(feature) ? 'deepseek' : null;
+}
+
+function readingRequestId(req) {
+    const incoming = String(getRequestHeader(req, 'x-vercel-id') || getRequestHeader(req, 'x-request-id') || '');
+    if (/^[a-z0-9._:-]{1,120}$/i.test(incoming)) return incoming;
+    return globalThis.crypto?.randomUUID?.() || `reading-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function safeErrorCode(error) {
+    if (typeof error?.code === 'string' && /^[a-z0-9_.:-]{1,100}$/i.test(error.code)) return error.code;
+    if (typeof error?.message === 'string' && /^[a-z0-9_.:-]{1,100}$/i.test(error.message)) return error.message;
+    return 'provider_error';
 }
 
 function paidServiceForFeature(feature, payload) {
@@ -554,6 +494,8 @@ async function autoCompleteJointInvitation(botToken, {
     invitationToken,
     initiatorTelegramId
 }) {
+    const requestId = globalThis.crypto?.randomUUID?.()
+        || `joint-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     let claimed = null;
     let charge = null;
     let access = null;
@@ -583,7 +525,18 @@ async function autoCompleteJointInvitation(botToken, {
         const serviceId = paidServiceForFeature('photo_compatibility', payload);
         const policy = await userStore(botToken, 'get_public_config', { telegramId: initiatorTelegramId });
         validateVisionConsent('photo_compatibility', payload, policy);
-        await moderateVisionInput('photo_compatibility', payload, policy);
+        if (!process.env.DEEPSEEK_API_KEY) throw new Error('deepseek_not_configured');
+        await moderateVisionInput('photo_compatibility', payload, policy, requestId);
+        const visionAnalysis = await analyzeVisionImages({
+            feature: 'photo_compatibility',
+            images: imageInputs('photo_compatibility', payload),
+            requestId
+        });
+        if (visionAnalysis.status === 'reject') {
+            throw new Error(visionAnalysis.safety.unreadable
+                ? 'vision_image_unreadable'
+                : 'photo_blocked');
+        }
         access = await resolveReadingAccess(
             botToken,
             initiatorTelegramId,
@@ -604,7 +557,12 @@ async function autoCompleteJointInvitation(botToken, {
         }
         const messages = buildReadingMessages('photo_compatibility', payload);
         const schema = structuredSchemaForFeature('photo_compatibility');
-        const generated = await requestOpenAI(messages, true, { ...schema, feature: 'photo_compatibility' });
+        const generated = await generateReading({
+            feature: 'photo_compatibility',
+            messages,
+            visionAnalysis,
+            schema
+        });
         const completed = await userStore(botToken, 'complete_joint_invitation', {
             telegramId: initiatorTelegramId,
             invitationToken,
@@ -830,10 +788,13 @@ export default async function handler(req, res) {
     const feature = String(req.body?.feature || '');
     const vision = isVisionFeature(feature);
     const provider = providerForFeature(feature);
+    const requestId = readingRequestId(req);
     const idempotencyKey = normalizeIdempotencyKey(req.body?.idempotencyKey);
+    if (!provider) return sendJson(res, 400, { error: 'unsupported_feature' });
     let requestPayload = req.body?.payload;
     let serviceId = paidServiceForFeature(feature, requestPayload);
     let invitationContext = null;
+    let visionAnalysis = null;
     let messages;
     let policy = DEFAULT_PUBLIC_POLICY;
     try {
@@ -882,12 +843,42 @@ export default async function handler(req, res) {
         }
         validateVisionConsent(feature, requestPayload, policy);
         messages = buildReadingMessages(feature, requestPayload);
-        await moderateVisionInput(feature, requestPayload, policy);
+        if (!process.env.DEEPSEEK_API_KEY) throw new Error('deepseek_not_configured');
+        await moderateVisionInput(feature, requestPayload, policy, requestId);
+        if (vision) {
+            visionAnalysis = await analyzeVisionImages({
+                feature,
+                images: imageInputs(feature, requestPayload),
+                requestId
+            });
+            if (visionAnalysis.status === 'reject') {
+                throw new Error(visionAnalysis.safety.unreadable
+                    ? 'vision_image_unreadable'
+                    : 'photo_blocked');
+            }
+        }
     } catch (error) {
         const code = error?.message || 'invalid_request';
         await releaseInvitation(botToken, telegramId, invitationContext, code);
+        if (error?.stage === 'vision') {
+            const configurationError = [
+                'vision_not_configured',
+                'vision_base_url_invalid',
+                'vision_base_url_insecure'
+            ].includes(code);
+            return sendJson(res, configurationError ? 503 : 502, {
+                error: configurationError ? 'vision_not_configured' : 'vision_provider_unavailable',
+                requestId
+            });
+        }
+        if (code === 'deepseek_not_configured') {
+            return sendJson(res, 503, { error: code });
+        }
         if (code === 'rate_limit_backend_failed' || code === 'photo_moderation_unavailable') {
             return sendJson(res, 503, { error: code });
+        }
+        if (code === 'vision_image_unreadable') {
+            return sendJson(res, 422, { error: code, requestId });
         }
         if (code === 'photo_requires_review') return sendJson(res, 422, { error: code });
         if (code === 'photo_blocked') return sendJson(res, 400, { error: code });
@@ -898,19 +889,6 @@ export default async function handler(req, res) {
         }
         if (code === 'invitation_payment_denied') return sendJson(res, 403, { error: code });
         return sendJson(res, 400, { error: code });
-    }
-
-    if (!provider) {
-        await releaseInvitation(botToken, telegramId, invitationContext, 'unsupported_feature');
-        return sendJson(res, 400, { error: 'unsupported_feature' });
-    }
-    if (provider === 'deepseek' && !process.env.DEEPSEEK_API_KEY && !process.env.OPENAI_API_KEY) {
-        await releaseInvitation(botToken, telegramId, invitationContext, 'deepseek_not_configured');
-        return sendJson(res, 503, { error: 'deepseek_not_configured' });
-    }
-    if (provider === 'openai' && !process.env.OPENAI_API_KEY && (vision || !process.env.DEEPSEEK_API_KEY)) {
-        await releaseInvitation(botToken, telegramId, invitationContext, 'openai_not_configured');
-        return sendJson(res, 503, { error: 'openai_not_configured' });
     }
 
     let charge = null;
@@ -960,7 +938,7 @@ export default async function handler(req, res) {
 
     try {
         const schema = structuredSchemaForFeature(feature);
-        const generated = await generateReading({ provider, feature, messages, vision, schema });
+        const generated = await generateReading({ feature, messages, visionAnalysis, schema });
         const answer = generated.answer;
         let completedInvitation = null;
         if (invitationContext && (charge?.charge_id || access)) {
@@ -998,7 +976,14 @@ export default async function handler(req, res) {
             ...(completedInvitation ? { invitation: completedInvitation } : {})
         });
     } catch (error) {
-        console.error(`${provider} reading request failed:`, error?.message || error);
+        console.error('Nastardamus reading pipeline failed', {
+            requestId,
+            feature,
+            stage: error?.stage || 'deepseek',
+            status: error?.status || null,
+            code: safeErrorCode(error),
+            providerRequestId: error?.requestId || null
+        });
         if (charge?.charge_id) {
             await userStore(botToken, 'refund_service_charge', {
                 telegramId,
@@ -1011,11 +996,10 @@ export default async function handler(req, res) {
         await releaseReadingAccess(botToken, telegramId, access);
         await releaseInvitation(botToken, telegramId, invitationContext, 'provider_or_delivery_error');
         return sendJson(res, 502, {
-            error: vision
+            error: error?.stage === 'vision'
                 ? 'vision_provider_unavailable'
-                : provider === 'deepseek'
-                    ? 'deepseek_provider_unavailable'
-                    : 'reading_provider_unavailable'
+                : 'deepseek_provider_unavailable',
+            requestId
         });
     }
 }

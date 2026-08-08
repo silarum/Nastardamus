@@ -43,6 +43,35 @@ function signedInitData(botToken, userId = 991001) {
     return params.toString();
 }
 
+function visionAnalysis(feature = 'photo_energy', imageCount = 1) {
+    return {
+        feature,
+        status: 'ok',
+        imageCount,
+        images: Array.from({ length: imageCount }, (_, index) => ({
+            index: index + 1,
+            subject: feature === 'palm_reading' ? 'palm' : 'portrait',
+            quality: 'good',
+            composition: 'Человек расположен в центре кадра.',
+            lighting: 'Мягкий боковой свет.',
+            poseOrGesture: 'Спокойная открытая поза.',
+            facialExpression: 'Нейтральное выражение лица.',
+            palmDetails: [],
+            visibleDetails: ['Светлый фон', 'Чёткий силуэт'],
+            uncertainty: 'Часть фона вне кадра.'
+        })),
+        safety: {
+            apparentMinor: false,
+            intimateContent: false,
+            graphicViolence: false,
+            identityDocument: false,
+            unreadable: false
+        },
+        limitations: ['Описание основано только на видимых деталях.'],
+        safeDisclaimer: 'Это описание видимых признаков, а не вывод о личности, здоровье, чувствах или судьбе.'
+    };
+}
+
 test('text readings use DeepSeek and keep its key on the server', async () => {
     const restore = preserveEnvironment(['BOT_TOKEN', 'DEEPSEEK_API_KEY', 'DEEPSEEK_MODEL', 'OPENAI_API_KEY', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
     const previousFetch = global.fetch;
@@ -80,29 +109,54 @@ test('text readings use DeepSeek and keep its key on the server', async () => {
     }
 });
 
-test('photo readings use only OpenAI image inputs', async () => {
-    const restore = preserveEnvironment(['BOT_TOKEN', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
+test('photo readings use Vision JSON and then the existing DeepSeek prompt through a configurable proxy', async () => {
+    const restore = preserveEnvironment([
+        'BOT_TOKEN',
+        'DEEPSEEK_API_KEY',
+        'DEEPSEEK_BASE_URL',
+        'VISION_API_KEY',
+        'VISION_BASE_URL',
+        'VISION_MODEL',
+        'OPENAI_API_KEY',
+        'OPENROUTER_API_KEY',
+        'OPENROUTER_VISION_MODEL',
+        'ALLOW_UNAUTHENTICATED_PREVIEW'
+    ]);
     const previousFetch = global.fetch;
-    let requestBody;
+    let visionRequest;
+    let deepSeekRequest;
     const calls = [];
     process.env.BOT_TOKEN = 'telegram-test-token';
     process.env.DEEPSEEK_API_KEY = 'deepseek-text-key';
-    process.env.OPENAI_API_KEY = 'openai-test-key';
+    process.env.DEEPSEEK_BASE_URL = 'https://deepseek-proxy.example/v1';
+    process.env.VISION_API_KEY = 'vision-test-key';
+    process.env.VISION_BASE_URL = 'https://vision.example/v1';
+    process.env.VISION_MODEL = 'glm-4v-flash';
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_VISION_MODEL;
     process.env.ALLOW_UNAUTHENTICATED_PREVIEW = 'true';
     global.fetch = async (url, options) => {
         calls.push(url);
         const body = JSON.parse(options.body);
-        if (url === 'https://api.openai.com/v1/moderations') {
+        if (url === 'https://vision.example/v1/chat/completions') {
+            visionRequest = { headers: options.headers, body };
             return {
                 ok: true,
                 status: 200,
+                headers: { get: (name) => name === 'x-request-id' ? 'vision-request-1' : null },
                 json: async () => ({
-                    results: [{ flagged: false, category_scores: { violence: 0.01 } }]
+                    choices: [{ message: { content: JSON.stringify(visionAnalysis()) } }]
                 })
             };
         }
-        requestBody = body;
-        return { ok: true, status: 200, json: async () => ({ output_text: 'Безопасный ответ.' }) };
+        deepSeekRequest = { headers: options.headers, body };
+        return {
+            ok: true,
+            status: 200,
+            headers: { get: () => null },
+            json: async () => ({ choices: [{ message: { content: 'Безопасный ответ.' } }] })
+        };
     };
 
     try {
@@ -121,20 +175,216 @@ test('photo readings use only OpenAI image inputs', async () => {
         }, response);
         assert.equal(response.statusCode, 200);
         assert.deepEqual(calls, [
-            'https://api.openai.com/v1/moderations',
-            'https://api.openai.com/v1/responses'
+            'https://vision.example/v1/chat/completions',
+            'https://deepseek-proxy.example/v1/chat/completions'
         ]);
-        const image = requestBody.input[1].content.find((part) => part.type === 'input_image');
-        assert.equal(image.image_url, 'data:image/webp;base64,AA==');
-        assert.equal(image.detail, 'high');
-        assert.equal(requestBody.max_output_tokens, 1800);
+        const image = visionRequest.body.messages[1].content.find((part) => part.type === 'image_url');
+        assert.equal(image.image_url.url, 'data:image/webp;base64,AA==');
+        assert.equal(visionRequest.headers.Authorization, 'Bearer vision-test-key');
+        assert.equal(visionRequest.body.model, 'glm-4v-flash');
+        assert.deepEqual(visionRequest.body.response_format, { type: 'json_object' });
+        assert.equal(deepSeekRequest.headers.Authorization, 'Bearer deepseek-text-key');
+        assert.match(deepSeekRequest.body.messages[1].content, /# Данные шага Vision/u);
+        assert.match(deepSeekRequest.body.messages[1].content, /Мягкий боковой свет/u);
+        assert.doesNotMatch(JSON.stringify(deepSeekRequest.body), /data:image|AA==|vision-test-key/u);
+        assert.doesNotMatch(JSON.stringify(response.body), /vision-test-key|deepseek-text-key/u);
     } finally {
         restore();
         global.fetch = previousFetch;
     }
 });
 
-test('two-person compatibility remains on OpenAI', async () => {
+test('expired optional OpenAI moderation does not block the configured Vision provider', async () => {
+    const restore = preserveEnvironment([
+        'BOT_TOKEN',
+        'DEEPSEEK_API_KEY',
+        'VISION_API_KEY',
+        'VISION_BASE_URL',
+        'VISION_MODEL',
+        'OPENAI_API_KEY',
+        'ALLOW_UNAUTHENTICATED_PREVIEW'
+    ]);
+    const previousFetch = global.fetch;
+    const calls = [];
+    process.env.BOT_TOKEN = 'telegram-test-token';
+    process.env.DEEPSEEK_API_KEY = 'deepseek-text-key';
+    process.env.VISION_API_KEY = 'vision-test-key';
+    process.env.VISION_BASE_URL = 'https://vision.example/v1';
+    process.env.VISION_MODEL = 'glm-4v-flash';
+    process.env.OPENAI_API_KEY = 'expired-openai-key';
+    process.env.ALLOW_UNAUTHENTICATED_PREVIEW = 'true';
+    global.fetch = async (url) => {
+        calls.push(url);
+        if (url === 'https://api.openai.com/v1/moderations') {
+            return {
+                ok: false,
+                status: 429,
+                headers: { get: () => 'openai-quota-test' },
+                json: async () => ({ error: { code: 'insufficient_quota' } })
+            };
+        }
+        if (url === 'https://vision.example/v1/chat/completions') {
+            return {
+                ok: true,
+                status: 200,
+                headers: { get: () => null },
+                json: async () => ({
+                    choices: [{ message: { content: JSON.stringify(visionAnalysis()) } }]
+                })
+            };
+        }
+        return {
+            ok: true,
+            status: 200,
+            headers: { get: () => null },
+            json: async () => ({ choices: [{ message: { content: 'Ответ DeepSeek.' } }] })
+        };
+    };
+
+    try {
+        const response = createResponse();
+        await proxyHandler({
+            method: 'POST',
+            headers: {},
+            body: {
+                feature: 'photo_energy',
+                payload: {
+                    concern: 'Что видно?',
+                    image: 'data:image/webp;base64,AA==',
+                    consentOwn: true
+                }
+            }
+        }, response);
+        assert.equal(response.statusCode, 200);
+        assert.deepEqual(calls, [
+            'https://api.openai.com/v1/moderations',
+            'https://vision.example/v1/chat/completions',
+            'https://api.deepseek.com/chat/completions'
+        ]);
+    } finally {
+        restore();
+        global.fetch = previousFetch;
+    }
+});
+
+test('photo readings stop before DeepSeek when the Vision provider fails', async () => {
+    const restore = preserveEnvironment([
+        'BOT_TOKEN',
+        'DEEPSEEK_API_KEY',
+        'VISION_API_KEY',
+        'VISION_BASE_URL',
+        'VISION_MODEL',
+        'OPENAI_API_KEY',
+        'OPENROUTER_API_KEY',
+        'OPENROUTER_VISION_MODEL',
+        'ALLOW_UNAUTHENTICATED_PREVIEW'
+    ]);
+    const previousFetch = global.fetch;
+    const calls = [];
+    process.env.BOT_TOKEN = 'telegram-test-token';
+    process.env.DEEPSEEK_API_KEY = 'deepseek-text-key';
+    process.env.VISION_API_KEY = 'invalid-vision-key';
+    process.env.VISION_BASE_URL = 'https://vision.example/v1';
+    process.env.VISION_MODEL = 'glm-4v-flash';
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_VISION_MODEL;
+    process.env.ALLOW_UNAUTHENTICATED_PREVIEW = 'true';
+    global.fetch = async (url) => {
+        calls.push(url);
+        return {
+            ok: false,
+            status: 401,
+            headers: { get: (name) => name === 'x-request-id' ? 'vision-failed-1' : null },
+            json: async () => ({ error: { code: 'invalid_api_key' } })
+        };
+    };
+
+    try {
+        const response = createResponse();
+        await proxyHandler({
+            method: 'POST',
+            headers: { 'x-request-id': 'photo-error-test' },
+            body: {
+                feature: 'photo_energy',
+                payload: {
+                    concern: 'Что видно?',
+                    image: 'data:image/webp;base64,AA==',
+                    consentOwn: true
+                }
+            }
+        }, response);
+        assert.equal(response.statusCode, 502);
+        assert.deepEqual(response.body, {
+            error: 'vision_provider_unavailable',
+            requestId: 'photo-error-test'
+        });
+        assert.deepEqual(calls, ['https://vision.example/v1/chat/completions']);
+    } finally {
+        restore();
+        global.fetch = previousFetch;
+    }
+});
+
+test('unsafe Vision JSON blocks a photo before DeepSeek', async () => {
+    const restore = preserveEnvironment([
+        'BOT_TOKEN',
+        'DEEPSEEK_API_KEY',
+        'VISION_API_KEY',
+        'VISION_BASE_URL',
+        'VISION_MODEL',
+        'OPENAI_API_KEY',
+        'OPENROUTER_API_KEY',
+        'OPENROUTER_VISION_MODEL',
+        'ALLOW_UNAUTHENTICATED_PREVIEW'
+    ]);
+    const previousFetch = global.fetch;
+    const calls = [];
+    process.env.BOT_TOKEN = 'telegram-test-token';
+    process.env.DEEPSEEK_API_KEY = 'deepseek-text-key';
+    process.env.VISION_API_KEY = 'vision-test-key';
+    process.env.VISION_BASE_URL = 'https://vision.example/v1';
+    process.env.VISION_MODEL = 'glm-4v-flash';
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_VISION_MODEL;
+    process.env.ALLOW_UNAUTHENTICATED_PREVIEW = 'true';
+    const rejected = visionAnalysis();
+    rejected.safety.identityDocument = true;
+    global.fetch = async (url) => {
+        calls.push(url);
+        return {
+            ok: true,
+            status: 200,
+            headers: { get: () => null },
+            json: async () => ({ choices: [{ message: { content: JSON.stringify(rejected) } }] })
+        };
+    };
+
+    try {
+        const response = createResponse();
+        await proxyHandler({
+            method: 'POST',
+            headers: {},
+            body: {
+                feature: 'photo_energy',
+                payload: {
+                    concern: 'Что видно?',
+                    image: 'data:image/webp;base64,AA==',
+                    consentOwn: true
+                }
+            }
+        }, response);
+        assert.equal(response.statusCode, 400);
+        assert.deepEqual(response.body, { error: 'photo_blocked' });
+        assert.deepEqual(calls, ['https://vision.example/v1/chat/completions']);
+    } finally {
+        restore();
+        global.fetch = previousFetch;
+    }
+});
+
+test('text-only compatibility goes directly to DeepSeek without a Vision call', async () => {
     const restore = preserveEnvironment(['BOT_TOKEN', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
     const previousFetch = global.fetch;
     const calls = [];
@@ -145,19 +395,18 @@ test('two-person compatibility remains on OpenAI', async () => {
     global.fetch = async (url, options) => {
         calls.push(url);
         const body = JSON.parse(options.body);
-        assert.equal(body.model, 'gpt-5.6');
-        assert.equal(body.text.format.type, 'json_schema');
+        assert.deepEqual(body.response_format, { type: 'json_object' });
         return {
             ok: true,
             status: 200,
             json: async () => ({
-                output_text: JSON.stringify({
+                choices: [{ message: { content: JSON.stringify({
                     score: 78,
                     confidence: 'medium',
                     summary: 'Связь держится на честном диалоге.',
                     narrative: 'У пары есть ресурс для сближения.',
-                    strengths: ['Умение слушать'],
-                    frictions: ['Разный темп решений'],
+                    strengths: ['Умение слушать', 'Общие ориентиры'],
+                    frictions: ['Разный темп решений', 'Невысказанные ожидания'],
                     actions: ['Назвать ожидания', 'Согласовать границы', 'Выбрать общий шаг'],
                     aspects: [
                         { key: 'closeness', label: 'Близость', score: 82, insight: 'Тепло поддерживается вниманием.' },
@@ -165,7 +414,7 @@ test('two-person compatibility remains on OpenAI', async () => {
                         { key: 'daily', label: 'Быт', score: 70, insight: 'Темп стоит согласовать.' },
                         { key: 'growth', label: 'Рост', score: 84, insight: 'Общие цели сближают.' }
                     ]
-                })
+                }) } }]
             })
         };
     };
@@ -186,7 +435,7 @@ test('two-person compatibility remains on OpenAI', async () => {
         assert.equal(response.statusCode, 200);
         assert.equal(response.body.result.score, 78);
         assert.match(response.body.answer, /ресурс для сближения/i);
-        assert.deepEqual(calls, ['https://api.openai.com/v1/responses']);
+        assert.deepEqual(calls, ['https://api.deepseek.com/chat/completions']);
     } finally {
         restore();
         global.fetch = previousFetch;
@@ -275,13 +524,13 @@ test('sports forecast uses DeepSeek JSON mode and returns the structured result'
     }
 });
 
-test('OpenAI quota failure falls back to DeepSeek for text without losing structured data', async () => {
+test('structured text readings bypass Vision and OpenAI completely', async () => {
     const restore = preserveEnvironment(['BOT_TOKEN', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
     const previousFetch = global.fetch;
     const calls = [];
     process.env.BOT_TOKEN = 'telegram-fallback-test-token';
     process.env.DEEPSEEK_API_KEY = 'deepseek-fallback-test-key';
-    process.env.OPENAI_API_KEY = 'openai-empty-quota-key';
+    process.env.OPENAI_API_KEY = 'openai-must-not-be-called';
     process.env.ALLOW_UNAUTHENTICATED_PREVIEW = 'true';
     const result = {
         score: 74,
@@ -300,14 +549,6 @@ test('OpenAI quota failure falls back to DeepSeek for text without losing struct
     };
     global.fetch = async (url, options) => {
         calls.push(url);
-        if (url === 'https://api.openai.com/v1/responses') {
-            return {
-                ok: false,
-                status: 429,
-                headers: { get: (name) => name === 'x-request-id' ? 'req_quota_test' : null },
-                json: async () => ({ error: { message: 'quota exceeded', code: 'insufficient_quota' } })
-            };
-        }
         assert.equal(url, 'https://api.deepseek.com/chat/completions');
         assert.deepEqual(JSON.parse(options.body).response_format, { type: 'json_object' });
         return {
@@ -332,10 +573,7 @@ test('OpenAI quota failure falls back to DeepSeek for text without losing struct
         }, response);
         assert.equal(response.statusCode, 200);
         assert.equal(response.body.result.score, 74);
-        assert.deepEqual(calls, [
-            'https://api.openai.com/v1/responses',
-            'https://api.deepseek.com/chat/completions'
-        ]);
+        assert.deepEqual(calls, ['https://api.deepseek.com/chat/completions']);
     } finally {
         restore();
         global.fetch = previousFetch;

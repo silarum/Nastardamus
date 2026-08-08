@@ -36,16 +36,35 @@ npm test
 
 - `BOT_TOKEN` — токен Telegram-бота;
 - `TELEGRAM_WEBHOOK_SECRET` — секрет заголовка Telegram webhook;
-- `DEEPSEEK_API_KEY` — серверный ключ DeepSeek для Таро, гороскопов и поддержки Эзотериума;
+- `DEEPSEEK_API_KEY` — серверный ключ DeepSeek для всех финальных текстовых ответов Эзотериума;
 - `DEEPSEEK_MODEL` — текстовая модель DeepSeek (по умолчанию `deepseek-v4-flash`);
-- `OPENAI_API_KEY` — серверный ключ OpenAI для ладоней, определения порчи и совместимости;
-- `OPENAI_MODEL` — vision-модель OpenAI (по умолчанию `gpt-5-mini`);
+- `DEEPSEEK_BASE_URL` — адрес DeepSeek или прозрачного Vision-прокси; локально допустим `http://127.0.0.1:19100`, в production требуется публичный HTTPS-адрес;
+- `VISION_API_KEY`, `VISION_BASE_URL`, `VISION_MODEL` — отдельный ключ, OpenAI-совместимый `/chat/completions` и модель для структурированного разбора загруженных фото;
+- `OPENAI_API_KEY` и `OPENAI_MODEL` — необязательный прежний Vision-fallback и дополнительная модерация фото;
 - `OPENROUTER_API_KEY` — необязательный ключ OpenRouter для пользовательских агентов AI-центра;
-- `OPENROUTER_MODEL` и `OPENROUTER_VISION_MODEL` — резервные текстовая и vision-модели;
+- `OPENROUTER_MODEL` и `OPENROUTER_VISION_MODEL` — резервные текстовая и vision-модели; при наличии `OPENROUTER_API_KEY` Vision по умолчанию использует мультимодальный маршрутизатор `openrouter/free`;
 - `WEB_APP_URL` — публичный HTTPS-адрес Mini App;
 - `ALLOW_UNAUTHENTICATED_PREVIEW` — только для локального предпросмотра; в production оставьте `false`.
 
 При регистрации webhook передайте тот же `secret_token`, который сохранён в `TELEGRAM_WEBHOOK_SECRET`. Маршруты ответов по умолчанию принимают только подписанный `Telegram.WebApp.initData`. Ключи провайдеров используются только в серверных функциях и не передаются в браузер.
+
+Запросы без изображений сразу отправляются в DeepSeek. При загрузке фото backend сначала получает от Vision-модели проверенный JSON с видимыми признаками и ограничениями, удаляет исходный base64 из промпта и только затем добавляет JSON к существующему промпту DeepSeek. Если дополнительная OpenAI-модерация временно недоступна, основной Vision-анализ продолжает работать со встроенными safety-флагами; подтверждённый опасный результат по-прежнему блокируется. В логах сохраняются request ID, модель, длительность и код ошибки, но не фото, промпты или ключи.
+
+### Локальный Vision-прокси
+
+Для локального transparent-прокси выбран поддерживаемый [`Anionex/agent-vision-toolkit`](https://github.com/Anionex/agent-vision-toolkit) — продолжение проекта `codex-vision-proxy`. Он принимает исходный заголовок `Authorization`, без отдельного хранения DeepSeek-ключа, и пересылает запросы на текстовый upstream.
+
+```bash
+git clone https://github.com/Anionex/agent-vision-toolkit.git
+python3.11 agent-vision-toolkit/vision_proxy.py \
+  --port 19100 \
+  --upstream https://api.deepseek.com \
+  --env-file .env
+```
+
+В локальном `.env` укажите `DEEPSEEK_BASE_URL=http://127.0.0.1:19100` и три переменные `VISION_API_KEY`, `VISION_BASE_URL`, `VISION_MODEL`, затем перезапустите proxy и приложение. Сам backend запрашивает строгий JSON Vision до финального вызова DeepSeek; прокси остаётся транспортным слоем и для запросов без фото ничего не преобразует.
+
+Vercel-функция не может обратиться к proxy на компьютере разработчика. В production `DEEPSEEK_BASE_URL` должен указывать на отдельно развёрнутый публичный HTTPS proxy либо оставаться `https://api.deepseek.com`; Vision-шаг в обоих случаях работает одинаково.
 
 Ежедневную рассылку запускает `pg_cron` в Supabase. Токен вызова хранится в Vault под именем `nastardamus_daily_horoscope_cron`; в Git и Vercel он не записывается. Миграцию расписания применяют одновременно с совместимой версией API.
 
