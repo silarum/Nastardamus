@@ -1,5 +1,5 @@
 import {
-  AppShell, ScreenContainer, BrandLogo, AppHeader, GreetingCard,
+  AppShell, ScreenContainer, BrandLogo, AppHeader,
   FortuneWheelCard, SectionTitle, QuickAccessGrid, BottomNavigation, UploadCard,
   GoalSelector, EnergyHandsScene, MysticButton, PriceLine,
   DataStatusCard, ActionGroup, CompatibilityHero, Tabs, MysticCard, ServiceCard,
@@ -159,6 +159,7 @@ const WORLD_META = Object.freeze({
   core: { background: '', themeColor: '#070913' },
   threshold: { background: '/images/worlds/threshold.webp', themeColor: '#080b0e' },
   'my-path': { background: '/images/worlds/my-path.webp', themeColor: '#130d09' },
+  profile: { background: '/images/worlds/my-path.webp', themeColor: '#100c09' },
   runes: { background: '/images/worlds/runes.webp', themeColor: '#090d10' },
   palmistry: { background: '/images/worlds/palmistry.webp', themeColor: '#150b0d' },
   tarot: { background: '/images/worlds/tarot.webp', themeColor: '#100709' },
@@ -169,6 +170,7 @@ const WORLD_META = Object.freeze({
 
 function worldForScreen(screen = 'core') {
   if (screen === 'welcome') return 'threshold';
+  if (screen === 'profile') return 'profile';
   if (screen.startsWith('space')) return 'my-path';
   if (screen.startsWith('runes')) return 'runes';
   if (screen.startsWith('tarot')) return 'tarot';
@@ -211,6 +213,8 @@ const state = {
   wallet: null,
   walletStatus: 'loading',
   walletMessage: '',
+  profileSection: 'wallet',
+  profileOverlay: '',
   busy: false,
   spread: 'past-present-future',
   tarotCategory: 'all',
@@ -627,6 +631,7 @@ function confirmServicePayment(serviceId) {
 }
 
 function navigate(screen, { replace = false } = {}) {
+  if (screen !== 'profile') state.profileOverlay = '';
   state.screen = screen;
   const url = new URL(location.href);
   url.searchParams.set('screen', screen);
@@ -733,27 +738,20 @@ function cycleClockStyle() {
   notify('Стиль часов сохранён');
 }
 
-function clockAndLanguageCard() {
-  return MysticCard({ className: 'profile-language-clock', children: [
-    h('div', { className: 'profile-language-clock__head' },
-      h('div', {}, h('small', { className: 'premium-kicker', text: 'Язык приложения' }), h('h3', { text: 'Часы и почерк' })),
-      celestialClock({ large: true })
-    ),
-    h('p', { text: 'Коснитесь часов на главной или выберите почерк здесь.' }),
-    languagePicker(),
-    h('div', { className: 'clock-style-picker', attrs: { role: 'group', 'aria-label': 'Часы и почерк' } },
-      CLOCK_STYLES.map((style) => h('button', {
-        className: currentClockStyle() === style.id ? 'is-active' : '',
-        attrs: { type: 'button', 'aria-pressed': currentClockStyle() === style.id ? 'true' : 'false' },
-        on: { click: () => {
-          state.experience.clockStyle = style.id;
-          writeJSON(EXPERIENCE_SETTINGS_KEY, state.experience);
-          pulse();
-          render();
-        } }
-      }, h('span', { className: `clock-style-sample clock-style-sample--${style.id}`, text: '12:48' }), h('small', { text: style.label })))
-    )
-  ] });
+function clockStylePicker() {
+  return h('div', { className: 'clock-style-picker', attrs: { role: 'group', 'aria-label': 'Часы и почерк' } },
+    CLOCK_STYLES.map((style) => h('button', {
+      className: currentClockStyle() === style.id ? 'is-active' : '',
+      attrs: { type: 'button', 'aria-pressed': currentClockStyle() === style.id ? 'true' : 'false' },
+      on: { click: () => {
+        state.experience.clockStyle = style.id;
+        writeJSON(EXPERIENCE_SETTINGS_KEY, state.experience);
+        pulse();
+        render();
+        notify('Стиль часов сохранён');
+      } }
+    }, h('span', { className: `clock-style-sample clock-style-sample--${style.id}`, text: '12:48' }), h('small', { text: style.label })))
+  );
 }
 
 function serviceTile(art, title, description, onClick, badge = '') {
@@ -5595,7 +5593,7 @@ function formatReading(value) {
   return h('div', { className: 'premium-reading-copy' }, text.split(/\n{2,}/).map((paragraph) => h('p', { text: paragraph })));
 }
 
-function visualProfileCard(profile, name = '', { allowProfileSave = true } = {}) {
+function visualProfileCard(profile, name = '', _options = {}) {
   const gender = profile?.perceivedGender === 'female'
     ? 'Предположительно женский образ'
     : profile?.perceivedGender === 'male'
@@ -5608,21 +5606,13 @@ function visualProfileCard(profile, name = '', { allowProfileSave = true } = {})
       h('span', {}, Icon('profile', { size: 24 })),
       h('div', {}, h('small', { text: name ? `ОБРАЗ · ${name.toUpperCase()}` : 'ОБРАЗ ПО ФОТО' }), h('strong', { text: gender }))
     ),
-    h('p', { className: 'premium-visual-profile__confidence', text: `Уверенность: ${confidence}. Подтвердите или исправьте это предположение.` }),
+    h('p', { className: 'premium-visual-profile__confidence', text: `Уверенность: ${confidence}. Это описание относится только к текущему снимку и не меняет ваш профиль.` }),
     evidence.length ? h('div', { className: 'premium-visual-profile__evidence' }, evidence.map((item) => h('span', { text: item }))) : null,
     h('div', { className: 'premium-visual-profile__persona' },
       h('small', { text: 'ВПЕЧАТЛЕНИЕ О ХАРАКТЕРЕ ОБРАЗА' }),
       h('p', { text: profile?.personaImpression || 'Недостаточно видимых признаков для выразительного впечатления.' }),
       profile?.personaBasis ? h('em', { text: profile.personaBasis }) : null
     ),
-    allowProfileSave && (profile?.perceivedGender === 'female' || profile?.perceivedGender === 'male')
-      ? h('div', { className: 'premium-visual-profile__actions' },
-          h('button', { attrs: { type: 'button' }, on: { click: () => saveGenderPreference(profile.perceivedGender) }, text: 'Подтвердить для профиля' }),
-          h('button', { attrs: { type: 'button' }, on: { click: () => navigate('profile') }, text: 'Исправить' })
-        )
-      : allowProfileSave
-        ? h('button', { className: 'premium-visual-profile__choose', attrs: { type: 'button' }, on: { click: () => navigate('profile') }, text: 'Указать вручную' })
-        : null,
     h('p', { className: 'premium-visual-profile__limitation', text: profile?.limitation || 'Внешний образ не доказывает гендерную идентичность или устойчивые черты личности.' })
   ] });
 }
@@ -5977,77 +5967,284 @@ function profileScreen() {
   const wallet = state.wallet?.wallet || { balance: 0, available: 0, locked: 0, freeSpins: 0 };
   const ledger = state.wallet?.ledger || [];
   const entitlements = state.wallet?.entitlements || [];
+  const vip = activeProfileVip();
+  const giftCount = entitlements.reduce((total, item) => total + Math.max(0, Number(item.quantity) || 0), 0);
   return shell([
-    screenHeader('Профиль', 'Мой путь и лицевой счёт', 'home'),
-    GreetingCard({
-      username: firstName(),
-      message: state.walletStatus === 'error' ? state.walletMessage : 'Ваш счёт и личные настройки',
-      balance: formatMoney(wallet.balance || 0),
-      avatar: profileAvatar()
-    }),
-    clockAndLanguageCard(),
-    profileIdentityCard(),
-    genderPreferenceCard(),
-    h('div', { className: 'premium-wallet-metrics' },
-      MysticCard({ children: [h('small', { text: 'Доступно' }), h('strong', { text: formatMoney(wallet.available) })] }),
-      MysticCard({ children: [h('small', { text: 'Заблокировано' }), h('strong', { text: formatMoney(wallet.locked) })] }),
-      MysticCard({ children: [h('small', { text: 'Вращения' }), h('strong', { text: String(wallet.freeSpins || 0) })] })
-    ),
-    vipProfileCard(),
-    h('div', { className: 'premium-profile-actions' },
-      MysticButton({
-        text: availableTopupMethods(state.wallet?.config).length ? 'Купить SILARUM' : 'Покупка SILARUM настраивается',
-        icon: 'coin',
-        variant: 'primary',
-        disabled: !availableTopupMethods(state.wallet?.config).length,
-        onClick: () => navigate('topup')
-      }),
-      MysticButton({ text: state.horoscope.enabled ? 'Гороскоп приходит ежедневно' : 'Настроить ежедневный гороскоп', icon: 'orbit', variant: 'gold', onClick: () => navigate('horoscope') }),
-      MysticButton({ text: 'Обновить счёт', icon: 'coin', variant: 'outline', onClick: () => loadWallet({ force: true }) }),
-      MysticButton({ text: state.wallet?.config?.withdrawalsEnabled ? 'Обменять SILARUM' : 'Обмен закрыт', icon: 'payment', variant: 'gold', disabled: !state.wallet?.config?.withdrawalsEnabled, onClick: () => navigate('withdrawal') }),
-      MysticButton({ text: 'Спросить поддержку', icon: 'info', variant: 'primary', onClick: () => navigate('support') })
-    ),
-    entitlements.length ? SectionTitle({ text: 'Мои подарки' }) : null,
-    entitlements.length ? h('div', { className: 'premium-entitlements' }, entitlements.map((item) =>
-      MysticCard({ className: 'premium-entitlement', children: [
-        Icon('sparkle', { size: 24 }),
-        h('span', {},
-          h('strong', { text: serviceConfig(item.service_id).title || item.service_id }),
-          h('small', { text: `Доступно: ${item.quantity}` })
-        ),
-        MysticButton({ text: 'Открыть', icon: 'arrow-left', variant: 'outline', onClick: () => navigate(rewardScreen(item.service_id)) })
-      ] })
-    )) : null,
-    SectionTitle({ text: 'Последние операции' }),
-    ledger.length ? h('div', { className: 'premium-ledger' }, ledger.slice(0, 20).map(ledgerRow)) : MysticCard({ className: 'premium-empty-state premium-empty-state--small', children: [h('p', { text: 'Операций пока нет.' })] })
+    screenHeader('Личный круг', 'Счёт · доступ · настройки', 'home'),
+    profileCabinetHero(wallet, vip),
+    profileSectionTabs({ wallet, vip, giftCount }),
+    h('section', {
+      className: `profile-cabinet-panel profile-cabinet-panel--${state.profileSection}`,
+      attrs: { id: 'profile-cabinet-panel', role: 'tabpanel', tabindex: '-1' }
+    }, profileSectionContent({ wallet, ledger, entitlements, vip })),
+    profileOverlay({ ledger })
   ], { active: 'profile' });
 }
 
-function vipProfileCard() {
+function activeProfileVip() {
   const vip = state.wallet?.vip;
+  if (!vip) return null;
+  const expiry = Date.parse(vip.expiresAt || '');
+  return Number.isFinite(expiry) && expiry <= Date.now() ? null : vip;
+}
+
+function profileCabinetHero(wallet, vip) {
+  const ready = state.walletStatus === 'ready';
+  const amount = ready ? formatMoney(wallet.available) : '—';
+  const reserve = ready && Number(wallet.locked) > 0 ? `${formatMoney(wallet.locked)} SILARUM` : '';
+  return h('section', { className: 'profile-cabinet-hero' },
+    h('div', { className: 'profile-cabinet-hero__identity' },
+      h('button', {
+        className: 'profile-cabinet-avatar',
+        attrs: { type: 'button', 'aria-label': 'Изменить фото профиля' },
+        on: { click: () => openProfileOverlay('avatar') }
+      }, h('img', { attrs: { src: profileAvatar(), alt: '' } }), h('span', { attrs: { 'aria-hidden': 'true' }, text: '✦' })),
+      h('div', {},
+        h('small', { className: 'premium-kicker', text: 'ЛИЧНЫЙ КРУГ' }),
+        h('h1', { text: firstName() }),
+        h('div', { className: 'profile-access-line' },
+          vip ? h('span', { className: 'profile-vip-mark', text: 'VIP' }) : null,
+          vip ? h('small', { text: 'Действует до' }) : h('small', { text: 'Базовый доступ' }),
+          vip ? h('b', { text: formatDate(vip.expiresAt) }) : null
+        )
+      )
+    ),
+    h('div', { className: 'profile-cabinet-hero__balance' },
+      h('span', {}, h('small', { text: 'SILARUM' }), h('strong', { text: amount })),
+      availableTopupMethods(state.wallet?.config).length
+        ? h('button', { attrs: { type: 'button' }, on: { click: () => navigate('topup') } }, h('span', { text: '+' }), h('b', { text: 'Пополнить' }))
+        : null,
+      reserve ? h('em', {}, h('span', { text: 'В резерве' }), h('b', { text: reserve })) : null
+    )
+  );
+}
+
+function profileSectionTabs({ wallet, vip, giftCount }) {
+  const clockLabel = CLOCK_STYLES.find((item) => item.id === currentClockStyle())?.label || 'Каллиграфия';
+  const ready = state.walletStatus === 'ready';
+  const sections = [
+    { id: 'wallet', icon: 'coin', label: 'SILARUM', value: ready ? formatMoney(wallet.available) : '—' },
+    { id: 'access', icon: 'sparkle', label: 'Доступ', value: vip ? 'VIP' : 'Базовый' },
+    { id: 'gifts', icon: 'wheel', label: 'Дары', value: String(giftCount) },
+    { id: 'settings', icon: 'orbit', label: 'Среда', value: `${state.locale.toLocaleUpperCase('en')} · ${clockLabel}` }
+  ];
+  return h('nav', { className: 'profile-command-grid', attrs: { role: 'tablist', 'aria-label': 'Разделы личного круга' } },
+    sections.map((section) => h('button', {
+      className: state.profileSection === section.id ? 'is-active' : '',
+      attrs: {
+        type: 'button', role: 'tab', 'aria-selected': state.profileSection === section.id ? 'true' : 'false',
+        'aria-controls': 'profile-cabinet-panel'
+      },
+      on: { click: () => selectProfileSection(section.id) }
+    },
+    h('span', { className: 'profile-command-grid__icon' }, Icon(section.icon, { size: 21 })),
+    h('span', {}, h('small', { text: section.label }), h('strong', { text: section.value }))
+    ))
+  );
+}
+
+function selectProfileSection(section) {
+  if (!['wallet', 'access', 'gifts', 'settings'].includes(section) || state.profileSection === section) return;
+  state.profileSection = section;
+  pulse();
+  render();
+}
+
+function profileSectionContent(context) {
+  if (state.profileSection === 'access') return profileAccessPanel(context.vip);
+  if (state.profileSection === 'gifts') return profileGiftsPanel(context.entitlements);
+  if (state.profileSection === 'settings') return profileSettingsPanel();
+  return profileWalletPanel(context.wallet, context.ledger);
+}
+
+function profilePanelHead(kicker, title, action = null) {
+  return h('header', { className: 'profile-panel-head' },
+    h('div', {}, h('small', { text: kicker }), h('h2', { text: title })),
+    action
+  );
+}
+
+function profileWalletPanel(wallet, ledger) {
+  if (state.walletStatus === 'loading') {
+    return [
+      profilePanelHead('SILARUM', 'Сверяем движение средств'),
+      h('div', { className: 'profile-panel-body profile-wallet-skeleton', attrs: { 'aria-label': 'Счёт загружается' } },
+        h('span'), h('span'), h('span')
+      )
+    ];
+  }
+  if (state.walletStatus === 'error') {
+    return [
+      profilePanelHead('SILARUM', 'Счёт не синхронизирован'),
+      h('div', { className: 'profile-panel-body profile-state-message' },
+        h('span', { className: 'profile-state-message__seal', attrs: { 'aria-hidden': 'true' }, text: '◇' }),
+        h('p', { text: state.walletMessage || 'Счёт доступен внутри Telegram' }),
+        MysticButton({ text: 'Повторить', icon: 'coin', variant: 'gold', onClick: () => loadWallet({ force: true }) })
+      )
+    ];
+  }
+
+  const actions = [];
+  if (availableTopupMethods(state.wallet?.config).length) {
+    actions.push(MysticButton({ text: 'Пополнить', icon: 'coin', variant: 'primary', onClick: () => navigate('topup') }));
+  }
+  if (state.wallet?.config?.withdrawalsEnabled) {
+    actions.push(MysticButton({ text: 'Обменять', icon: 'payment', variant: 'gold', onClick: () => navigate('withdrawal') }));
+  }
+  actions.push(h('button', {
+    className: 'profile-refresh-button', attrs: { type: 'button', 'aria-label': 'Обновить счёт', title: 'Обновить счёт' },
+    on: { click: () => loadWallet({ force: true }) }
+  }, Icon('orbit', { size: 21 })));
+
+  return [
+    profilePanelHead('SILARUM', 'Движение средств'),
+    h('div', { className: 'profile-panel-body' },
+      h('div', { className: 'profile-wallet-strip' },
+        h('div', {}, h('small', { text: 'Свободно' }), h('strong', { text: formatMoney(wallet.available) })),
+        Number(wallet.locked) > 0 ? h('div', {}, h('small', { text: 'В резерве' }), h('strong', { text: formatMoney(wallet.locked) })) : null,
+        h('div', {}, h('small', { text: 'Колесо' }), h('strong', { text: String(wallet.freeSpins || 0) }))
+      ),
+      h('div', { className: 'profile-inline-actions' }, actions),
+      ledger.length
+        ? h('div', { className: 'profile-ledger-preview' }, ledger.slice(0, 3).map(profileLedgerLine))
+        : h('div', { className: 'profile-quiet-empty' }, h('span', { text: '◇' }), h('p', { text: 'Здесь появятся начисления и списания.' })),
+      ledger.length > 3 ? h('button', { className: 'profile-text-action', attrs: { type: 'button' }, on: { click: () => openProfileOverlay('ledger') }, text: 'Все операции' }) : null
+    )
+  ];
+}
+
+function profileLedgerLine(entry) {
+  const labels = { purchase: 'Покупка SILARUM', service_charge: 'Оплата практики', wheel_prize: 'Дар Колеса', referral_commission: 'Партнёрское начисление', withdrawal_hold: 'Средства в резерве', withdrawal_paid: 'Обмен выполнен', withdrawal_release: 'Средства возвращены', adjustment: 'Корректировка' };
+  const positive = Number(entry.amount) >= 0;
+  return h('div', { className: 'profile-ledger-line' },
+    h('span', { className: positive ? 'is-positive' : '' }, Icon(positive ? 'coin' : 'payment', { size: 18 })),
+    h('span', {}, h('strong', { text: labels[entry.type] || 'Операция' }), h('small', { text: formatDate(entry.createdAt) })),
+    h('b', { className: positive ? 'is-positive' : '', text: `${Number(entry.amount) > 0 ? '+' : ''}${formatMoney(entry.amount)}` })
+  );
+}
+
+function profileAccessPanel(vip) {
   const plans = state.wallet?.config?.vipPlans || [];
   if (vip) {
-    return MysticCard({ className: 'premium-vip-card', children: [
-      h('small', { className: 'premium-kicker', text: 'VIP АКТИВЕН' }),
-      h('h3', { text: plans.find((plan) => plan.id === vip.planId)?.title || 'Пространство VIP' }),
-      h('p', { text: `Доступ действует до ${formatDate(vip.expiresAt)}.` })
-    ] });
+    return [
+      profilePanelHead('VIP-КРУГ', 'Ваш доступ открыт'),
+      h('div', { className: 'profile-panel-body' },
+        h('div', { className: 'profile-vip-pass' },
+          h('span', { className: 'profile-vip-pass__seal', attrs: { 'aria-hidden': 'true' }, text: '✦' }),
+          h('div', {},
+            h('small', { text: 'VIP АКТИВЕН' }),
+            h('strong', { text: plans.find((plan) => plan.id === vip.planId)?.title || 'Пространство VIP' }),
+            h('p', {}, h('span', { text: 'Действует до' }), ' ', h('b', { text: formatDate(vip.expiresAt) }))
+          )
+        ),
+        plans.length ? h('div', { className: 'profile-vip-plans' }, plans.map(profileVipPlanButton)) : null
+      )
+    ];
   }
-  if (!plans.length) return null;
-  return MysticCard({ className: 'premium-vip-card', children: [
-    h('small', { className: 'premium-kicker', text: 'ПРОСТРАНСТВО VIP' }),
-    h('h3', { text: 'Больше глубоких практик в одном доступе' }),
-    h('div', { className: 'premium-entitlements' }, plans.map((plan) => h('div', { className: 'premium-entitlement' },
-      h('span', {},
-        h('strong', { text: plan.title }),
-        h('small', { text: `${plan.description}${plan.includedReadings ? ` · ${plan.includedReadings} чтений` : ''}` })
+  return [
+    profilePanelHead('VIP-КРУГ', plans.length ? 'Выберите глубину доступа' : 'Базовый доступ'),
+    h('div', { className: 'profile-panel-body' },
+      plans.length
+        ? h('div', { className: 'profile-vip-plans' }, plans.map(profileVipPlanButton))
+        : h('div', { className: 'profile-quiet-empty' }, h('span', { text: '✦' }), h('p', { text: 'Новые варианты VIP появятся здесь.' }))
+    )
+  ];
+}
+
+function profileVipPlanButton(plan) {
+  return h('button', {
+    className: 'profile-vip-plan',
+    attrs: { type: 'button', disabled: state.busy ? true : null },
+    on: { click: () => purchaseVip(plan) }
+  },
+  h('span', {},
+    h('strong', { text: plan.title }),
+    h('small', { text: plan.description || (plan.includedReadings ? `${plan.includedReadings} чтений` : 'VIP') })
+  ),
+  h('b', { text: `${formatMoney(plan.price)} S` })
+  );
+}
+
+function profileGiftsPanel(entitlements) {
+  return [
+    profilePanelHead('ДАРЫ', entitlements.length ? 'Доступно без списания' : 'Ваши дары'),
+    h('div', { className: 'profile-panel-body' },
+      entitlements.length
+        ? h('div', { className: 'profile-gift-list' }, entitlements.map((item) => h('button', {
+          className: 'profile-gift-row', attrs: { type: 'button' }, on: { click: () => navigate(rewardScreen(item.service_id)) }
+        },
+        h('span', { className: 'profile-gift-row__seal' }, Icon('sparkle', { size: 20 })),
+        h('span', {}, h('strong', { text: serviceConfig(item.service_id).title || item.service_id }), h('small', { text: `Доступно: ${item.quantity}` })),
+        h('b', { text: 'Открыть' })
+        )))
+        : h('div', { className: 'profile-quiet-empty' }, h('span', { text: '◇' }), h('p', { text: 'Дары Колеса и приглашений появятся здесь.' }))
+    )
+  ];
+}
+
+function profileSettingsPanel() {
+  return [
+    profilePanelHead('СРЕДА', 'Настройте ощущение пространства'),
+    h('div', { className: 'profile-panel-body profile-settings-body' },
+      h('section', { className: 'profile-setting-block' },
+        h('div', {}, h('strong', { text: 'Язык' }), h('small', { text: 'Меняет интерфейс и ответы Эзотериума' })),
+        languagePicker()
       ),
-      MysticButton({
-        text: `${formatMoney(plan.price)} S`, icon: 'sparkle', variant: 'gold',
-        disabled: state.busy, onClick: () => purchaseVip(plan)
-      })
-    )))
-  ] });
+      h('section', { className: 'profile-setting-block' },
+        h('div', { className: 'profile-setting-block__clock-head' }, h('div', {}, h('strong', { text: 'Почерк часов' }), h('small', { text: 'Сохраняется на этом устройстве' })), celestialClock()),
+        clockStylePicker()
+      ),
+      h('div', { className: 'profile-setting-links' },
+        profileSettingLink('profile', 'Образ профиля', 'Сменить фото', () => openProfileOverlay('avatar')),
+        profileSettingLink('orbit', 'Гороскоп дня', state.horoscope.enabled ? 'Ежедневный ритм включён' : 'Выбрать знак и ритм', () => navigate('horoscope')),
+        profileSettingLink('history', 'Память, звук и графика', 'Приватность и атмосфера', () => navigate('space-settings')),
+        profileSettingLink('info', 'Связь с поддержкой', 'Вопросы по приложению и оплате', () => navigate('support'))
+      )
+    )
+  ];
+}
+
+function profileSettingLink(icon, title, subtitle, onClick) {
+  return h('button', { attrs: { type: 'button' }, on: { click: onClick } },
+    h('span', {}, Icon(icon, { size: 20 })),
+    h('span', {}, h('strong', { text: title }), h('small', { text: subtitle })),
+    h('b', { attrs: { 'aria-hidden': 'true' }, text: '›' })
+  );
+}
+
+function openProfileOverlay(kind) {
+  if (!['avatar', 'ledger'].includes(kind)) return;
+  state.profileOverlay = kind;
+  pulse();
+  render();
+  window.setTimeout(() => document.querySelector('.profile-sheet__close')?.focus(), 0);
+}
+
+function closeProfileOverlay() {
+  state.profileOverlay = '';
+  render();
+}
+
+function profileOverlay({ ledger }) {
+  if (!state.profileOverlay) return null;
+  const isLedger = state.profileOverlay === 'ledger';
+  const title = isLedger ? 'Все операции' : 'Образ профиля';
+  return h('div', {
+    className: 'profile-sheet-layer',
+    attrs: { role: 'presentation' },
+    on: { click: (event) => { if (event.target === event.currentTarget) closeProfileOverlay(); } }
+  },
+  h('section', { className: 'profile-sheet', attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': title } },
+    h('header', {},
+      h('div', {}, h('small', { text: 'ЛИЧНЫЙ КРУГ' }), h('h2', { text: title })),
+      h('button', { className: 'profile-sheet__close', attrs: { type: 'button', 'aria-label': 'Закрыть' }, on: { click: closeProfileOverlay } }, '×')
+    ),
+    h('div', { className: 'profile-sheet__body' },
+      isLedger
+        ? (ledger.length ? h('div', { className: 'profile-ledger-full' }, ledger.map(profileLedgerLine)) : h('div', { className: 'profile-quiet-empty' }, h('p', { text: 'Операций пока нет.' })))
+        : profileAvatarEditor()
+    )
+  ));
 }
 
 async function purchaseVip(plan) {
@@ -6072,7 +6269,7 @@ async function purchaseVip(plan) {
   } finally { state.busy = false; render(); }
 }
 
-function profileIdentityCard() {
+function profileAvatarEditor() {
   const input = h('input', {
     attrs: { type: 'file', accept: 'image/jpeg,image/png,image/webp', hidden: true }
   });
@@ -6086,62 +6283,21 @@ function profileIdentityCard() {
       notify(apiErrorMessage(error));
     }
   });
-  const age = textInput({
-    value: state.profile.age,
-    type: 'number',
-    attrs: { min: 13, max: 120, inputmode: 'numeric' },
-    onInput: (value) => { state.profile.age = value; }
-  });
-  const city = textInput({
-    value: state.profile.city,
-    attrs: { maxlength: 120, autocomplete: 'address-level2' },
-    onInput: (value) => { state.profile.city = value; }
-  });
-  return MysticCard({ className: 'premium-profile-identity', children: [
-    h('div', { className: 'premium-avatar-editor' },
-      h('div', { className: 'premium-avatar-editor__image' },
-        h('img', { attrs: { src: profileAvatar(), alt: 'Фото профиля' } }),
-        h('span', { text: '✦' })
-      ),
-      h('div', {},
-        h('strong', { text: 'Фото профиля' }),
-        h('small', { text: state.profile.avatarUrl ? 'Используется загруженное фото' : state.profile.telegramAvatarUrl || tg?.initDataUnsafe?.user?.photo_url ? 'Загружено из Telegram' : 'Используется образ Эзотериума' }),
-        h('div', { className: 'premium-avatar-editor__actions' },
-          input,
-          h('button', { attrs: { type: 'button' }, on: { click: () => input.click() } }, 'Загрузить своё'),
-          state.profile.avatarUrl ? h('button', { attrs: { type: 'button' }, on: { click: removeProfileAvatar } }, 'Вернуть из TG') : null
-        )
-      )
+  return h('div', { className: 'profile-avatar-editor' },
+    h('div', { className: 'profile-avatar-editor__portrait' },
+      h('span', { attrs: { 'aria-hidden': 'true' } }),
+      h('img', { attrs: { src: profileAvatar(), alt: 'Фото профиля' } })
     ),
-    h('div', { className: 'premium-profile-grid' },
-      field('Возраст', age),
-      field('Город', city)
+    h('div', { className: 'profile-avatar-editor__copy' },
+      h('h3', { text: firstName() }),
+      h('p', { text: state.profile.avatarUrl ? 'Выбран ваш личный образ.' : state.profile.telegramAvatarUrl || tg?.initDataUnsafe?.user?.photo_url ? 'Используется фотография из Telegram.' : 'Используется знак Эзотериума.' })
     ),
-    MysticButton({
-      text: 'Сохранить данные',
-      icon: 'save',
-      variant: 'outline',
-      onClick: saveProfileDetails
-    })
-  ] });
-}
-
-async function saveProfileDetails() {
-  const age = Number(state.profile.age);
-  const city = state.profile.city.trim().replace(/\s+/g, ' ');
-  if (!Number.isInteger(age) || age < 13 || age > 120) return notify('Укажите возраст от 13 до 120 лет');
-  if (city.length < 2) return notify('Укажите город');
-  state.profile.age = age;
-  state.profile.city = city;
-  state.profile.completed = true;
-  writeJSON(PROFILE_KEY, { ...state.profile, gender: state.userGender });
-  if (!tg?.initData) return notify('Профиль сохранён на этом устройстве');
-  try {
-    await api('/api/preferences', { method: 'POST', body: profilePreferencePayload() });
-    notify('Профиль обновлён');
-  } catch (error) {
-    notify(apiErrorMessage(error));
-  }
+    h('div', { className: 'profile-avatar-editor__actions' },
+      input,
+      MysticButton({ text: 'Выбрать фото', icon: 'upload-cloud', variant: 'primary', disabled: state.busy, onClick: () => input.click() }),
+      state.profile.avatarUrl ? MysticButton({ text: 'Вернуть из Telegram', icon: 'profile', variant: 'outline', disabled: state.busy, onClick: removeProfileAvatar }) : null
+    )
+  );
 }
 
 async function uploadProfileAvatar(image) {
@@ -6720,54 +6876,6 @@ async function loadPreferences() {
   if (state.screen === 'welcome' || state.screen === 'profile' || state.screen === 'horoscope') render();
 }
 
-function genderPreferenceCard() {
-  const description = state.userGender === 'female'
-    ? 'Эзотериум обращается к вам в женском роде.'
-    : state.userGender === 'male'
-      ? 'Эзотериум обращается к вам в мужском роде.'
-      : 'Эзотериум использует нейтральные формулировки.';
-  return MysticCard({ className: 'premium-gender-card', children: [
-    h('div', { className: 'premium-gender-card__head' },
-      h('div', {},
-        h('p', { className: 'premium-kicker', text: 'ЛИЧНЫЙ ГОЛОС ЭЗОТЕРИУМА' }),
-        h('h2', { text: 'Как к вам обращаться?' })
-      ),
-      h('img', { attrs: { src: profileAvatar(), alt: '', draggable: 'false' } })
-    ),
-    h('div', { className: 'premium-gender-options' },
-      Object.entries(GENDER_OPTIONS).map(([value, option]) =>
-        h('button', {
-          className: `premium-gender-option ${state.userGender === value ? 'is-active' : ''}`,
-          attrs: { type: 'button', 'aria-pressed': state.userGender === value ? 'true' : 'false' },
-          on: { click: () => saveGenderPreference(value) }
-        },
-        h('img', { attrs: { src: premiumArtUrl(option.art), alt: '', draggable: 'false' } }),
-        h('span', { text: option.label }))
-      )
-    ),
-    h('p', { className: 'premium-gender-card__copy', text: `${description} По фотографии приложение может предложить вариант, но окончательный выбор всегда принадлежит вам.` })
-  ] });
-}
-
-async function saveGenderPreference(value) {
-  state.userGender = normalizeGender(value);
-  writeJSON(PROFILE_KEY, { ...state.profile, gender: state.userGender });
-  render();
-  if (!tg?.initData) {
-    notify('Обращение сохранено на этом устройстве');
-    return;
-  }
-  try {
-    await api('/api/preferences', {
-      method: 'POST',
-      body: profilePreferencePayload()
-    });
-    notify('Эзотериум запомнил форму обращения');
-  } catch (error) {
-    notify(apiErrorMessage(error));
-  }
-}
-
 function uniqueId(prefix) {
   return `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 }
@@ -6813,6 +6921,7 @@ function render() {
 
 window.addEventListener('popstate', () => {
   const nextParams = new URLSearchParams(location.search);
+  state.profileOverlay = '';
   state.screen = nextParams.get('screen') || 'home';
   const roomToken = nextParams.get('room') || '';
   if (/^[a-f0-9]{32}$/.test(roomToken) && roomToken !== state.oracleRoomToken) {
@@ -6822,6 +6931,12 @@ window.addEventListener('popstate', () => {
   }
   render();
   if (state.screen === 'palm-room' && state.oracleRoomToken) loadOracleRoom();
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || !state.profileOverlay) return;
+  event.preventDefault();
+  closeProfileOverlay();
 });
 
 function hideBootScreen() {

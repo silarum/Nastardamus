@@ -55,9 +55,12 @@ test('personal forecasts use strict structured results instead of decorative pro
   }
 });
 
-test('registration, avatar and mobile keyboard journeys are wired end to end', () => {
-  assert.match(app, /field\('Возраст'/);
-  assert.match(app, /field\('Город'/);
+test('registration, compact profile avatar and mobile keyboard journeys are wired end to end', () => {
+  const profile = app.slice(app.indexOf('function profileScreen()'), app.indexOf('async function purchaseVip'));
+  assert.doesNotMatch(profile, /field\('Возраст'/);
+  assert.doesNotMatch(profile, /field\('Город'/);
+  assert.doesNotMatch(profile, /genderPreferenceCard/);
+  assert.match(app, /initiation-gender-grid/);
   assert.match(app, /tg\?\.initDataUnsafe\?\.user\?\.photo_url/);
   assert.match(app, /action:\s*'upload_avatar'/);
   assert.match(app, /action:\s*'remove_avatar'/);

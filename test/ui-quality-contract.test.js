@@ -83,12 +83,14 @@ test('reading mode removes navigation overlays and uses natural page scrolling',
   );
 });
 
-test('profile exposes a voluntary grammatical gender preference', () => {
+test('registration captures grammatical gender once and the profile does not repeat the form', () => {
+  const profileSource = appSource.slice(appSource.indexOf('function profileScreen()'), appSource.indexOf('async function purchaseVip'));
   assert.match(appSource, /female:\s*\{\s*label:\s*'Женщина'/s);
   assert.match(appSource, /male:\s*\{\s*label:\s*'Мужчина'/s);
   assert.match(appSource, /unspecified:\s*\{\s*label:\s*'Не указывать'/s);
-  assert.match(appSource, /По фотографии приложение может предложить вариант/i);
-  assert.match(appSource, /окончательный выбор всегда принадлежит вам/i);
+  assert.match(appSource, /initiation-gender-grid/);
+  assert.doesNotMatch(profileSource, /GENDER_OPTIONS|Возраст|Город/);
+  assert.match(appSource, /не меняет ваш профиль/i);
 });
 
 test('startup renders the branded elder splash without waiting for Telegram', () => {

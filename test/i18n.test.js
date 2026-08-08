@@ -32,3 +32,10 @@ test('dynamic home and onboarding phrases preserve personalized values', () => {
   assert.equal(translateText('Никита, найдите одну ясную точку опоры', 'en'), 'Никита, find one clear point of support');
   assert.equal(translateText('Выбрано: 4 · минимум 3', 'zh'), '已选择：4 · 至少 3 项');
 });
+
+test('the compact profile cabinet is complete in all three languages', () => {
+  assert.equal(translateText('Личный круг', 'en'), 'Personal circle');
+  assert.equal(translateText('Счёт · доступ · настройки', 'zh'), '余额 · 权限 · 设置');
+  assert.equal(translateText('Память, звук и графика', 'en'), 'Memory, sound and visuals');
+  assert.equal(translateText('Выбрать фото', 'zh'), '选择图片');
+});
