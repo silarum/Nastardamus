@@ -99,14 +99,3 @@ test('the obsolete GitHub Pages Telegram button redirects to the canonical app b
   assert.equal(stopped, true);
   assert.equal(redirectedTo, 'https://nastardamus.vercel.app/?screen=tarot#reading');
 });
-
-test('the elder avatar sync runs only on an explicitly marked production deployment', () => {
-  const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-  const build = readFileSync(new URL('../scripts/vercel-build.mjs', import.meta.url), 'utf8');
-  const telegramSetup = readFileSync(new URL('../scripts/configure-telegram.mjs', import.meta.url), 'utf8');
-
-  assert.equal(packageJson.scripts['vercel-build'], 'node scripts/vercel-build.mjs');
-  assert.match(build, /VERCEL_ENV === 'production' && profileSyncRequested/u);
-  assert.ok(build.includes('sync-telegram-profile'));
-  assert.match(telegramSetup, /await setTelegramAvatar\(\);\s*if \(currentShortDescription/u);
-});
