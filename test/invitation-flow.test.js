@@ -206,6 +206,34 @@ test('joint result charges one chosen participant and completes for both', async
             strengths: ['Взаимное внимание', 'Готовность слышать'],
             frictions: ['Разный темп решений', 'Невысказанные ожидания'],
             actions: ['Назвать ожидания', 'Согласовать границы', 'Выбрать общий шаг'],
+            visualProfiles: [
+              {
+                name: 'Анна',
+                profile: {
+                  imageUsable: true,
+                  faceVisible: true,
+                  perceivedGender: 'female',
+                  genderConfidence: 'medium',
+                  visibleEvidence: ['Мягкая подача образа', 'Открытый взгляд'],
+                  personaImpression: 'Спокойная внимательность.',
+                  personaBasis: 'Выражение и композиция снимка.',
+                  limitation: 'Это визуальное впечатление, а не установленная личность.'
+                }
+              },
+              {
+                name: 'Иван',
+                profile: {
+                  imageUsable: true,
+                  faceVisible: true,
+                  perceivedGender: 'male',
+                  genderConfidence: 'medium',
+                  visibleEvidence: ['Собранная поза', 'Прямой взгляд'],
+                  personaImpression: 'Сдержанная решительность.',
+                  personaBasis: 'Поза и выражение на снимке.',
+                  limitation: 'Это визуальное впечатление, а не установленная личность.'
+                }
+              }
+            ],
             aspects: [
               { key: 'closeness', label: 'Близость', score: 84, insight: 'Тепло заметно в контакте.' },
               { key: 'dialogue', label: 'Диалог', score: 79, insight: 'Помогает конкретика.' },

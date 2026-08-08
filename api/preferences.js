@@ -65,7 +65,14 @@ export default async function handler(req, res) {
           timezone: req.body?.timezone || 'Europe/Berlin',
           gender: req.body?.gender,
           birthYear: req.body?.birthYear,
-          city: req.body?.city
+          birthDate: req.body?.birthDate,
+          birthTime: req.body?.birthTime,
+          birthTimeKnown: req.body?.birthTimeKnown === true,
+          city: req.body?.city,
+          interests: req.body?.interests,
+          goals: req.body?.goals,
+          consents: req.body?.consents,
+          natalChart: req.body?.natalChart
         });
       }
     }

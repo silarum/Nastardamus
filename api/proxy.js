@@ -3,6 +3,9 @@ import { requestDeepSeekChat } from '../lib/deepseek.js';
 import { analyzeVisionImages, injectVisionAnalysis } from '../lib/vision.js';
 import { buildPersonalAnalysisMessages, parsePersonalAnalysis } from '../lib/personal-analysis.js';
 import { normalizePersonalEvent } from '../lib/personal-space.js';
+import { runAgent } from '../lib/ai-runtime.js';
+import { buildOracleRoomAgentRequest } from '../lib/oracle-rooms.js';
+import { buildTarotDialogueAgentRequest } from '../lib/tarot-dialogue.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 import {
     enforceRateLimit,
@@ -22,6 +25,7 @@ const READING_FEATURES = new Set([
     'photo_compatibility',
     'palm_reading',
     'rune_reading',
+    'path_consultation',
     'amur_compatibility'
 ]);
 const READING_STORE_ACTIONS = new Set([
@@ -44,10 +48,25 @@ const READING_STORE_ACTIONS = new Set([
     'upsert_personal_event',
     'upsert_personal_goal',
     'upsert_personal_task',
+    'upsert_path_item',
+    'upsert_path_consultation',
+    'save_rune_preferences',
+    'upsert_amur_profile',
+    'set_amur_discovery',
     'save_personal_checkin',
     'save_space_preferences',
     'delete_personal_item',
     'clear_personal_space'
+]);
+const ORACLE_ROOM_ACTIONS = new Set([
+    'create_oracle_room',
+    'list_oracle_rooms',
+    'get_oracle_room',
+    'join_oracle_room',
+    'invite_oracle_room_username',
+    'upload_oracle_room_palm',
+    'leave_oracle_room',
+    'close_oracle_room'
 ]);
 const USER_STORE_URL = process.env.USER_STORE_URL
     || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-user-store';
@@ -71,6 +90,7 @@ const DEFAULT_PUBLIC_POLICY = Object.freeze({
 });
 
 export const config = {
+    maxDuration: 60,
     api: { bodyParser: { sizeLimit: '8mb' } }
 };
 
@@ -118,6 +138,18 @@ function invitationAppUrl(token) {
     return url.toString();
 }
 
+function oracleRoomAppUrl(token) {
+    const url = new URL(process.env.WEB_APP_URL || 'https://nastardamus.vercel.app');
+    url.searchParams.set('screen', 'palm-room');
+    url.searchParams.set('room', token);
+    return url.toString();
+}
+
+function oracleRoomInviteUrl(token) {
+    const username = String(process.env.BOT_USERNAME || 'BelonTip_bot').replace(/^@/, '');
+    return `https://t.me/${username}?start=room_${token}`;
+}
+
 async function notifyInvitationChat(botToken, chatId, text, token) {
     if (!Number.isSafeInteger(Number(chatId)) || Number(chatId) <= 0) return;
     await callTelegram(botToken, 'sendMessage', {
@@ -127,6 +159,20 @@ async function notifyInvitationChat(botToken, chatId, text, token) {
             inline_keyboard: [[{
                 text: '✨ Открыть совместный ритуал',
                 web_app: { url: invitationAppUrl(token) }
+            }]]
+        }
+    });
+}
+
+async function notifyOracleRoomChat(botToken, chatId, text, token) {
+    if (!Number.isSafeInteger(Number(chatId)) || Number(chatId) <= 0) return;
+    await callTelegram(botToken, 'sendMessage', {
+        chat_id: Number(chatId),
+        text,
+        reply_markup: {
+            inline_keyboard: [[{
+                text: '🖐 Открыть комнату Эзотериума',
+                web_app: { url: oracleRoomAppUrl(token) }
             }]]
         }
     });
@@ -597,6 +643,91 @@ async function autoCompleteJointInvitation(botToken, {
     }
 }
 
+async function answerOracleRoomTurn(botToken, telegramId, body) {
+    const roomToken = String(body?.roomToken || '').trim().toLowerCase();
+    const message = String(body?.message || '').trim().replace(/\s+/g, ' ').slice(0, 2000);
+    const clientNonce = String(body?.clientNonce || '').trim();
+    if (!/^[a-f0-9]{32}$/.test(roomToken)) throw new Error('invalid_oracle_room_token');
+    if (message.length < 2) throw new Error('invalid_oracle_room_message');
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/.test(clientNonce)) {
+        throw new Error('invalid_idempotency_key');
+    }
+
+    let turn = null;
+    try {
+        const begun = await userStore(botToken, 'begin_oracle_room_turn', {
+            telegramId,
+            roomToken,
+            message,
+            clientNonce
+        });
+        turn = begun.turn;
+        if (turn?.replayed === true) {
+            if (turn.answer) return { room: begun.room, answer: turn.answer, replayed: true };
+            throw new Error('oracle_room_busy');
+        }
+
+        const agentRequest = buildOracleRoomAgentRequest(begun.room, {
+            turnId: turn?.turn_id,
+            message: String(turn?.content || message)
+        });
+        const generated = await runAgent({
+            botToken,
+            slug: 'oracle-room',
+            message: agentRequest.message,
+            history: agentRequest.history
+        });
+        const completed = await userStore(botToken, 'complete_oracle_room_turn', {
+            telegramId,
+            roomToken,
+            turnId: turn?.turn_id,
+            answer: generated.answer
+        });
+        await Promise.allSettled((completed.chats || []).map((chat) =>
+            notifyOracleRoomChat(
+                botToken,
+                chat.chat_id,
+                `Эзотериум ответил в комнате «${completed.room?.title || 'Разговор'}».`,
+                roomToken
+            )
+        ));
+        return { room: completed.room, answer: generated.answer, replayed: false };
+    } catch (error) {
+        if (turn?.turn_id && turn?.replayed !== true) {
+            await userStore(botToken, 'fail_oracle_room_turn', {
+                telegramId,
+                roomToken,
+                turnId: turn.turn_id
+            }).catch(() => null);
+        }
+        throw error;
+    }
+}
+
+async function answerTarotDialogueTurn(botToken, telegramId, body) {
+    const readingId = String(body?.readingId || '').trim().toLowerCase();
+    const message = String(body?.message || '').trim().replace(/\s+/g, ' ').slice(0, 700);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(readingId)) {
+        throw new Error('invalid_reading_id');
+    }
+    if (message.length < 2) throw new Error('invalid_tarot_dialogue_message');
+    const context = await userStore(botToken, 'get_tarot_dialogue_context', { telegramId, readingId });
+    const agentRequest = buildTarotDialogueAgentRequest(context, message);
+    const generated = await runAgent({
+        botToken,
+        slug: 'tarot-dialogue',
+        message: agentRequest.message,
+        history: agentRequest.history
+    });
+    await userStore(botToken, 'append_tarot_dialogue_turn', {
+        telegramId,
+        readingId,
+        message,
+        answer: generated.answer
+    });
+    return generated.answer;
+}
+
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -664,6 +795,161 @@ export default async function handler(req, res) {
             return sendJson(res, 502, { error: 'assistant_unavailable' });
         }
     }
+
+    if (ORACLE_ROOM_ACTIONS.has(action)) {
+        if (!auth.ok) return sendJson(res, 401, { error: 'telegram_auth_required' });
+        try {
+            const limits = {
+                create_oracle_room: 6,
+                invite_oracle_room_username: 20,
+                upload_oracle_room_palm: 10,
+                join_oracle_room: 20,
+                leave_oracle_room: 20,
+                close_oracle_room: 12,
+                get_oracle_room: 1800,
+                list_oracle_rooms: 240
+            };
+            const rateLimit = await enforceRateLimit(req, {
+                botToken,
+                telegramId,
+                scope: `oracle-room:${action}`,
+                limit: limits[action] || 60,
+                windowSeconds: 60 * 60,
+                persistent: true
+            });
+            setRateLimitHeaders(res, rateLimit);
+            if (!rateLimit.allowed) return sendJson(res, 429, { error: 'rate_limited' });
+
+            const payload = {
+                ...req.body,
+                action: undefined,
+                telegramId,
+                ...(action === 'create_oracle_room' || action === 'join_oracle_room'
+                    ? {
+                        displayName: auth.user.first_name || auth.user.username || 'Искатель',
+                        username: auth.user.username || '',
+                        gender: req.body?.gender
+                    }
+                    : {})
+            };
+            if ((action === 'create_oracle_room' && req.body?.mode !== 'solo') || action === 'join_oracle_room') {
+                const config = await userStore(botToken, 'get_public_config', { telegramId });
+                if (config.settings?.jointReadingsEnabled === false) {
+                    return sendJson(res, 403, { error: 'joint_readings_disabled' });
+                }
+            }
+            const data = await userStore(botToken, action, payload);
+            const token = String(data.room?.token || req.body?.roomToken || '');
+            if (action === 'invite_oracle_room_username' && data.invited === true) {
+                await notifyOracleRoomChat(
+                    botToken,
+                    data.targetChatId,
+                    `${auth.user.first_name || 'Участник'} приглашает вас в общую комнату с Эзотериумом.`,
+                    token
+                ).catch((error) => {
+                    console.error('Oracle room username notification failed:', error?.message || error);
+                });
+            }
+            if (action === 'join_oracle_room') {
+                await Promise.allSettled((data.chats || []).map((chat) =>
+                    notifyOracleRoomChat(
+                        botToken,
+                        chat.chat_id,
+                        `${auth.user.first_name || 'Новый участник'} присоединился к комнате «${data.room?.title || 'Разговор'}».`,
+                        token
+                    )
+                ));
+            }
+            if (action === 'upload_oracle_room_palm' && data.newlyOpened === true) {
+                await Promise.allSettled((data.chats || []).map((chat) =>
+                    notifyOracleRoomChat(
+                        botToken,
+                        chat.chat_id,
+                        `Все участники завершили подготовку. Эзотериум открыл совместное чтение «${data.room?.title || 'Путь двух судеб'}».`,
+                        token
+                    )
+                ));
+            }
+            return sendJson(res, 200, {
+                ...data,
+                ...(token ? { inviteUrl: oracleRoomInviteUrl(token) } : {})
+            });
+        } catch (error) {
+            const code = error?.message || 'oracle_room_unavailable';
+            const status = Number(error?.status) || (
+                code === 'oracle_room_not_found' || code === 'oracle_username_unavailable' ? 404
+                    : code === 'oracle_room_invite_expired' ? 410
+                        : ['oracle_room_closed', 'oracle_room_full', 'oracle_room_busy', 'oracle_room_owner_must_close', 'oracle_room_started', 'oracle_room_preparation_required'].includes(code) ? 409
+                            : code === 'oracle_room_access_denied' ? 403
+                                : code === 'oracle_palm_unavailable' ? 503
+                                    : 400
+            );
+            if (status >= 500) {
+                console.error('Oracle room action failed:', code);
+            }
+            return sendJson(res, status, {
+                error: status >= 500 ? 'oracle_room_unavailable' : code
+            });
+        }
+    }
+
+    if (action === 'oracle_room_send') {
+        if (!auth.ok) return sendJson(res, 401, { error: 'telegram_auth_required' });
+        try {
+            const rateLimit = await enforceRateLimit(req, {
+                botToken,
+                telegramId,
+                scope: 'oracle-room:message',
+                limit: 80,
+                windowSeconds: 60 * 60,
+                persistent: true
+            });
+            setRateLimitHeaders(res, rateLimit);
+            if (!rateLimit.allowed) return sendJson(res, 429, { error: 'rate_limited' });
+            const result = await answerOracleRoomTurn(botToken, telegramId, req.body);
+            return sendJson(res, 200, { ok: true, ...result });
+        } catch (error) {
+            const code = error?.message || 'oracle_room_answer_unavailable';
+            const status = Number(error?.status) || (
+                code === 'oracle_room_not_found' ? 404
+                    : code === 'oracle_room_invite_expired' ? 410
+                        : ['oracle_room_closed', 'oracle_room_full', 'oracle_room_busy', 'oracle_room_turn_changed', 'oracle_room_preparation_required'].includes(code) ? 409
+                            : code === 'oracle_room_access_denied' ? 403
+                                : ['invalid_oracle_room_token', 'invalid_oracle_room_message', 'invalid_idempotency_key'].includes(code) ? 400
+                                    : 502
+            );
+            return sendJson(res, status, {
+                error: status >= 500 ? 'oracle_room_answer_unavailable' : code
+            });
+        }
+    }
+
+    if (action === 'tarot_dialogue_send') {
+        if (!auth.ok) return sendJson(res, 401, { error: 'telegram_auth_required' });
+        try {
+            const rateLimit = await enforceRateLimit(req, {
+                botToken,
+                telegramId,
+                scope: 'tarot:dialogue',
+                limit: 24,
+                windowSeconds: 60 * 60,
+                persistent: true
+            });
+            setRateLimitHeaders(res, rateLimit);
+            if (!rateLimit.allowed) return sendJson(res, 429, { error: 'rate_limited' });
+            const answer = await answerTarotDialogueTurn(botToken, telegramId, req.body);
+            return sendJson(res, 200, { ok: true, answer });
+        } catch (error) {
+            const code = error?.message || 'tarot_dialogue_unavailable';
+            const status = Number(error?.status) || (
+                code === 'tarot_session_not_found' ? 404
+                    : ['invalid_reading_id', 'invalid_tarot_dialogue_message', 'tarot_dialogue_requires_cards'].includes(code) ? 400
+                        : 502
+            );
+            return sendJson(res, status, { error: status >= 500 ? 'tarot_dialogue_unavailable' : code });
+        }
+    }
+
     if (READING_STORE_ACTIONS.has(action)) {
         if (!auth.ok) return sendJson(res, 401, { error: 'telegram_auth_required' });
         try {

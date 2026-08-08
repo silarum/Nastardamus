@@ -73,10 +73,10 @@ test('direct web entry is gated before the application bundle starts', () => {
   assert.match(gate, /BelonTip_bot/u);
 });
 
-test('the obsolete GitHub Pages Telegram button redirects to the canonical app before assets load', () => {
+test('the obsolete GitHub Pages Telegram button redirects to the canonical app before threshold art loads', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const redirect = readFileSync(new URL('../ui-kit/canonical-entry.js', import.meta.url), 'utf8');
-  assert.ok(html.indexOf('./ui-kit/canonical-entry.js') < html.indexOf('/images/splash-v2.webp'));
+  assert.ok(html.indexOf('./ui-kit/canonical-entry.js') < html.indexOf('/images/worlds/threshold.webp'));
 
   let redirectedTo = '';
   let stopped = false;
