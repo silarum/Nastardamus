@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
 import { structuredSchemaForFeature } from '../lib/readings.js';
-import { TAROT_CARD_NAMES, tarotCardImage } from '../ui-kit/core/tarot-deck.js';
+import { TAROT_CARD_NAMES, TAROT_MAJOR_ARCANA, TAROT_MINOR_ARCANA, tarotCardImage } from '../ui-kit/core/tarot-deck.js';
 
 const app = readFileSync(new URL('../ui-kit/app.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../ui-kit/app.css', import.meta.url), 'utf8');
@@ -19,12 +19,20 @@ const admin = readFileSync(new URL('../api/admin.js', import.meta.url), 'utf8');
 const proxy = readFileSync(new URL('../api/proxy.js', import.meta.url), 'utf8');
 const vercel = readFileSync(new URL('../vercel.json', import.meta.url), 'utf8');
 
-test('Tarot uses one unique 78-card deck with a real asset for every card', () => {
+test('Tarot preserves the original Major Arcana and adds a complete illustrated Minor Arcana', () => {
+  assert.equal(TAROT_MAJOR_ARCANA.length, 22);
+  assert.equal(TAROT_MINOR_ARCANA.length, 56);
   assert.equal(TAROT_CARD_NAMES.length, 78);
   assert.equal(new Set(TAROT_CARD_NAMES).size, 78);
-  for (const card of TAROT_CARD_NAMES) {
+  for (const [card] of TAROT_MAJOR_ARCANA) {
     const asset = tarotCardImage(card);
     assert.ok(asset.startsWith('/images/cards/'));
+    assert.equal(asset.includes('/minor-realistic/'), false, `Major Arcana path changed unexpectedly: ${card}`);
+    assert.ok(existsSync(new URL(`..${asset}`, import.meta.url)), `Missing card asset: ${card}`);
+  }
+  for (const [card] of TAROT_MINOR_ARCANA) {
+    const asset = tarotCardImage(card);
+    assert.ok(asset.includes('/minor-realistic/'), `Minor Arcana is not using the finished realistic deck: ${card}`);
     assert.ok(existsSync(new URL(`..${asset}`, import.meta.url)), `Missing card asset: ${card}`);
   }
   assert.doesNotMatch(app, /function compatibilityScore/);

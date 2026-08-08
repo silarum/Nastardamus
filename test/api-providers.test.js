@@ -72,6 +72,23 @@ function visionAnalysis(feature = 'photo_energy', imageCount = 1) {
     };
 }
 
+function photoVisualReading() {
+    return {
+        summary: 'В кадре читается спокойный, собранный образ.',
+        visualProfile: {
+            imageUsable: true,
+            faceVisible: true,
+            perceivedGender: 'unclear',
+            genderConfidence: 'low',
+            visibleEvidence: ['Мягкий боковой свет', 'Спокойная открытая поза'],
+            personaImpression: 'Сдержанность и готовность к диалогу.',
+            personaBasis: 'Впечатление основано только на позе, свете и композиции.',
+            limitation: 'По фотографии нельзя достоверно определить личность, характер или судьбу.'
+        },
+        narrative: 'Используйте это впечатление как повод прислушаться к своему состоянию, а не как установленный факт.'
+    };
+}
+
 test('text readings use DeepSeek and keep its key on the server', async () => {
     const restore = preserveEnvironment(['BOT_TOKEN', 'DEEPSEEK_API_KEY', 'DEEPSEEK_MODEL', 'OPENAI_API_KEY', 'ALLOW_UNAUTHENTICATED_PREVIEW']);
     const previousFetch = global.fetch;
@@ -155,7 +172,7 @@ test('photo readings use Vision JSON and then the existing DeepSeek prompt throu
             ok: true,
             status: 200,
             headers: { get: () => null },
-            json: async () => ({ choices: [{ message: { content: 'Безопасный ответ.' } }] })
+            json: async () => ({ choices: [{ message: { content: JSON.stringify(photoVisualReading()) } }] })
         };
     };
 
@@ -237,7 +254,7 @@ test('expired optional OpenAI moderation does not block the configured Vision pr
             ok: true,
             status: 200,
             headers: { get: () => null },
-            json: async () => ({ choices: [{ message: { content: 'Ответ DeepSeek.' } }] })
+            json: async () => ({ choices: [{ message: { content: JSON.stringify(photoVisualReading()) } }] })
         };
     };
 

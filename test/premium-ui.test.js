@@ -49,6 +49,17 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
       json: async () => ({ error: 'telegram_auth_required' })
     };
   };
+  dom.window.localStorage.setItem('nastardamus-profile-v1', JSON.stringify({
+    completed: true,
+    name: 'Никита',
+    city: 'Казань',
+    birthDate: '1994-05-17',
+    birthTime: '12:00',
+    birthTimeKnown: true,
+    interests: ['relationships', 'business', 'growth'],
+    goals: ['harmony'],
+    gender: 'male'
+  }));
 
   try {
     const app = await import(`../ui-kit/app.js?ui-test=${Date.now()}`);
@@ -62,6 +73,11 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     app.render();
 
     const mount = document.getElementById('premium-app');
+    assert.equal(mount.dataset.screen, 'welcome');
+    assert.ok(mount.textContent.includes('Я — Эзотериум'));
+    click(document, 'Узнать, что я умею');
+    assert.ok(mount.textContent.includes('Чем я могу быть вам полезен'));
+    click(document, 'Войти в Nastardamus');
     assert.equal(mount.dataset.screen, 'home');
     assert.equal(mount.querySelectorAll('.n-app-shell').length, 1);
     assert.equal(mount.querySelectorAll('.n-balance-card').length, 0, 'Balance must not be shown on the home screen');
@@ -72,7 +88,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.ok(homeText.indexOf('Руны') < homeText.indexOf('Таро'));
     assert.ok(homeText.indexOf('Таро') < homeText.indexOf('Амур'));
     assert.ok(homeText.indexOf('Спортивные знамения') < homeText.lastIndexOf('Колесо Фортуны'));
-    assert.ok(homeText.includes('Мой путь с Эзотериумом'));
+    assert.ok(homeText.includes('Личное пространство Эзотериума'));
     assert.match(
       mount.querySelector('.premium-sports-banner > img').getAttribute('src'),
       /sports-prophecy-banner\.webp$/
@@ -92,11 +108,11 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     click(document, 'Назад');
     assert.equal(mount.dataset.screen, 'home');
 
-    click(document, 'Мой путь с Эзотериумом');
+    click(document, 'Личное пространство Эзотериума');
     assert.equal(mount.dataset.screen, 'space');
     assert.ok(document.body.textContent.toLocaleLowerCase('ru').includes('энергия дня'));
-    assert.ok(document.body.textContent.includes('Ближайшие события'));
-    click(document, 'Добавить событие');
+    assert.ok(document.body.textContent.includes('Важное сегодня'));
+    click(document, 'Событие');
     assert.equal(mount.dataset.screen, 'space-event-form');
     const eventTitle = document.querySelector('input[placeholder="Например: важный разговор"]');
     eventTitle.value = 'Разговор о новом проекте';
@@ -127,6 +143,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     click(document, 'Войти в ритуал');
     assert.equal(mount.dataset.screen, 'tarot-draw');
     click(document, 'Перемешать колоду');
+    await new Promise((resolve) => setTimeout(resolve, 280));
 
     for (let index = 0; index < 3; index += 1) {
       const card = document.querySelector('.premium-tarot-card:not(:disabled)');
@@ -187,23 +204,20 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
 
     click(document, 'Назад');
     click(document, 'По ладоням');
-    assert.equal(mount.dataset.screen, 'palm');
-    assert.equal(document.querySelectorAll('.n-palm-graphic').length, 2);
-    assert.match(document.querySelector('.n-palm-graphic--left').getAttribute('src'), /palm-left\.webp$/);
-    assert.match(document.querySelector('.n-palm-graphic--right').getAttribute('src'), /palm-right\.webp$/);
+    assert.equal(mount.dataset.screen, 'palm-room-create');
+    assert.equal(document.querySelectorAll('.palm-live-invite__hands img').length, 2);
+    assert.ok(document.body.textContent.includes('Имя второго участника'));
+    assert.ok(document.body.textContent.includes('Главный вопрос для совместного чтения'));
     click(document, 'Творческий союз');
-    assert.equal(app.state.palmGoal, 'creative');
+    assert.equal(app.state.oracleRoomDraft.relationshipType, 'creative');
     assert.equal(app.suggestGenderFromName('Анна'), 'female');
     assert.equal(app.suggestGenderFromName('Иван'), 'male');
     assert.equal(app.suggestGenderFromName('Саша'), 'unspecified');
-    click(document, 'Продолжить ритуал');
-    assert.equal(mount.dataset.screen, 'palm');
-    assert.ok(document.getElementById('premium-toast').textContent.includes('Сначала загрузите фото ладони'));
 
     click(document, 'Практики');
     click(document, 'Чтение по ладони');
     assert.equal(mount.dataset.screen, 'palm-reading');
-    assert.ok(document.body.textContent.includes('Реальный диалог перед толкованием'));
+    assert.ok(document.body.textContent.includes('Сначала — ладонь'));
     click(document, 'Назад');
     click(document, 'Спросить Эзотериума');
     assert.equal(mount.dataset.screen, 'support');
@@ -231,22 +245,54 @@ test('bundled startup shows registration and enters the redesigned home', async 
   try {
     dom.window.localStorage.setItem('nastardamus-onboarded-v2', 'true');
     dom.window.scrollTo = () => {};
+    dom.window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
     dom.window.eval(bundle);
 
     const mount = dom.window.document.getElementById('premium-app');
     const boot = dom.window.document.getElementById('boot-screen');
     assert.equal(mount.dataset.screen, 'welcome');
-    assert.ok(mount.querySelector('img[src="/images/splash-v2.webp"]'));
+    assert.equal(mount.dataset.world, 'threshold');
     assert.ok(mount.textContent.includes('Nastardamus'));
+    assert.ok(mount.textContent.includes('Я — Эзотериум'));
     assert.ok(boot.classList.contains('is-hidden'));
 
-    const age = mount.querySelector('input[type="number"]');
+    click(dom.window.document, 'Узнать, что я умею');
+    assert.ok(mount.textContent.includes('Чем я могу быть вам полезен'));
+    assert.equal(mount.querySelectorAll('.oracle-capability').length, 6);
+    click(dom.window.document, 'Продолжить знакомство');
+    assert.ok(mount.textContent.includes('Первое знакомство'));
+
+    for (const consent of [...mount.querySelectorAll('.initiation-consents input')]) {
+      consent.checked = true;
+      consent.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    }
+    click(dom.window.document, 'Начать личное знакомство');
+    const name = mount.querySelector('input[autocomplete="name"]');
+    name.value = 'Никита';
+    name.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    click(dom.window.document, 'Продолжить');
+    click(dom.window.document, 'Мужчина');
+    click(dom.window.document, 'Продолжить');
+
+    const birthDate = mount.querySelector('input[type="date"]');
+    birthDate.value = '1994-05-17';
+    birthDate.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    click(dom.window.document, 'Сохранить дату');
+    click(dom.window.document, 'Продолжить');
+
     const city = mount.querySelector('input[autocomplete="address-level2"]');
-    age.value = '29';
     city.value = 'Казань';
-    age.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
     city.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-    click(dom.window.document, 'Сохранить и войти в круг');
+    click(dom.window.document, 'Сохранить место');
+    click(dom.window.document, 'Пропустить');
+    click(dom.window.document, 'Отношения');
+    click(dom.window.document, 'Бизнес');
+    click(dom.window.document, 'Саморазвитие');
+    click(dom.window.document, 'Продолжить');
+    click(dom.window.document, 'Гармония и покой');
+    click(dom.window.document, 'Создать мой профиль');
+    await new Promise((resolve) => dom.window.setTimeout(resolve, 360));
+    click(dom.window.document, 'Продолжить в Nastardamus');
     await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
     assert.equal(mount.dataset.screen, 'home');
     assert.equal(new URL(dom.window.location.href).searchParams.get('screen'), 'home');
@@ -261,7 +307,7 @@ test('bundled startup shows registration and enters the redesigned home', async 
   }
 });
 
-test('a returning user stays on the Esoterium greeting until entering the circle', async () => {
+test('a returning user completes the Esoterium introduction before entering Nastardamus', async () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const bundle = readFileSync(new URL('../ui-kit/app.bundle.js', import.meta.url), 'utf8');
   const dom = new JSDOM(html, {
@@ -281,13 +327,14 @@ test('a returning user stays on the Esoterium greeting until entering the circle
 
     const mount = dom.window.document.getElementById('premium-app');
     assert.equal(mount.dataset.screen, 'welcome');
-    assert.ok(mount.textContent.includes('ПРИВЕТСТВИЕ ЭЗОТЕРИУМА'));
-    assert.ok(mount.textContent.includes('Без вашего нажатия приложение не откроется автоматически'));
+    assert.ok(mount.textContent.includes('Я — Эзотериум'));
 
     await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
     assert.equal(mount.dataset.screen, 'welcome');
 
-    click(dom.window.document, 'Войти в круг');
+    click(dom.window.document, 'Узнать, что я умею');
+    assert.ok(mount.textContent.includes('Чем я могу быть вам полезен'));
+    click(dom.window.document, 'Войти в Nastardamus');
     assert.equal(mount.dataset.screen, 'home');
   } finally {
     dom.window.close();

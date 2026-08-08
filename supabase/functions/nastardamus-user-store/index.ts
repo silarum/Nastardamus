@@ -113,7 +113,8 @@ function personalEventView(row: Record<string, unknown>) {
   return {
     eventId: row.event_id, title: row.title, date: row.event_date, time: String(row.event_time || "").slice(0, 5),
     description: row.description || "", category: row.category, priority: row.priority, status: row.status,
-    reminder: row.reminder === true, goalId: row.goal_id || "", analysis: row.analysis || null, enrichments: row.enrichments || {}
+    reminder: row.reminder === true, goalId: row.goal_id || "", analysis: row.analysis || null, enrichments: row.enrichments || {},
+    location: row.location || "", links: Array.isArray(row.links) ? row.links : [], desiredResult: row.desired_result || "", reflection: row.reflection || ""
   };
 }
 
@@ -123,6 +124,14 @@ function personalGoalView(row: Record<string, unknown>) {
 
 function personalTaskView(row: Record<string, unknown>) {
   return { taskId: row.task_id, goalId: row.goal_id || "", title: row.title, description: row.description || "", recurrence: row.recurrence, scheduledDate: row.scheduled_date, completedDates: row.completed_dates || [] };
+}
+
+function pathItemView(row: Record<string, unknown>) {
+  return { id: row.item_id, kind: row.kind, goalId: row.goal_id || "", title: row.title, status: row.status, metadata: row.metadata || {}, createdAt: row.created_at };
+}
+
+function pathConsultationView(row: Record<string, unknown>) {
+  return { id: row.consultation_id, kind: "path", type: "Мой путь", title: row.title, body: row.result_text || "", input: row.context || {}, answers: row.answers || {}, createdAt: row.created_at, favorite: false };
 }
 
 async function assertOwnedId(table: string, idColumn: string, id: string, telegramId: number) {
@@ -152,6 +161,7 @@ function base64ToBytes(value: string) {
 const JOINT_PHOTO_BUCKET = "nastardamus-joint-photos";
 const READING_MEDIA_BUCKET = "nastardamus-reading-media";
 const PROFILE_PHOTO_BUCKET = "nastardamus-profile-photos";
+const ORACLE_PALM_BUCKET = "nastardamus-oracle-palms";
 const INVITATION_SELECT = [
   "token",
   "flow",
@@ -182,6 +192,39 @@ const INVITATION_SELECT = [
 function cleanInvitationToken(value: unknown) {
   const token = String(value || "").trim().toLowerCase();
   return /^[a-f0-9]{32}$/.test(token) ? token : "";
+}
+
+function cleanOracleRoomToken(value: unknown) {
+  const token = String(value || "").trim().toLowerCase();
+  return /^[a-f0-9]{32}$/.test(token) ? token : "";
+}
+
+function cleanOracleUsername(value: unknown) {
+  const username = String(value || "").trim().replace(/^@/, "").toLowerCase();
+  if (!/^[a-z0-9_]{5,32}$/.test(username)) throw new Error("invalid_oracle_username");
+  return username;
+}
+
+function cleanOracleText(value: unknown, maxLength: number, minLength = 0) {
+  const text = String(value || "").trim().replace(/\s+/g, " ").slice(0, maxLength);
+  if (text.length < minLength) throw new Error("invalid_oracle_room_text");
+  return text;
+}
+
+function cleanOracleHand(value: unknown, kind: "dominant" | "palm") {
+  const hand = String(value || "unspecified").toLowerCase();
+  const allowed = kind === "dominant"
+    ? ["right", "left", "ambidextrous", "unspecified"]
+    : ["right", "left", "unspecified"];
+  if (!allowed.includes(hand)) throw new Error("invalid_oracle_hand_profile");
+  return hand;
+}
+
+function cleanOraclePrivateAnswers(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const source = value as Record<string, unknown>;
+  const keys = ["connection", "tension", "future", "personalQuestion"];
+  return Object.fromEntries(keys.map((key) => [key, cleanOracleText(source[key], 500)]));
 }
 
 function cleanInvitationName(value: unknown) {
@@ -246,6 +289,36 @@ async function uploadJointImage(path: string, dataUrl: unknown) {
     const detail = await response.text().catch(() => "");
     throw new Error(`invitation_image_upload_${response.status}:${detail.slice(0, 120)}`);
   }
+}
+
+async function uploadOraclePalm(path: string, dataUrl: unknown) {
+  const image = parseImageDataUrl(dataUrl);
+  const response = await storageRequest(
+    `object/${ORACLE_PALM_BUCKET}/${path.split("/").map(encodeURIComponent).join("/")}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": image.contentType,
+        "x-upsert": "true",
+        "Cache-Control": "no-store"
+      },
+      body: image.bytes
+    }
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`oracle_palm_upload_${response.status}:${detail.slice(0, 120)}`);
+  }
+}
+
+async function deleteOraclePalms(paths: unknown[]) {
+  const objects = paths.filter((path): path is string => typeof path === "string" && path.length > 0);
+  if (!objects.length) return;
+  await storageRequest(`object/${ORACLE_PALM_BUCKET}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prefixes: objects })
+  }).catch(() => null);
 }
 
 async function downloadJointImage(path: string) {
@@ -409,18 +482,12 @@ const TAROT_MAJOR_CARD_NAMES = [
   "Справедливость", "Повешенный", "Смерть", "Умеренность", "Дьявол",
   "Башня", "Звезда", "Луна", "Солнце", "Суд", "Мир"
 ];
-const TAROT_MINOR_CARD_NAMES = [
-  ["Туз", "Двойка", "Тройка", "Четвёрка", "Пятёрка", "Шестёрка", "Семёрка",
-    "Восьмёрка", "Девятка", "Десятка", "Паж", "Рыцарь", "Королева", "Король"],
-  ["Жезлов", "Кубков", "Мечей", "Пентаклей"]
-].reduce<string[]>((cards, group, index, source) => {
-  if (index !== 0) return cards;
-  for (const suit of source[1]) {
-    for (const rank of group) cards.push(`${rank} ${suit}`);
-  }
-  return cards;
-}, []);
-const TAROT_CARD_NAMES = [...TAROT_MAJOR_CARD_NAMES, ...TAROT_MINOR_CARD_NAMES];
+const TAROT_MINOR_SUITS = ["Жезлов", "Кубков", "Мечей", "Пентаклей"];
+const TAROT_MINOR_RANKS = ["Туз", "Двойка", "Тройка", "Четвёрка", "Пятёрка", "Шестёрка", "Семёрка", "Восьмёрка", "Девятка", "Десятка", "Паж", "Рыцарь", "Королева", "Король"];
+const TAROT_CARD_NAMES = [
+  ...TAROT_MAJOR_CARD_NAMES,
+  ...TAROT_MINOR_SUITS.flatMap((suit) => TAROT_MINOR_RANKS.map((rank) => `${rank} ${suit}`))
+];
 
 async function purgeExpiredJointInvitations() {
   const cutoff = encodeURIComponent(new Date().toISOString());
@@ -503,6 +570,178 @@ async function invitationChatIds(row: Record<string, unknown>) {
     `nastardamus_users?telegram_id=in.(${ids.join(",")})&select=telegram_id,chat_id`
   );
   return await response.json();
+}
+
+async function readOracleRoom(token: string) {
+  const response = await rest(
+    `nastardamus_oracle_rooms?token=eq.${encodeURIComponent(token)}`
+      + "&select=id,token,mode,owner_telegram_id,title,focus,relationship_type,invitee_name,invitee_gender,opening_question,ritual_state,status,max_participants,assistant_state,invite_expires_at,last_message_at,closed_at,created_at,updated_at&limit=1"
+  );
+  return (await response.json())?.[0] || null;
+}
+
+async function readOracleRoomMembers(roomId: string) {
+  const response = await rest(
+    `nastardamus_oracle_room_members?room_id=eq.${encodeURIComponent(roomId)}`
+      + "&select=telegram_id,role,status,display_name,username,gender,palm_image_path,palm_description,dominant_hand,palm_side,private_answers,preparation_status,prepared_at,notifications_enabled,joined_at,created_at,updated_at"
+      + "&order=created_at.asc"
+  );
+  return await response.json();
+}
+
+async function readOracleRoomMessages(roomId: string) {
+  const response = await rest(
+    `nastardamus_oracle_room_messages?room_id=eq.${encodeURIComponent(roomId)}`
+      + "&select=id,turn_id,sender_telegram_id,role,sender_name,content,sequence_no,created_at"
+      + "&order=sequence_no.desc&limit=80"
+  );
+  const rows = await response.json();
+  return Array.isArray(rows) ? rows.reverse() : [];
+}
+
+function oracleRoomMemberView(
+  member: Record<string, unknown>,
+  viewerTelegramId: number,
+  includePrivate = false
+) {
+  const isViewer = Number(member.telegram_id) === viewerTelegramId;
+  return {
+    telegramId: Number(member.telegram_id),
+    role: member.role,
+    status: member.status,
+    displayName: member.display_name,
+    username: member.username || null,
+    gender: member.gender || "unspecified",
+    palmReady: Boolean(member.palm_image_path && member.palm_description),
+    palmDescription: member.status === "active" ? member.palm_description || "" : "",
+    dominantHand: isViewer || includePrivate ? member.dominant_hand || "unspecified" : "unspecified",
+    palmSide: isViewer || includePrivate ? member.palm_side || "unspecified" : "unspecified",
+    privateAnswers: isViewer || includePrivate ? member.private_answers || {} : undefined,
+    preparationStatus: member.preparation_status || "not_started",
+    preparedAt: member.prepared_at || null,
+    notificationsEnabled: member.notifications_enabled !== false,
+    isViewer,
+    joinedAt: member.joined_at || null
+  };
+}
+
+async function oracleRoomView(
+  row: Record<string, unknown>,
+  telegramId: number,
+  { includePrivateForAgent = false } = {}
+) {
+  const members = await readOracleRoomMembers(String(row.id));
+  const viewer = members.find((member: Record<string, unknown>) => Number(member.telegram_id) === telegramId);
+  const viewerStatus = String(viewer?.status || "guest");
+  const joined = viewerStatus === "active";
+  const visibleMembers = joined
+    ? members.filter((member: Record<string, unknown>) => (
+        member.status === "active" || (viewer?.role === "owner" && member.status === "invited")
+      ))
+    : members.filter((member: Record<string, unknown>) => member.role === "owner");
+  const messages = joined ? await readOracleRoomMessages(String(row.id)) : [];
+  const activeCount = members.filter((member: Record<string, unknown>) => member.status === "active").length;
+  const readyCount = members.filter((member: Record<string, unknown>) => (
+    member.status === "active" && member.preparation_status === "ready"
+  )).length;
+  const reservedCount = members.filter((member: Record<string, unknown>) => (
+    member.status === "active" || member.status === "invited"
+  )).length;
+  return {
+    token: row.token,
+    mode: row.mode,
+    title: row.title,
+    focus: joined ? row.focus || "" : "",
+    relationshipType: row.relationship_type || "other",
+    inviteeName: row.invitee_name || "",
+    inviteeGender: row.invitee_gender || "unspecified",
+    openingQuestion: row.opening_question || "",
+    ritualState: row.ritual_state || (row.mode === "solo" ? "opened" : "preparing"),
+    status: row.status,
+    maxParticipants: Number(row.max_participants),
+    participantCount: activeCount,
+    readyCount,
+    chatUnlocked: row.mode === "solo" || row.ritual_state === "opened" || row.status === "closed",
+    reservedCount,
+    assistantState: row.assistant_state,
+    inviteExpiresAt: row.invite_expires_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastMessageAt: row.last_message_at,
+    joinRequired: !joined,
+    viewerStatus,
+    viewerRole: viewer?.role || "guest",
+    viewer: viewer ? oracleRoomMemberView(viewer, telegramId, includePrivateForAgent) : null,
+    members: visibleMembers.map((member: Record<string, unknown>) => (
+      oracleRoomMemberView(member, telegramId, includePrivateForAgent)
+    )),
+    messages: messages.map((message: Record<string, unknown>) => ({
+      id: message.id,
+      turnId: message.turn_id || null,
+      senderTelegramId: message.sender_telegram_id ? Number(message.sender_telegram_id) : null,
+      role: message.role,
+      senderName: message.sender_name,
+      content: message.content,
+      sequenceNo: Number(message.sequence_no),
+      createdAt: message.created_at
+    }))
+  };
+}
+
+async function oracleRoomViewByToken(
+  token: string,
+  telegramId: number,
+  options: { includePrivateForAgent?: boolean } = {}
+) {
+  const room = await readOracleRoom(token);
+  if (!room) return null;
+  return oracleRoomView(room, telegramId, options);
+}
+
+async function oracleRoomChatIds(roomId: string, excludeTelegramId = 0) {
+  const membersResponse = await rest(
+    `nastardamus_oracle_room_members?room_id=eq.${encodeURIComponent(roomId)}`
+      + "&status=eq.active&notifications_enabled=eq.true&select=telegram_id"
+  );
+  const memberRows = await membersResponse.json();
+  const ids = (Array.isArray(memberRows) ? memberRows : [])
+    .map((member: Record<string, unknown>) => Number(member.telegram_id))
+    .filter((value: number) => Number.isSafeInteger(value) && value > 0 && value !== excludeTelegramId);
+  if (!ids.length) return [];
+  const usersResponse = await rest(
+    `nastardamus_users?telegram_id=in.(${ids.join(",")})&select=telegram_id,chat_id`
+  );
+  return await usersResponse.json();
+}
+
+async function listOracleRooms(telegramId: number) {
+  const membershipsResponse = await rest(
+    `nastardamus_oracle_room_members?telegram_id=eq.${telegramId}`
+      + "&status=in.(active,invited)&select=room_id,status,role&order=updated_at.desc&limit=50"
+  );
+  const memberships = await membershipsResponse.json();
+  const ids = (Array.isArray(memberships) ? memberships : []).map((item) => item.room_id).filter(Boolean);
+  if (!ids.length) return [];
+  const roomsResponse = await rest(
+    `nastardamus_oracle_rooms?id=in.(${ids.join(",")})`
+      + "&select=id,token,mode,owner_telegram_id,title,status,max_participants,assistant_state,last_message_at,created_at,updated_at"
+      + "&order=last_message_at.desc&limit=50"
+  );
+  const rooms = await roomsResponse.json();
+  const membershipMap = new Map(memberships.map((item) => [item.room_id, item]));
+  return (Array.isArray(rooms) ? rooms : []).map((room) => ({
+    token: room.token,
+    mode: room.mode,
+    title: room.title,
+    status: room.status,
+    maxParticipants: Number(room.max_participants),
+    assistantState: room.assistant_state,
+    viewerStatus: membershipMap.get(room.id)?.status || "guest",
+    viewerRole: membershipMap.get(room.id)?.role || "member",
+    lastMessageAt: room.last_message_at,
+    createdAt: room.created_at,
+    updatedAt: room.updated_at
+  }));
 }
 
 async function paymentEncryptionKey() {
@@ -686,6 +925,288 @@ Deno.serve(async (req: Request) => {
   const telegramId = Number(body?.telegramId);
 
   try {
+    if (action === "create_oracle_room") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const mode = String(body?.mode || "").toLowerCase();
+      if (!["solo", "pair", "group"].includes(mode)) {
+        return json(400, { error: "invalid_oracle_room_mode" });
+      }
+      const title = cleanOracleText(body?.title, 100, 3);
+      const focus = cleanOracleText(body?.focus, 500);
+      const displayName = cleanOracleText(body?.displayName || "Искатель", 80, 1);
+      const rawUsername = String(body?.username || "").trim();
+      const username = rawUsername ? cleanOracleUsername(rawUsername) : null;
+      const gender = cleanGender(body?.gender);
+      const response = await rest("rpc/nastardamus_create_oracle_room", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_owner_telegram_id: telegramId,
+          p_owner_name: displayName,
+          p_owner_username: username,
+          p_owner_gender: gender,
+          p_mode: mode,
+          p_title: title,
+          p_focus: focus,
+          p_max_participants: Number(body?.maxParticipants || 6),
+          p_invitee_name: mode === "pair" ? cleanInvitationName(body?.inviteeName) : "",
+          p_invitee_gender: mode === "pair" ? cleanGender(body?.inviteeGender) : "unspecified",
+          p_relationship_type: mode === "pair"
+            ? cleanOracleText(body?.relationshipType || "other", 20, 2)
+            : "other",
+          p_opening_question: mode === "pair" ? cleanOracleText(body?.openingQuestion, 400, 8) : "",
+          p_relationship_consent: body?.relationshipConsent === true,
+          p_adult_confirmed: body?.adultConfirmed === true
+        })
+      });
+      const created = await response.json();
+      const room = await oracleRoomViewByToken(String(created.token), telegramId);
+      return json(200, { ok: true, room });
+    }
+
+    if (action === "list_oracle_rooms") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      return json(200, { ok: true, rooms: await listOracleRooms(telegramId) });
+    }
+
+    if (action === "get_oracle_room") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const roomToken = cleanOracleRoomToken(body?.roomToken);
+      if (!roomToken) return json(400, { error: "invalid_oracle_room_token" });
+      const room = await oracleRoomViewByToken(roomToken, telegramId);
+      if (!room) return json(404, { error: "oracle_room_not_found" });
+      return json(200, { ok: true, room });
+    }
+
+    if (action === "join_oracle_room") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const roomToken = cleanOracleRoomToken(body?.roomToken);
+      if (!roomToken) return json(400, { error: "invalid_oracle_room_token" });
+      const displayName = cleanOracleText(body?.displayName || "Искатель", 80, 1);
+      const rawUsername = String(body?.username || "").trim();
+      const username = rawUsername ? cleanOracleUsername(rawUsername) : null;
+      const response = await rest("rpc/nastardamus_join_oracle_room", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_token: roomToken,
+          p_telegram_id: telegramId,
+          p_display_name: displayName,
+          p_username: username,
+          p_gender: cleanGender(body?.gender),
+          p_relationship_consent: body?.relationshipConsent === true,
+          p_adult_confirmed: body?.adultConfirmed === true
+        })
+      });
+      await response.json();
+      const roomRow = await readOracleRoom(roomToken);
+      const room = roomRow ? await oracleRoomView(roomRow, telegramId) : null;
+      return json(200, {
+        ok: true,
+        room,
+        chats: roomRow ? await oracleRoomChatIds(String(roomRow.id), telegramId) : []
+      });
+    }
+
+    if (action === "invite_oracle_room_username") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const roomToken = cleanOracleRoomToken(body?.roomToken);
+      if (!roomToken) return json(400, { error: "invalid_oracle_room_token" });
+      const username = cleanOracleUsername(body?.username);
+      const userResponse = await rest("rpc/nastardamus_find_user_by_username", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ p_username: username })
+      });
+      const target = await userResponse.json();
+      const targetId = Number(target?.telegram_id);
+      const displayName = cleanOracleText(target?.first_name || `@${username}`, 80, 1);
+      const inviteResponse = await rest("rpc/nastardamus_invite_oracle_room_member", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_token: roomToken,
+          p_owner_telegram_id: telegramId,
+          p_target_telegram_id: targetId,
+          p_target_name: displayName,
+          p_target_username: username
+        })
+      });
+      const invited = await inviteResponse.json();
+      const room = await oracleRoomViewByToken(roomToken, telegramId);
+      return json(200, {
+        ok: true,
+        room,
+        invited: invited?.invited === true,
+        inviteeName: displayName,
+        targetChatId: Number(target?.chat_id) || null
+      });
+    }
+
+    if (action === "upload_oracle_room_palm") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      if (body?.palmConsent !== true) return json(400, { error: "photo_consent_required" });
+      const roomToken = cleanOracleRoomToken(body?.roomToken);
+      if (!roomToken) return json(400, { error: "invalid_oracle_room_token" });
+      const description = cleanOracleText(body?.description, 1000, 10);
+      const dominantHand = cleanOracleHand(body?.dominantHand, "dominant");
+      const palmSide = cleanOracleHand(body?.palmSide, "palm");
+      const privateAnswers = cleanOraclePrivateAnswers(body?.privateAnswers);
+      const roomRow = await readOracleRoom(roomToken);
+      if (!roomRow) return json(404, { error: "oracle_room_not_found" });
+      if (roomRow.status !== "active") return json(409, { error: "oracle_room_closed" });
+      const members = await readOracleRoomMembers(String(roomRow.id));
+      const member = members.find((item: Record<string, unknown>) => (
+        Number(item.telegram_id) === telegramId && item.status === "active"
+      ));
+      if (!member) return json(403, { error: "oracle_room_access_denied" });
+      const previousImagePath = typeof member.palm_image_path === "string" ? member.palm_image_path : "";
+      const imagePath = `${roomRow.id}/${telegramId}/${crypto.randomUUID()}`;
+      await uploadOraclePalm(imagePath, body?.image);
+      try {
+        const preparationResponse = await rest("rpc/nastardamus_complete_oracle_room_preparation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            p_token: roomToken,
+            p_telegram_id: telegramId,
+            p_palm_image_path: imagePath,
+            p_palm_description: description,
+            p_dominant_hand: dominantHand,
+            p_palm_side: palmSide,
+            p_private_answers: privateAnswers
+          })
+        });
+        const preparation = await preparationResponse.json();
+        if (previousImagePath && previousImagePath !== imagePath) {
+          await deleteOraclePalms([previousImagePath]);
+        }
+        return json(200, {
+          ok: true,
+          room: await oracleRoomViewByToken(roomToken, telegramId),
+          newlyOpened: preparation?.newly_opened === true,
+          chats: preparation?.newly_opened === true
+            ? await oracleRoomChatIds(String(roomRow.id), telegramId)
+            : []
+        });
+      } catch (error) {
+        await deleteOraclePalms([imagePath]);
+        throw error;
+      }
+    }
+
+    if (action === "begin_oracle_room_turn") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const roomToken = cleanOracleRoomToken(body?.roomToken);
+      if (!roomToken) return json(400, { error: "invalid_oracle_room_token" });
+      const content = cleanOracleText(body?.message, 2000, 2);
+      const nonce = String(body?.clientNonce || "");
+      const response = await rest("rpc/nastardamus_begin_oracle_room_turn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_token: roomToken,
+          p_telegram_id: telegramId,
+          p_content: content,
+          p_client_nonce: nonce
+        })
+      });
+      const turn = await response.json();
+      return json(200, {
+        ok: true,
+        turn,
+        room: await oracleRoomViewByToken(roomToken, telegramId, { includePrivateForAgent: true })
+      });
+    }
+
+    if (action === "complete_oracle_room_turn") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const roomToken = cleanOracleRoomToken(body?.roomToken);
+      const turnId = cleanReadingId(body?.turnId);
+      if (!roomToken || !turnId) return json(400, { error: "invalid_oracle_room_turn" });
+      const answer = cleanOracleText(body?.answer, 4000, 2);
+      const response = await rest("rpc/nastardamus_complete_oracle_room_turn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ p_token: roomToken, p_turn_id: turnId, p_answer: answer })
+      });
+      const completed = await response.json();
+      const roomRow = await readOracleRoom(roomToken);
+      return json(200, {
+        ok: true,
+        turn: completed,
+        room: await oracleRoomViewByToken(roomToken, telegramId),
+        chats: roomRow ? await oracleRoomChatIds(String(roomRow.id), telegramId) : []
+      });
+    }
+
+    if (action === "fail_oracle_room_turn") {
+      const roomToken = cleanOracleRoomToken(body?.roomToken);
+      const turnId = cleanReadingId(body?.turnId);
+      if (!roomToken || !turnId) return json(400, { error: "invalid_oracle_room_turn" });
+      const response = await rest("rpc/nastardamus_fail_oracle_room_turn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ p_token: roomToken, p_turn_id: turnId })
+      });
+      return json(200, { ok: true, turn: await response.json() });
+    }
+
+    if (action === "leave_oracle_room") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const roomToken = cleanOracleRoomToken(body?.roomToken);
+      if (!roomToken) return json(400, { error: "invalid_oracle_room_token" });
+      const roomRow = await readOracleRoom(roomToken);
+      if (!roomRow) return json(404, { error: "oracle_room_not_found" });
+      const members = await readOracleRoomMembers(String(roomRow.id));
+      const member = members.find((item: Record<string, unknown>) => Number(item.telegram_id) === telegramId);
+      const response = await rest("rpc/nastardamus_leave_oracle_room", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ p_token: roomToken, p_telegram_id: telegramId })
+      });
+      await response.json();
+      await deleteOraclePalms([member?.palm_image_path]);
+      return json(200, { ok: true });
+    }
+
+    if (action === "close_oracle_room") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const roomToken = cleanOracleRoomToken(body?.roomToken);
+      if (!roomToken) return json(400, { error: "invalid_oracle_room_token" });
+      const roomRow = await readOracleRoom(roomToken);
+      if (!roomRow) return json(404, { error: "oracle_room_not_found" });
+      const members = await readOracleRoomMembers(String(roomRow.id));
+      const response = await rest("rpc/nastardamus_close_oracle_room", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ p_token: roomToken, p_owner_telegram_id: telegramId })
+      });
+      await response.json();
+      await deleteOraclePalms(members.map((item: Record<string, unknown>) => item.palm_image_path));
+      return json(200, { ok: true, room: await oracleRoomViewByToken(roomToken, telegramId) });
+    }
+
     if (action === "create_joint_invitation") {
       if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
         return json(400, { error: "invalid_telegram_id" });
@@ -1310,6 +1831,63 @@ Deno.serve(async (req: Request) => {
         total: count,
         completed
       });
+    }
+
+    if (action === "get_tarot_dialogue_context") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const readingId = cleanReadingId(body?.readingId);
+      if (!readingId) return json(400, { error: "invalid_reading_id" });
+      const response = await rest(
+        `nastardamus_reading_sessions?id=eq.${readingId}&telegram_id=eq.${telegramId}`
+          + "&kind=eq.tarot&state=in.(selecting,analyzing)&select=id,subtype,title,input_snapshot&limit=1"
+      );
+      const session = (await response.json())?.[0];
+      if (!session) return json(404, { error: "tarot_session_not_found" });
+      const messagesResponse = await rest(
+        `nastardamus_reading_messages?session_id=eq.${session.id}`
+          + "&select=role,content,sequence_no,created_at&order=sequence_no.asc&limit=24"
+      );
+      return json(200, {
+        ok: true,
+        sessionId: session.id,
+        subtype: session.subtype,
+        title: session.title,
+        snapshot: cleanJsonObject(session.input_snapshot),
+        messages: await messagesResponse.json()
+      });
+    }
+
+    if (action === "append_tarot_dialogue_turn") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const readingId = cleanReadingId(body?.readingId);
+      if (!readingId) return json(400, { error: "invalid_reading_id" });
+      const message = String(body?.message || "").trim().replace(/\s+/g, " ").slice(0, 700);
+      const answer = String(body?.answer || "").trim().slice(0, 2000);
+      if (message.length < 2 || !answer) return json(400, { error: "invalid_tarot_dialogue_message" });
+      const sessionResponse = await rest(
+        `nastardamus_reading_sessions?id=eq.${readingId}&telegram_id=eq.${telegramId}`
+          + "&kind=eq.tarot&state=in.(selecting,analyzing)&select=id&limit=1"
+      );
+      if (!(await sessionResponse.json())?.[0]) return json(404, { error: "tarot_session_not_found" });
+      const messagesResponse = await rest(
+        `nastardamus_reading_messages?session_id=eq.${readingId}&select=sequence_no`
+          + "&order=sequence_no.desc&limit=1"
+      );
+      const last = (await messagesResponse.json())?.[0];
+      const firstSequence = Number(last?.sequence_no ?? -1) + 1;
+      await rest("nastardamus_reading_messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify([
+          { session_id: readingId, telegram_id: telegramId, role: "user", content: message, sequence_no: firstSequence },
+          { session_id: readingId, telegram_id: telegramId, role: "assistant", content: answer, sequence_no: firstSequence + 1 }
+        ])
+      });
+      return json(200, { ok: true });
     }
 
     if (action === "save_reading") {
@@ -2081,7 +2659,18 @@ Deno.serve(async (req: Request) => {
         payload.timezone = String(body?.timezone || "Europe/Berlin").slice(0, 80);
         payload.gender = gender;
         payload.birth_year = birthYear;
+        const birthDate = String(body?.birthDate || "");
+        const birthTime = String(body?.birthTime || "");
+        if (birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) return json(400, { error: "invalid_birth_date" });
+        if (birthTime && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(birthTime)) return json(400, { error: "invalid_birth_time" });
+        payload.birth_date = birthDate || null;
+        payload.birth_time = body?.birthTimeKnown === true && birthTime ? birthTime : null;
+        payload.birth_time_known = body?.birthTimeKnown === true && Boolean(birthTime);
         payload.city = city;
+        payload.interests = Array.isArray(body?.interests) ? body.interests.map((item: unknown) => cleanPersonalText(item, 60)).filter(Boolean).slice(0, 12) : [];
+        payload.goals = Array.isArray(body?.goals) ? body.goals.map((item: unknown) => cleanPersonalText(item, 60)).filter(Boolean).slice(0, 8) : [];
+        payload.profile_consents = cleanJsonObject(body?.consents);
+        payload.natal_chart = body?.natalChart && typeof body.natalChart === "object" && !Array.isArray(body.natalChart) ? body.natalChart : null;
         payload.profile_completed_at = new Date().toISOString();
       }
       await rest("nastardamus_users?on_conflict=telegram_id", {
@@ -2132,7 +2721,7 @@ Deno.serve(async (req: Request) => {
       if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
         return json(400, { error: "invalid_telegram_id" });
       }
-      const response = await rest(`nastardamus_users?telegram_id=eq.${telegramId}&select=zodiac_sign,daily_horoscope_enabled,timezone,gender,birth_year,city,telegram_avatar_url,profile_avatar_path,profile_completed_at,last_horoscope_sent_on&limit=1`);
+      const response = await rest(`nastardamus_users?telegram_id=eq.${telegramId}&select=zodiac_sign,daily_horoscope_enabled,timezone,gender,birth_year,birth_date,birth_time,birth_time_known,city,interests,goals,profile_consents,natal_chart,telegram_avatar_url,profile_avatar_path,profile_completed_at,last_horoscope_sent_on&limit=1`);
       const rows = await response.json();
       const preferences = rows?.[0] || null;
       return json(200, {
@@ -2220,17 +2809,22 @@ Deno.serve(async (req: Request) => {
 
     if (action === "get_personal_space") {
       if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
-      const [eventsResponse, goalsResponse, tasksResponse, checkinsResponse, settingsResponse] = await Promise.all([
+      const [eventsResponse, goalsResponse, tasksResponse, checkinsResponse, settingsResponse, pathItemsResponse, consultationsResponse] = await Promise.all([
         rest(`nastardamus_personal_events?telegram_id=eq.${telegramId}&status=neq.archived&select=*&order=event_date.asc,event_time.asc&limit=500`),
         rest(`nastardamus_personal_goals?telegram_id=eq.${telegramId}&status=neq.archived&select=*&order=created_at.desc&limit=200`),
         rest(`nastardamus_personal_tasks?telegram_id=eq.${telegramId}&select=*&order=created_at.asc&limit=1000`),
         rest(`nastardamus_daily_checkins?telegram_id=eq.${telegramId}&select=*&order=checkin_date.desc&limit=120`),
-        rest(`nastardamus_space_preferences?telegram_id=eq.${telegramId}&select=*&limit=1`)
+        rest(`nastardamus_space_preferences?telegram_id=eq.${telegramId}&select=*&limit=1`),
+        rest(`nastardamus_path_items?telegram_id=eq.${telegramId}&status=neq.archived&select=*&order=created_at.asc&limit=500`),
+        rest(`nastardamus_path_consultations?telegram_id=eq.${telegramId}&select=*&order=created_at.desc&limit=120`)
       ]);
-      const [events, goals, tasks, checkins, settingsRows] = await Promise.all([eventsResponse.json(), goalsResponse.json(), tasksResponse.json(), checkinsResponse.json(), settingsResponse.json()]);
+      const [events, goals, tasks, checkins, settingsRows, pathItems, consultations] = await Promise.all([eventsResponse.json(), goalsResponse.json(), tasksResponse.json(), checkinsResponse.json(), settingsResponse.json(), pathItemsResponse.json(), consultationsResponse.json()]);
       const settings = settingsRows?.[0] || {};
       return json(200, {
         ok: true, events: events.map(personalEventView), goals: goals.map(personalGoalView), tasks: tasks.map(personalTaskView),
+        projects: pathItems.filter((row: Record<string, unknown>) => row.kind === "project").map(pathItemView),
+        habits: pathItems.filter((row: Record<string, unknown>) => row.kind === "habit").map(pathItemView),
+        consultations: consultations.map(pathConsultationView),
         checkins: checkins.map((row: Record<string, unknown>) => ({ date: row.checkin_date, morningTasks: row.morning_tasks || [], morningNote: row.morning_note || "", eveningReflection: row.evening_reflection || null })),
         settings: { memoryEnabled: settings.memory_enabled !== false, morningEnabled: settings.morning_enabled !== false, eveningEnabled: settings.evening_enabled !== false, plan: settings.plan || "free" }
       });
@@ -2247,7 +2841,8 @@ Deno.serve(async (req: Request) => {
       if (goalId && !UUID_PATTERN.test(goalId)) return json(400, { error: "invalid_goal_id" });
       if (goalId) await assertOwnedId("nastardamus_personal_goals", "goal_id", goalId, telegramId);
       const cleanAnalysis = cleanJsonObject(event.analysis);
-      const payload = { event_id: eventId, telegram_id: telegramId, title: cleanPersonalText(event.title, 100, true), event_date: date, event_time: time || null, description: cleanPersonalText(event.description, 500), category: PERSONAL_CATEGORIES.has(event.category) ? event.category : "other", priority: ["low", "medium", "high"].includes(event.priority) ? event.priority : "medium", status: PERSONAL_STATUSES.has(event.status) ? event.status : "active", reminder: event.reminder === true && Boolean(time), goal_id: goalId || null, analysis: Object.keys(cleanAnalysis).length ? cleanAnalysis : null, enrichments: cleanJsonObject(event.enrichments), updated_at: new Date().toISOString() };
+      const links = Array.isArray(event.links) ? event.links.map((item: unknown) => cleanPersonalText(item, 500)).filter(Boolean).slice(0, 8) : [];
+      const payload = { event_id: eventId, telegram_id: telegramId, title: cleanPersonalText(event.title, 100, true), event_date: date, event_time: time || null, description: cleanPersonalText(event.description, 500), location: cleanPersonalText(event.location, 180), links, desired_result: cleanPersonalText(event.desiredResult, 500), reflection: cleanPersonalText(event.reflection, 1000), category: PERSONAL_CATEGORIES.has(event.category) ? event.category : "other", priority: ["low", "medium", "high"].includes(event.priority) ? event.priority : "medium", status: PERSONAL_STATUSES.has(event.status) ? event.status : "active", reminder: event.reminder === true && Boolean(time), goal_id: goalId || null, analysis: Object.keys(cleanAnalysis).length ? cleanAnalysis : null, enrichments: cleanJsonObject(event.enrichments), updated_at: new Date().toISOString() };
       const response = await rest("nastardamus_personal_events?on_conflict=event_id", { method: "POST", headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(payload) });
       return json(200, { ok: true, event: personalEventView((await response.json())?.[0] || payload) });
     }
@@ -2273,11 +2868,65 @@ Deno.serve(async (req: Request) => {
       return json(200, { ok: true, task: personalTaskView((await response.json())?.[0] || payload) });
     }
 
+    if (action === "upsert_path_item") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const item = body?.item || {}; const itemId = String(item.id || ""); const kind = String(item.kind || ""); const goalId = String(item.goalId || "");
+      if (!/^[A-Za-z0-9._:-]{8,160}$/.test(itemId) || !["project", "habit"].includes(kind) || (goalId && !UUID_PATTERN.test(goalId))) return json(400, { error: "invalid_path_item" });
+      await assertOwnedId("nastardamus_path_items", "item_id", itemId, telegramId);
+      if (goalId) await assertOwnedId("nastardamus_personal_goals", "goal_id", goalId, telegramId);
+      const payload = { item_id: itemId, telegram_id: telegramId, kind, goal_id: goalId || null, title: cleanPersonalText(item.title, 100, true), status: PERSONAL_STATUSES.has(item.status) ? item.status : "active", metadata: cleanJsonObject(item.metadata), updated_at: new Date().toISOString() };
+      const response = await rest("nastardamus_path_items?on_conflict=item_id", { method: "POST", headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(payload) });
+      return json(200, { ok: true, item: pathItemView((await response.json())?.[0] || payload) });
+    }
+
+    if (action === "upsert_path_consultation") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const item = body?.consultation || {}; const consultationId = String(item.id || "");
+      if (!/^[A-Za-z0-9._:-]{8,160}$/.test(consultationId)) return json(400, { error: "invalid_consultation_id" });
+      await assertOwnedId("nastardamus_path_consultations", "consultation_id", consultationId, telegramId);
+      const payload = { consultation_id: consultationId, telegram_id: telegramId, title: cleanPersonalText(item.title, 300, true), answers: cleanJsonObject(item.answers), context: cleanJsonObject(item.input), result_text: cleanPersonalText(item.body, 12_000), linked_reading_id: cleanPersonalText(item.linkedReadingId, 180), updated_at: new Date().toISOString() };
+      const response = await rest("nastardamus_path_consultations?on_conflict=consultation_id", { method: "POST", headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(payload) });
+      return json(200, { ok: true, consultation: pathConsultationView((await response.json())?.[0] || payload) });
+    }
+
+    if (action === "save_rune_preferences") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const favorites = Array.isArray(body?.favorites) ? body.favorites.map((item: unknown) => cleanPersonalText(item, 80)).filter(Boolean).slice(0, 24) : [];
+      await rest("nastardamus_rune_preferences?on_conflict=telegram_id", { method: "POST", headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ telegram_id: telegramId, favorites, preferred_spread: cleanPersonalText(body?.preferredSpread || "three", 40), reversed_enabled: body?.reversedEnabled !== false, updated_at: new Date().toISOString() }) });
+      return json(200, { ok: true });
+    }
+
+    if (action === "upsert_amur_profile" || action === "set_amur_discovery") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const profile = body?.profile || {};
+      const answers = cleanJsonObject(profile.answers); const interests = Array.isArray(profile.interests) ? profile.interests.map((item: unknown) => cleanPersonalText(item, 60)).filter(Boolean).slice(0, 12) : [];
+      const goals = Array.isArray(profile.goals) ? profile.goals.map((item: unknown) => cleanPersonalText(item, 60)).filter(Boolean).slice(0, 8) : [];
+      const completeness = Math.max(0, Math.min(100, Number(profile.completeness) || 0)); const discoverable = action === "set_amur_discovery" ? body?.enabled === true : false;
+      const adultConfirmed = body?.adultConfirmed === true;
+      if (discoverable && (completeness !== 100 || !adultConfirmed)) return json(400, { error: "amur_profile_not_ready" });
+      const payload = { telegram_id: telegramId, answers, interests, goals, zodiac: cleanPersonalText(profile.zodiac, 30), intent: cleanPersonalText(profile.intent || "dialogue", 30), completeness, discoverable, adult_confirmed: adultConfirmed, updated_at: new Date().toISOString() };
+      await rest("nastardamus_amur_profiles?on_conflict=telegram_id", { method: "POST", headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(payload) });
+      if (!discoverable) return json(200, { ok: true, candidates: [] });
+      const response = await rest(`nastardamus_amur_profiles?telegram_id=neq.${telegramId}&discoverable=eq.true&adult_confirmed=eq.true&blocked_at=is.null&select=telegram_id,answers,interests,goals,intent&limit=40`);
+      const rows = await response.json();
+      const ownAnswers = answers as Record<string, unknown>;
+      const candidates = await Promise.all(rows.map(async (row: Record<string, unknown>) => {
+        const theirAnswers = cleanJsonObject(row.answers) as Record<string, unknown>;
+        const keys = ["intent", "pace", "energy", "conflict", "affection", "horizon", "boundary"];
+        const matches = keys.filter((key) => ownAnswers[key] && ownAnswers[key] === theirAnswers[key]).length;
+        const sharedInterests = interests.filter((item: string) => Array.isArray(row.interests) && row.interests.includes(item));
+        const sharedGoals = goals.filter((item: string) => Array.isArray(row.goals) && row.goals.includes(item));
+        const score = Math.min(96, Math.max(32, Math.round(40 + matches * 6 + sharedInterests.length * 5 + sharedGoals.length * 4)));
+        return { ref: (await sha256Hex(`amur:${row.telegram_id}`)).slice(0, 20), score, sharedInterests, sharedGoals, intent: row.intent || "dialogue" };
+      }));
+      return json(200, { ok: true, candidates: candidates.sort((left, right) => right.score - left.score).slice(0, 12) });
+    }
+
     if (action === "save_personal_checkin") {
       if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
       const checkin = body?.checkin || {}; const date = String(checkin.date || "");
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json(400, { error: "invalid_date" });
-      const morningTasks = Array.isArray(checkin.morningTasks) ? checkin.morningTasks.map(String).slice(0, 3) : [];
+      const morningTasks = Array.isArray(checkin.morningTasks) ? checkin.morningTasks.map(String).slice(0, 5) : [];
       await rest("nastardamus_daily_checkins?on_conflict=telegram_id,checkin_date", { method: "POST", headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ telegram_id: telegramId, checkin_date: date, morning_tasks: morningTasks, morning_note: cleanPersonalText(checkin.morningNote, 1000), evening_reflection: checkin.eveningReflection && typeof checkin.eveningReflection === "object" ? checkin.eveningReflection : null, updated_at: new Date().toISOString() }) });
       return json(200, { ok: true });
     }
@@ -2319,7 +2968,9 @@ Deno.serve(async (req: Request) => {
       await Promise.all([
         rest(`nastardamus_personal_events?telegram_id=eq.${telegramId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }),
         rest(`nastardamus_personal_tasks?telegram_id=eq.${telegramId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }),
-        rest(`nastardamus_daily_checkins?telegram_id=eq.${telegramId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } })
+        rest(`nastardamus_daily_checkins?telegram_id=eq.${telegramId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }),
+        rest(`nastardamus_path_items?telegram_id=eq.${telegramId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }),
+        rest(`nastardamus_path_consultations?telegram_id=eq.${telegramId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } })
       ]);
       await rest(`nastardamus_personal_goals?telegram_id=eq.${telegramId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
       return json(200, { ok: true });
@@ -2440,6 +3091,8 @@ Deno.serve(async (req: Request) => {
     if (message.includes("wheel_daily_limit")) return json(409, { error: "wheel_daily_limit" });
     if (message.includes("wheel_rewards_exhausted")) return json(409, { error: "wheel_rewards_exhausted" });
     if (message.includes("invalid_invitation_token")) return json(400, { error: "invalid_invitation_token" });
+    if (message.includes("photo_consent_required")) return json(400, { error: "photo_consent_required" });
+    if (message.includes("adult_confirmation_required")) return json(400, { error: "adult_confirmation_required" });
     if (message.includes("invalid_invitee_name")) return json(400, { error: "invalid_invitee_name" });
     if (message.includes("invalid_invitation_image")) return json(400, { error: "invalid_invitation_image" });
     if (message.includes("invalid_invitation_flow")) return json(400, { error: "invalid_invitation_flow" });
@@ -2464,6 +3117,27 @@ Deno.serve(async (req: Request) => {
       return json(400, { error: "invalid_personal_data" });
     }
     if (message.includes("personal_item_forbidden")) return json(403, { error: "personal_item_forbidden" });
+    if (message.includes("invalid_oracle_room_token")) return json(400, { error: "invalid_oracle_room_token" });
+    if (message.includes("invalid_oracle_room_mode")) return json(400, { error: "invalid_oracle_room_mode" });
+    if (message.includes("invalid_oracle_username")) return json(400, { error: "invalid_oracle_username" });
+    if (message.includes("invalid_oracle_room_title") || message.includes("invalid_oracle_room_text")) {
+      return json(400, { error: "invalid_oracle_room_text" });
+    }
+    if (message.includes("invalid_oracle_room_message")) return json(400, { error: "invalid_oracle_room_message" });
+    if (message.includes("oracle_room_consent_required")) return json(400, { error: "oracle_room_consent_required" });
+    if (message.includes("oracle_username_unavailable")) return json(404, { error: "oracle_username_unavailable" });
+    if (message.includes("oracle_room_not_found")) return json(404, { error: "oracle_room_not_found" });
+    if (message.includes("oracle_room_invite_expired")) return json(410, { error: "oracle_room_invite_expired" });
+    if (message.includes("oracle_room_closed")) return json(409, { error: "oracle_room_closed" });
+    if (message.includes("oracle_room_full")) return json(409, { error: "oracle_room_full" });
+    if (message.includes("oracle_room_busy")) return json(409, { error: "oracle_room_busy" });
+    if (message.includes("oracle_room_private") || message.includes("oracle_room_access_denied")) {
+      return json(403, { error: "oracle_room_access_denied" });
+    }
+    if (message.includes("oracle_room_self_invite")) return json(400, { error: "oracle_room_self_invite" });
+    if (message.includes("oracle_room_owner_must_close")) return json(409, { error: "oracle_room_owner_must_close" });
+    if (message.includes("oracle_room_turn_changed")) return json(409, { error: "oracle_room_turn_changed" });
+    if (message.includes("oracle_palm_upload_")) return json(503, { error: "oracle_palm_unavailable" });
     return json(502, { error: "wallet_store_failed" });
   }
 });

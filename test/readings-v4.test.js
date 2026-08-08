@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildReadingMessages, isVisionFeature } from '../lib/readings.js';
+import { buildReadingMessages, isVisionFeature, structuredSchemaForFeature } from '../lib/readings.js';
 
 const cards = [
   'Шут',
@@ -96,6 +96,19 @@ test('builds a safe symbolic single-photo reading', () => {
   assert.ok(Array.isArray(messages[1].content));
   assert.equal(messages[1].content[1].type, 'image_url');
   assert.match(messages[1].content[0].text, /не доказательство внешнего воздействия/i);
+  assert.match(messages[1].content[0].text, /внешней презентации.*женский.*мужской образ/is);
+  assert.match(messages[1].content[0].text, /выражени[ея] лица|поз[ае]|композици/i);
+});
+
+test('photo readings return a confirmable visual profile instead of an identity claim', () => {
+  const schema = structuredSchemaForFeature('photo_energy').schema;
+  const profile = schema.properties.visualProfile;
+
+  assert.deepEqual(schema.required, ['summary', 'visualProfile', 'narrative']);
+  assert.deepEqual(profile.properties.perceivedGender.enum, ['female', 'male', 'unclear']);
+  assert.ok(profile.required.includes('visibleEvidence'));
+  assert.ok(profile.required.includes('personaImpression'));
+  assert.ok(profile.required.includes('limitation'));
 });
 
 test('damage reading addresses the concern without validating magical harm', () => {
@@ -167,6 +180,9 @@ test('builds a two-photo compatibility reading', () => {
   assert.equal(isVisionFeature('photo_compatibility'), true);
   assert.equal(messages[1].content.filter((part) => part.type === 'image_url').length, 2);
   assert.match(messages[1].content[0].text, /совместимость определяется поступками и диалогом/i);
+  const schema = structuredSchemaForFeature('photo_compatibility').schema;
+  assert.equal(schema.properties.visualProfiles.minItems, 2);
+  assert.equal(schema.properties.visualProfiles.maxItems, 2);
 });
 
 test('rejects unsupported image data', () => {

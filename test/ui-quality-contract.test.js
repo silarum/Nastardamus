@@ -4,19 +4,33 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 
 const components = readFileSync(new URL('../ui-kit/components.css', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../ui-kit/app.css', import.meta.url), 'utf8');
+const worlds = readFileSync(new URL('../ui-kit/worlds-v5.css', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../ui-kit/app.js', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-const css = `${components}\n${app}`;
+const css = `${components}\n${app}\n${worlds}`;
 const artV2 = new URL('../ui-kit/assets/art-v2/', import.meta.url);
 const legacyArt = new URL('../ui-kit/assets/art/', import.meta.url);
 const invites = new URL('../images/invites/', import.meta.url);
+
+function imageDimensions(data, name) {
+  if (name.endsWith('.png')) {
+    return { width: data.readUInt32BE(16), height: data.readUInt32BE(20) };
+  }
+  if (name.endsWith('.webp') && data.subarray(12, 16).toString('ascii') === 'VP8 ') {
+    return {
+      width: data.readUInt16LE(26) & 0x3fff,
+      height: data.readUInt16LE(28) & 0x3fff
+    };
+  }
+  throw new Error(`Unsupported invitation image: ${name}`);
+}
 
 test('premium UI keeps readable text and complete mobile headers', () => {
   const pixelFontSizes = [...css.matchAll(/font-size\s*:\s*([0-9.]+)px/g)]
     .map((match) => Number(match[1]));
 
   assert.ok(pixelFontSizes.length > 0);
-  assert.ok(pixelFontSizes.every((size) => size >= 10), 'UI contains text smaller than 10px');
+  assert.ok(pixelFontSizes.every((size) => size >= 12), 'UI contains text smaller than 12px');
   assert.match(components, /\.n-app-header__title strong\s*\{[^}]*white-space:\s*normal/s);
   assert.doesNotMatch(components, /\.n-app-header__title strong\s*\{[^}]*text-overflow:\s*ellipsis/s);
   assert.match(app, /\.premium-wallet-state\s*\{[^}]*white-space:\s*normal/s);
@@ -47,7 +61,7 @@ test('Amur and palm journeys keep their artwork and controls aligned', () => {
   assert.match(appSource, /function amurScreen\(\)/);
   assert.match(appSource, /serviceTile\('partner-invite-emblem',\s*'Личное приглашение'/);
   assert.match(appSource, /function palmReadingScreen\(\)/);
-  assert.match(appSource, /Реальный диалог перед толкованием/);
+  assert.match(appSource, /Сначала — ладонь\. Затем — честный разговор/);
 });
 
 test('reading mode removes navigation overlays and uses natural page scrolling', () => {
@@ -73,7 +87,8 @@ test('profile exposes a voluntary grammatical gender preference', () => {
   assert.match(appSource, /female:\s*\{\s*label:\s*'Женщина'/s);
   assert.match(appSource, /male:\s*\{\s*label:\s*'Мужчина'/s);
   assert.match(appSource, /unspecified:\s*\{\s*label:\s*'Не указывать'/s);
-  assert.match(appSource, /не угадываем пол по имени или фотографии/i);
+  assert.match(appSource, /По фотографии приложение может предложить вариант/i);
+  assert.match(appSource, /окончательный выбор всегда принадлежит вам/i);
 });
 
 test('startup renders the branded elder splash without waiting for Telegram', () => {
@@ -83,13 +98,15 @@ test('startup renders the branded elder splash without waiting for Telegram', ()
   assert.ok(appBundleIndex >= 0);
   assert.ok(telegramSdkIndex > appBundleIndex, 'Local application must start before the Telegram SDK');
   assert.match(html, /<script async id="telegram-web-app-sdk"/);
-  assert.match(html, /splash-v2\.webp/);
+  assert.match(html, /images\/worlds\/threshold\.webp/);
   assert.match(html, />Nastardamus</);
   assert.doesNotMatch(html, /setTimeout\(window\.hideNastardamusBoot/);
   assert.match(
     appSource,
-    /screen:\s*requestedScreen\s*\|\|\s*\(requestedInvitationToken\s*\?\s*'invitation'\s*:\s*'welcome'\)/
+    /const initialScreen = requestedInvitationToken[\s\S]*requestedScreen && !\['home', 'welcome'\]\.includes\(requestedScreen\)[\s\S]*:\s*'welcome';/
   );
+  assert.match(appSource, /Я — Эзотериум/);
+  assert.match(appSource, /Чем я могу быть вам полезен/);
   assert.doesNotMatch(appSource, /state\.screen === 'welcome' && state\.profile\.completed/);
   assert.match(appSource, /function hideBootScreen\(\)/);
 });
@@ -136,12 +153,12 @@ test('every illustrated module uses the approved optimized asset set', () => {
 test('paired invitations have an original image for every category', () => {
   assert.deepEqual(
     readdirSync(invites).sort(),
-    ['business.png', 'creative.png', 'friendship.png', 'love.png']
+    ['business.png', 'creative.png', 'family.webp', 'friendship.png', 'group.webp', 'love.png', 'other.webp']
   );
   for (const name of readdirSync(invites)) {
     const data = readFileSync(new URL(name, invites));
-    assert.ok(data.length > 100_000, `${name} is too small to be a finished invitation`);
-    assert.equal(data.readUInt32BE(16), 720);
-    assert.equal(data.readUInt32BE(20), 720);
+    assert.ok(data.length > 60_000, `${name} is too small to be a finished invitation`);
+    assert.deepEqual(imageDimensions(data, name), { width: 720, height: 720 });
   }
+  assert.match(appSource, /drawCanvasImageCover\(context, background, 0, 0, 900, 1200\)/);
 });
