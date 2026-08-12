@@ -15,5 +15,8 @@
   "devDependencies": {
     "esbuild": "^0.25.8",
     "jsdom": "29.1.1"
+  },
+  "dependencies": {
+    "@tonconnect/ui": "^3.0.2"
   }
 }

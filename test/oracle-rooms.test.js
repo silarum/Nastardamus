@@ -164,6 +164,14 @@ test('shared room message is persisted before generation and completed atomicall
       actions.push(body.action);
       const data = {
         take_rate_limit: { ok: true, allowed: true, limit: 80, remaining: 79, retry_after_seconds: 3600 },
+        get_public_config: {
+          ok: true,
+          settings: { dialogueCatalog: { group: { enabled: true, includedQuestions: 5, extraQuestionPrice: 0.1 } } }
+        },
+        get_oracle_room_question_usage: {
+          ok: true,
+          usage: { mode: 'group', answered_questions: 0 }
+        },
         begin_oracle_room_turn: {
           ok: true,
           turn: { turn_id: TURN_ID, replayed: false },
@@ -171,6 +179,7 @@ test('shared room message is persisted before generation and completed atomicall
             { role: 'user', senderName: 'Анна', content: 'Как нам перестать перебивать друг друга?', turnId: TURN_ID }
           ])
         },
+        set_oracle_room_turn_kind: { ok: true },
         complete_oracle_room_turn: {
           ok: true,
           room: roomView([

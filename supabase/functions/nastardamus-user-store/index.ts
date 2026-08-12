@@ -575,7 +575,7 @@ async function invitationChatIds(row: Record<string, unknown>) {
 async function readOracleRoom(token: string) {
   const response = await rest(
     `nastardamus_oracle_rooms?token=eq.${encodeURIComponent(token)}`
-      + "&select=id,token,mode,owner_telegram_id,title,focus,relationship_type,invitee_name,invitee_gender,opening_question,ritual_state,status,max_participants,assistant_state,invite_expires_at,last_message_at,closed_at,created_at,updated_at&limit=1"
+      + "&select=id,token,mode,reading_section,owner_telegram_id,title,focus,relationship_type,invitee_name,invitee_gender,opening_question,ritual_state,status,max_participants,assistant_state,invite_expires_at,last_message_at,closed_at,created_at,updated_at&limit=1"
   );
   return (await response.json())?.[0] || null;
 }
@@ -592,7 +592,7 @@ async function readOracleRoomMembers(roomId: string) {
 async function readOracleRoomMessages(roomId: string) {
   const response = await rest(
     `nastardamus_oracle_room_messages?room_id=eq.${encodeURIComponent(roomId)}`
-      + "&select=id,turn_id,sender_telegram_id,role,sender_name,content,sequence_no,created_at"
+      + "&select=id,turn_id,sender_telegram_id,role,sender_name,content,sequence_no,metadata,created_at"
       + "&order=sequence_no.desc&limit=80"
   );
   const rows = await response.json();
@@ -639,7 +639,16 @@ async function oracleRoomView(
         member.status === "active" || (viewer?.role === "owner" && member.status === "invited")
       ))
     : members.filter((member: Record<string, unknown>) => member.role === "owner");
-  const messages = joined ? await readOracleRoomMessages(String(row.id)) : [];
+  const [messages, questionUsage] = joined
+    ? await Promise.all([
+        readOracleRoomMessages(String(row.id)),
+        rest("rpc/nastardamus_oracle_room_question_usage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ p_token: row.token, p_telegram_id: telegramId })
+        }).then((response) => response.json()).catch(() => null)
+      ])
+    : [[], null];
   const activeCount = members.filter((member: Record<string, unknown>) => member.status === "active").length;
   const readyCount = members.filter((member: Record<string, unknown>) => (
     member.status === "active" && member.preparation_status === "ready"
@@ -650,6 +659,7 @@ async function oracleRoomView(
   return {
     token: row.token,
     mode: row.mode,
+    readingSection: row.reading_section || "palm",
     title: row.title,
     focus: joined ? row.focus || "" : "",
     relationshipType: row.relationship_type || "other",
@@ -671,6 +681,7 @@ async function oracleRoomView(
     joinRequired: !joined,
     viewerStatus,
     viewerRole: viewer?.role || "guest",
+    answeredQuestions: Number(questionUsage?.answered_questions || 0),
     viewer: viewer ? oracleRoomMemberView(viewer, telegramId, includePrivateForAgent) : null,
     members: visibleMembers.map((member: Record<string, unknown>) => (
       oracleRoomMemberView(member, telegramId, includePrivateForAgent)
@@ -682,6 +693,7 @@ async function oracleRoomView(
       role: message.role,
       senderName: message.sender_name,
       content: message.content,
+      messageKind: message.metadata?.message_kind || (message.role === "user" ? "question" : null),
       sequenceNo: Number(message.sequence_no),
       createdAt: message.created_at
     }))
@@ -724,7 +736,7 @@ async function listOracleRooms(telegramId: number) {
   if (!ids.length) return [];
   const roomsResponse = await rest(
     `nastardamus_oracle_rooms?id=in.(${ids.join(",")})`
-      + "&select=id,token,mode,owner_telegram_id,title,status,max_participants,assistant_state,last_message_at,created_at,updated_at"
+      + "&select=id,token,mode,reading_section,owner_telegram_id,title,status,max_participants,assistant_state,last_message_at,created_at,updated_at"
       + "&order=last_message_at.desc&limit=50"
   );
   const rooms = await roomsResponse.json();
@@ -732,6 +744,7 @@ async function listOracleRooms(telegramId: number) {
   return (Array.isArray(rooms) ? rooms : []).map((room) => ({
     token: room.token,
     mode: room.mode,
+    readingSection: room.reading_section || "palm",
     title: room.title,
     status: room.status,
     maxParticipants: Number(room.max_participants),
@@ -939,6 +952,9 @@ Deno.serve(async (req: Request) => {
       const rawUsername = String(body?.username || "").trim();
       const username = rawUsername ? cleanOracleUsername(rawUsername) : null;
       const gender = cleanGender(body?.gender);
+      const readingSection = ["general", "path", "event", "amur", "tarot", "runes", "palm"].includes(String(body?.readingSection))
+        ? String(body.readingSection)
+        : "palm";
       const response = await rest("rpc/nastardamus_create_oracle_room", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -962,6 +978,11 @@ Deno.serve(async (req: Request) => {
         })
       });
       const created = await response.json();
+      await rest(`nastardamus_oracle_rooms?id=eq.${created.room_id}&owner_telegram_id=eq.${telegramId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ reading_section: mode === "group" ? readingSection : "palm" })
+      });
       const room = await oracleRoomViewByToken(String(created.token), telegramId);
       return json(200, { ok: true, room });
     }
@@ -1105,6 +1126,78 @@ Deno.serve(async (req: Request) => {
         await deleteOraclePalms([imagePath]);
         throw error;
       }
+    }
+
+    if (action === "complete_oracle_room_text_preparation") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const roomToken = cleanOracleRoomToken(body?.roomToken);
+      if (!roomToken) return json(400, { error: "invalid_oracle_room_token" });
+      const privateAnswers = cleanOraclePrivateAnswers(body?.privateAnswers);
+      const roomRow = await readOracleRoom(roomToken);
+      if (!roomRow) return json(404, { error: "oracle_room_not_found" });
+      const preparationResponse = await rest("rpc/nastardamus_complete_oracle_room_text_preparation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_token: roomToken,
+          p_telegram_id: telegramId,
+          p_private_answers: privateAnswers
+        })
+      });
+      const preparation = await preparationResponse.json();
+      return json(200, {
+        ok: true,
+        room: await oracleRoomViewByToken(roomToken, telegramId),
+        newlyOpened: preparation?.newly_opened === true,
+        chats: preparation?.newly_opened === true
+          ? await oracleRoomChatIds(String(roomRow.id), telegramId)
+          : []
+      });
+    }
+
+    if (action === "get_oracle_room_question_usage") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const roomToken = cleanOracleRoomToken(body?.roomToken);
+      if (!roomToken) return json(400, { error: "invalid_oracle_room_token" });
+      const response = await rest("rpc/nastardamus_oracle_room_question_usage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ p_token: roomToken, p_telegram_id: telegramId })
+      });
+      return json(200, { ok: true, usage: await response.json() });
+    }
+
+    if (action === "set_oracle_room_turn_kind") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const roomToken = cleanOracleRoomToken(body?.roomToken);
+      const turnId = cleanReadingId(body?.turnId);
+      const messageKind = String(body?.messageKind || "question");
+      if (!roomToken || !turnId || !["question", "answer", "guided"].includes(messageKind)) {
+        return json(400, { error: "invalid_oracle_room_turn" });
+      }
+      const room = await readOracleRoom(roomToken);
+      if (!room) return json(404, { error: "oracle_room_not_found" });
+      const members = await readOracleRoomMembers(String(room.id));
+      if (!members.some((member: Record<string, unknown>) => Number(member.telegram_id) === telegramId && member.status === "active")) {
+        return json(403, { error: "oracle_room_access_denied" });
+      }
+      const response = await rest(
+        `nastardamus_oracle_room_messages?room_id=eq.${room.id}&turn_id=eq.${turnId}&sender_telegram_id=eq.${telegramId}&role=eq.user`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+          body: JSON.stringify({ metadata: { message_kind: messageKind } })
+        }
+      );
+      const updated = await response.json();
+      if (!updated?.[0]) return json(404, { error: "oracle_room_turn_not_found" });
+      return json(200, { ok: true });
     }
 
     if (action === "begin_oracle_room_turn") {
@@ -1859,6 +1952,76 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (action === "get_reading_dialogue_context") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const readingId = cleanReadingId(body?.readingId);
+      if (!readingId) return json(400, { error: "invalid_reading_id" });
+      const response = await rest(
+        `nastardamus_reading_sessions?id=eq.${readingId}&telegram_id=eq.${telegramId}`
+          + "&deleted_at=is.null&state=in.(completed,dialogue,analyzing)"
+          + "&select=id,kind,subtype,title,input_snapshot,result_payload,result_text,state,created_at,updated_at&limit=1"
+      );
+      const session = (await response.json())?.[0];
+      if (!session) return json(404, { error: "reading_not_found" });
+      const [messagesResponse, usageResponse] = await Promise.all([
+        rest(`nastardamus_reading_messages?session_id=eq.${session.id}`
+          + "&select=role,content,sequence_no,turn_id,message_kind,client_nonce,created_at&order=sequence_no.asc&limit=40"),
+        rest("rpc/nastardamus_reading_dialogue_usage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ p_session_id: session.id, p_telegram_id: telegramId })
+        })
+      ]);
+      const usage = await usageResponse.json();
+      return json(200, {
+        ok: true,
+        session: {
+          id: session.id,
+          kind: session.kind,
+          subtype: session.subtype,
+          title: session.title,
+          input: cleanJsonObject(session.input_snapshot),
+          result: cleanJsonObject(session.result_payload),
+          resultText: session.result_text || "",
+          state: session.state
+        },
+        messages: await messagesResponse.json(),
+        answeredQuestions: Number(usage?.answered_questions || 0)
+      });
+    }
+
+    if (action === "append_reading_dialogue_turn") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const readingId = cleanReadingId(body?.readingId);
+      const messageKind = String(body?.messageKind || "question");
+      const clientNonce = String(body?.clientNonce || "").trim();
+      const message = String(body?.message || "").trim().slice(0, 2000);
+      const answer = String(body?.answer || "").trim().slice(0, 2000);
+      if (!readingId || !["question", "answer", "guided"].includes(messageKind)) {
+        return json(400, { error: "invalid_reading_dialogue" });
+      }
+      if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/.test(clientNonce)) {
+        return json(400, { error: "invalid_idempotency_key" });
+      }
+      const response = await rest("rpc/nastardamus_append_reading_dialogue_turn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_session_id: readingId,
+          p_telegram_id: telegramId,
+          p_message: message,
+          p_answer: answer,
+          p_message_kind: messageKind,
+          p_client_nonce: clientNonce
+        })
+      });
+      return json(200, { ok: true, turn: await response.json() });
+    }
+
     if (action === "append_tarot_dialogue_turn") {
       if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
         return json(400, { error: "invalid_telegram_id" });
@@ -1894,7 +2057,7 @@ Deno.serve(async (req: Request) => {
       if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
         return json(400, { error: "invalid_telegram_id" });
       }
-      const allowedKinds = new Set(["tarot", "compatibility", "photo", "palm", "runes", "amur", "natal", "horoscope", "sports"]);
+      const allowedKinds = new Set(["tarot", "compatibility", "photo", "palm", "runes", "amur", "natal", "horoscope", "sports", "path"]);
       const kind = String(body?.kind || "");
       if (!allowedKinds.has(kind)) return json(400, { error: "invalid_reading_kind" });
       const subtype = String(body?.subtype || kind).trim().slice(0, 80);
@@ -2185,6 +2348,25 @@ Deno.serve(async (req: Request) => {
       return json(200, { ok: true, order });
     }
 
+    if (action === "cancel_external_payment_order") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const orderId = String(body?.orderId || "");
+      if (!UUID_PATTERN.test(orderId)) return json(400, { error: "invalid_order_id" });
+      const response = await rest(
+        `nastardamus_payment_orders?id=eq.${orderId}&telegram_id=eq.${telegramId}&status=eq.pending`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+          body: JSON.stringify({ status: "cancelled", updated_at: new Date().toISOString() })
+        }
+      );
+      const order = (await response.json())?.[0];
+      if (!order) return json(409, { error: "payment_order_not_pending" });
+      return json(200, { ok: true, order });
+    }
+
     if (action === "purchase_vip") {
       if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
         return json(400, { error: "invalid_telegram_id" });
@@ -2390,7 +2572,22 @@ Deno.serve(async (req: Request) => {
               price: 5.55
             }
           },
+          dialogueCatalog: settings.dialogueCatalog && typeof settings.dialogueCatalog === "object"
+            ? settings.dialogueCatalog
+            : {
+                personal: { id: "personal", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+                solo: { id: "solo", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+                pair: { id: "pair", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+                group: { id: "group", enabled: true, sectionFree: true, includedQuestions: 5, extraQuestionPrice: 0.1 }
+              },
           dailyHoroscopeEnabled: settings.dailyHoroscopeEnabled !== false,
+          subscriptionGateEnabled: settings.subscriptionGateEnabled === true,
+          subscriptionChannelUsername: String(settings.subscriptionChannelUsername || ""),
+          subscriptionChannelTitle: String(settings.subscriptionChannelTitle || "Канал Эзотериума"),
+          dailyFreeServiceIds: Array.isArray(settings.dailyFreeServiceIds)
+            ? settings.dailyFreeServiceIds
+            : ["tarot", "tarot_relationship", "palm_reading", "natal", "rune_reading"],
+          tonTreasuryAddress: String(settings.tonTreasuryAddress || ""),
           paymentsEnabled: settings.paymentsEnabled !== false,
           everythingFree: settings.everythingFree === true,
           sbpTopupsEnabled: settings.sbpTopupsEnabled === true,
@@ -2548,6 +2745,137 @@ Deno.serve(async (req: Request) => {
       return json(200, { ok: true, [claim ? "claimed" : "released"]: value === true });
     }
 
+    if (action === "get_daily_access") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date());
+      const [usageResponse, eventResponse] = await Promise.all([
+        rest(`nastardamus_free_usage?telegram_id=eq.${telegramId}&service_id=eq.daily-choice&usage_date=eq.${today}&select=uses&limit=1`),
+        rest(`nastardamus_service_events?telegram_id=eq.${telegramId}&access_source=eq.daily_channel_choice&event_type=eq.completed&select=service_id,created_at&order=created_at.desc&limit=1`)
+      ]);
+      const usage = (await usageResponse.json())?.[0];
+      const event = (await eventResponse.json())?.[0];
+      return json(200, {
+        ok: true,
+        dailyChoice: {
+          used: Number(usage?.uses || 0) > 0,
+          serviceId: String(event?.service_id || ""),
+          usedAt: event?.created_at || null,
+          date: today
+        }
+      });
+    }
+
+    if (action === "record_service_event") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const serviceId = String(body?.serviceId || "").trim().toLowerCase();
+      const eventType = String(body?.eventType || "").trim().toLowerCase();
+      const accessSource = cleanPersonalText(body?.accessSource, 80);
+      if (!/^[a-z0-9:_-]{1,100}$/.test(serviceId)) return json(400, { error: "invalid_service_id" });
+      if (!["started", "completed", "failed", "free_used", "paid_used", "wheel"].includes(eventType)) {
+        return json(400, { error: "invalid_service_event_type" });
+      }
+      const response = await rest("rpc/nastardamus_record_service_event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_telegram_id: telegramId,
+          p_service_id: serviceId,
+          p_event_type: eventType,
+          p_access_source: accessSource || null,
+          p_metadata: cleanJsonObject(body?.metadata)
+        })
+      });
+      return json(200, { ok: true, eventId: await response.json() });
+    }
+
+    if (action === "get_journey_context") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const response = await rest(
+        `nastardamus_user_journey?telegram_id=eq.${telegramId}&select=facts,visual_observations,ai_hypotheses,confirmed_hypotheses,rejected_hypotheses,service_affinity,last_guidance,updated_at&limit=1`
+      );
+      return json(200, { ok: true, journey: (await response.json())?.[0] || null });
+    }
+
+    if (action === "record_journey_insight") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const currentResponse = await rest(
+        `nastardamus_user_journey?telegram_id=eq.${telegramId}&select=visual_observations,ai_hypotheses&limit=1`
+      );
+      const current = (await currentResponse.json())?.[0] || {};
+      const observations = Array.isArray(body?.visualObservations)
+        ? body.visualObservations.slice(0, 12).map((item: unknown) => cleanJsonObject(item))
+        : [];
+      const hypotheses = Array.isArray(body?.aiHypotheses)
+        ? body.aiHypotheses.slice(0, 12).map((item: unknown) => cleanJsonObject(item))
+        : [];
+      const nextObservations = [...(Array.isArray(current.visual_observations) ? current.visual_observations : []), ...observations].slice(-40);
+      const nextHypotheses = [...(Array.isArray(current.ai_hypotheses) ? current.ai_hypotheses : []), ...hypotheses].slice(-40);
+      await rest("nastardamus_user_journey?on_conflict=telegram_id", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({
+          telegram_id: telegramId,
+          visual_observations: nextObservations,
+          ai_hypotheses: nextHypotheses,
+          updated_at: new Date().toISOString()
+        })
+      });
+      return json(200, { ok: true });
+    }
+
+    if (action === "set_ton_wallet") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const disconnect = body?.disconnect === true;
+      const address = String(body?.address || "").trim();
+      const validAddress = /^(?:-?\d+:[0-9a-fA-F]{64}|[A-Za-z0-9_-]{40,80})$/.test(address);
+      if (!disconnect && !validAddress) return json(400, { error: "invalid_ton_wallet_address" });
+      const payload = disconnect ? {
+        ton_wallet_address: null,
+        ton_wallet_chain: null,
+        ton_wallet_app: null,
+        ton_wallet_connected_at: null,
+        updated_at: new Date().toISOString()
+      } : {
+        ton_wallet_address: address,
+        ton_wallet_chain: cleanPersonalText(body?.chain, 20),
+        ton_wallet_app: cleanPersonalText(body?.walletApp, 80),
+        ton_wallet_connected_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      await rest("nastardamus_user_journey?on_conflict=telegram_id", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ telegram_id: telegramId, ...payload })
+      });
+      return json(200, { ok: true, wallet: disconnect ? null : { address, chain: payload.ton_wallet_chain, walletApp: payload.ton_wallet_app } });
+    }
+
+    if (action === "get_ton_wallet") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const response = await rest(
+        `nastardamus_user_journey?telegram_id=eq.${telegramId}&select=ton_wallet_address,ton_wallet_chain,ton_wallet_app,ton_wallet_connected_at&limit=1`
+      );
+      const wallet = (await response.json())?.[0];
+      return json(200, { ok: true, wallet: wallet?.ton_wallet_address ? {
+        address: wallet.ton_wallet_address,
+        chain: wallet.ton_wallet_chain,
+        walletApp: wallet.ton_wallet_app,
+        connectedAt: wallet.ton_wallet_connected_at
+      } : null });
+    }
+
     if (action === "charge_service") {
       if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
         return json(400, { error: "invalid_telegram_id" });
@@ -2650,6 +2978,7 @@ Deno.serve(async (req: Request) => {
         const currentYear = new Date().getUTCFullYear();
         const birthYear = Number(body?.birthYear);
         const city = String(body?.city || "").trim().replace(/\s+/g, " ").slice(0, 120);
+        const profileName = String(body?.profileName || "").trim().replace(/\s+/g, " ").slice(0, 80);
         if (!Number.isInteger(birthYear) || birthYear < currentYear - 120 || birthYear > currentYear - 13) {
           return json(400, { error: "invalid_age" });
         }
@@ -2658,6 +2987,7 @@ Deno.serve(async (req: Request) => {
         payload.daily_horoscope_enabled = body?.enabled === true;
         payload.timezone = String(body?.timezone || "Europe/Berlin").slice(0, 80);
         payload.gender = gender;
+        payload.profile_name = profileName || null;
         payload.birth_year = birthYear;
         const birthDate = String(body?.birthDate || "");
         const birthTime = String(body?.birthTime || "");
@@ -2678,6 +3008,26 @@ Deno.serve(async (req: Request) => {
         headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
         body: JSON.stringify(payload)
       });
+      if (action === "update_user_preferences") {
+        await rest("nastardamus_user_journey?on_conflict=telegram_id", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify({
+            telegram_id: telegramId,
+            facts: {
+              profileName,
+              gender,
+              birthDate: payload.birth_date,
+              birthTime: payload.birth_time,
+              birthTimeKnown: payload.birth_time_known,
+              city: payload.city,
+              interests: payload.interests,
+              goals: payload.goals
+            },
+            updated_at: new Date().toISOString()
+          })
+        });
+      }
       return json(200, { ok: true });
     }
 
@@ -2721,7 +3071,7 @@ Deno.serve(async (req: Request) => {
       if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
         return json(400, { error: "invalid_telegram_id" });
       }
-      const response = await rest(`nastardamus_users?telegram_id=eq.${telegramId}&select=zodiac_sign,daily_horoscope_enabled,timezone,gender,birth_year,birth_date,birth_time,birth_time_known,city,interests,goals,profile_consents,natal_chart,telegram_avatar_url,profile_avatar_path,profile_completed_at,last_horoscope_sent_on&limit=1`);
+      const response = await rest(`nastardamus_users?telegram_id=eq.${telegramId}&select=profile_name,zodiac_sign,daily_horoscope_enabled,timezone,gender,birth_year,birth_date,birth_time,birth_time_known,city,interests,goals,profile_consents,natal_chart,telegram_avatar_url,profile_avatar_path,profile_completed_at,last_horoscope_sent_on&limit=1`);
       const rows = await response.json();
       const preferences = rows?.[0] || null;
       return json(200, {

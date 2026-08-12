@@ -136,7 +136,7 @@ test('every illustrated module uses the approved optimized asset set', () => {
     'result-magic-seal.webp', 'ritual-tarot-spread.webp', 'silarum-coin.webp',
     'shortcut-astro-orbit.webp', 'shortcut-destiny-hearts.webp', 'shortcut-fortune-compass.webp', 'tarot-deck.webp',
     'two-photo-compatibility.webp', 'sports-prophecy-banner.webp',
-    'amur-dice.webp', 'palm-oracle.webp', 'rune-sanctum.webp'
+    'amur-dice.webp', 'palm-oracle.webp', 'rune-sanctum.webp', 'path-oracle-hero.webp'
   ];
 
   assert.deepEqual(files.sort(), expected.sort());
@@ -154,6 +154,21 @@ test('every illustrated module uses the approved optimized asset set', () => {
 
   assert.ok(totalBytes < 2_500_000, 'Illustrated delivery bundle exceeds the 2.5 MB budget');
   assert.match(readFileSync(new URL('../ui-kit/core/assets.js', import.meta.url), 'utf8'), /\$\{name\}\.webp/);
+});
+
+test('personal consultation is an illustrated structured story with four working paths', () => {
+  const readings = readFileSync(new URL('../lib/readings.js', import.meta.url), 'utf8');
+  assert.match(appSource, /function pathConsultationSections\(value\)/);
+  assert.match(appSource, /images\/my-path\/oracle-living-thread\.webp/);
+  assert.match(appSource, /function liveDialogue\(/);
+  assert.match(appSource, /pathInsightCard\('01',[\s\S]*pathInsightCard\('03'/);
+  assert.match(appSource, /pathGateway\('tarot'[\s\S]*pathGateway\('runes'[\s\S]*pathGateway\('palmistry'[\s\S]*pathGateway\('natal'/);
+  assert.match(appSource, /function personalConsultationScreen[\s\S]*\{\s*tabs:\s*false,\s*reading:\s*true\s*\}/);
+  assert.match(app, /\.path-oracle-particles i\s*\{[^}]*animation:path-spark-rise/s);
+  assert.match(app, /\.path-oracle-hero__mist\s*\{[^}]*animation:path-mist/s);
+  for (const marker of ['СУТЬ', 'СКРЫТОЕ', 'ОПОРА', 'ШАГИ', 'ВОПРОС']) {
+    assert.match(readings, new RegExp(`§${marker}§`));
+  }
 });
 
 test('paired invitations have an original image for every category', () => {

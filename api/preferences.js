@@ -1,4 +1,5 @@
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
+import { checkChannelMembership } from '../lib/channel-access.js';
 
 const USER_STORE_URL = process.env.USER_STORE_URL
   || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-user-store';
@@ -56,10 +57,19 @@ export default async function handler(req, res) {
         });
       } else if (action === 'remove_avatar') {
         await userStore(botToken, 'remove_profile_avatar', { telegramId });
+      } else if (action === 'set_ton_wallet') {
+        await userStore(botToken, 'set_ton_wallet', {
+          telegramId,
+          address: req.body?.address,
+          chain: req.body?.chain,
+          walletApp: req.body?.walletApp,
+          disconnect: req.body?.disconnect === true
+        });
       } else {
         await userStore(botToken, 'update_user_preferences', {
           telegramId,
           chatId: telegramId,
+          profileName: req.body?.profileName,
           zodiacSign: req.body?.zodiacSign,
           enabled: req.body?.enabled === true,
           timezone: req.body?.timezone || 'Europe/Berlin',
@@ -76,8 +86,19 @@ export default async function handler(req, res) {
         });
       }
     }
-    const data = await userStore(botToken, 'get_user_preferences', { telegramId });
-    return sendJson(res, 200, { ok: true, preferences: data.preferences || null });
+    const [data, config, daily, tonWallet] = await Promise.all([
+      userStore(botToken, 'get_user_preferences', { telegramId }),
+      userStore(botToken, 'get_public_config', { telegramId }),
+      userStore(botToken, 'get_daily_access', { telegramId }).catch(() => ({ dailyChoice: { used: false, serviceId: '' } })),
+      userStore(botToken, 'get_ton_wallet', { telegramId }).catch(() => ({ wallet: null }))
+    ]);
+    const subscription = await checkChannelMembership(botToken, telegramId, config.settings || {});
+    return sendJson(res, 200, {
+      ok: true,
+      preferences: data.preferences || null,
+      access: { subscription, dailyChoice: daily.dailyChoice },
+      tonWallet: tonWallet.wallet
+    });
   } catch (error) {
     console.error('Preferences API failed:', error);
     return sendJson(res, error.status || 503, { error: error.message || 'preferences_unavailable' });

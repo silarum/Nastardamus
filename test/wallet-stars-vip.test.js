@@ -148,7 +148,7 @@ test('wallet creates a Telegram Stars invoice and returns its persisted link', a
     assert.equal(response.body.order.paymentUrl, invoiceUrl);
     assert.equal(response.body.order.providerCurrency, 'XTR');
     assert.equal(invoiceBody.currency, 'XTR');
-    assert.equal(invoiceBody.provider_token, '');
+    assert.equal(Object.hasOwn(invoiceBody, 'provider_token'), false);
     assert.deepEqual(invoiceBody.prices, [{ label: 'SILARUM', amount: 125 }]);
     assert.equal(invoiceBody.payload, `silarum:${orderId}`);
     assert.deepEqual(actions, [

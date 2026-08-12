@@ -90,7 +90,6 @@ async function createStarsInvoiceLink(botToken, order) {
       title: 'SILARUM для Nastardamus',
       description: `Пополнение на ${unitsToSilarum(order.silarum_units)} SILARUM`,
       payload: `silarum:${order.id}`,
-      provider_token: '',
       currency: 'XTR',
       prices: [{ label: 'SILARUM', amount }]
     }),
@@ -261,6 +260,7 @@ export default async function handler(req, res) {
       'create_sbp_topup',
       'mark_sbp_topup_sent',
       'create_external_payment_order',
+      'cancel_external_payment_order',
       'purchase_vip'
     ].includes(action)) {
       return sendJson(res, 400, { error: 'unknown_action' });
@@ -283,7 +283,7 @@ export default async function handler(req, res) {
     }
 
     let result;
-    if (action === 'mark_sbp_topup_sent') {
+    if (action === 'mark_sbp_topup_sent' || action === 'cancel_external_payment_order') {
       const orderId = String(req.body?.orderId || '');
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) {
         return sendJson(res, 400, { error: 'invalid_order_id' });
@@ -320,7 +320,7 @@ export default async function handler(req, res) {
       }
       if (action === 'create_external_payment_order') {
         const provider = String(req.body?.provider || '');
-        if (!['telegram_stars', 'ton', 'usdt'].includes(provider)) {
+        if (provider !== 'telegram_stars') {
           return sendJson(res, 400, { error: 'invalid_payment_provider' });
         }
         payload.provider = provider;
@@ -344,7 +344,7 @@ export default async function handler(req, res) {
         ? { withdrawal: result.withdrawal }
         : action === 'purchase_vip'
           ? { subscription: serializeVip(result.subscription) }
-          : { order: action === 'create_external_payment_order' ? serializeExternalPayment(result.order) : result.order }),
+          : { order: ['create_external_payment_order', 'cancel_external_payment_order'].includes(action) ? serializeExternalPayment(result.order) : result.order }),
       ...serialized
     });
   } catch (error) {
@@ -354,7 +354,8 @@ export default async function handler(req, res) {
       'withdrawals_disabled', 'below_minimum', 'insufficient_funds', 'invalid_destination',
       'invalid_idempotency_key', 'invalid_order_id', 'payments_disabled', 'sbp_topups_disabled',
       'below_topup_minimum', 'above_topup_maximum', 'topup_not_found', 'topup_not_pending', 'topup_expired',
-      'invalid_payment_provider', 'payment_method_disabled', 'invalid_vip_plan', 'vip_plan_not_found'
+      'invalid_payment_provider', 'payment_method_disabled', 'invalid_vip_plan', 'vip_plan_not_found',
+      'payment_order_not_pending'
     ].includes(code)) {
       return sendJson(res, error.status || 400, { error: code });
     }

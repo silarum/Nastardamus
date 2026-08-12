@@ -82,10 +82,11 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.equal(mount.querySelectorAll('.n-balance-card').length, 0, 'Balance must not be shown on the home screen');
     assert.equal(document.body.textContent.includes('Посмотреть приветствие'), false);
     const homeText = mount.textContent;
+    const practicesText = mount.querySelector('.premium-home-practices').textContent;
     assert.ok(homeText.indexOf('Ваши практики') < homeText.indexOf('Спортивные знамения'));
-    assert.ok(homeText.indexOf('Ладонь') < homeText.indexOf('Руны'));
-    assert.ok(homeText.indexOf('Руны') < homeText.indexOf('Таро'));
-    assert.ok(homeText.indexOf('Таро') < homeText.indexOf('Амур'));
+    assert.ok(practicesText.indexOf('Ладонь') < practicesText.indexOf('Руны'));
+    assert.ok(practicesText.indexOf('Руны') < practicesText.indexOf('Таро'));
+    assert.ok(practicesText.indexOf('Таро') < practicesText.indexOf('Амур'));
     assert.ok(homeText.indexOf('Спортивные знамения') < homeText.lastIndexOf('Колесо Фортуны'));
     assert.ok(homeText.includes('Личное пространство Эзотериума'));
     assert.match(
@@ -124,6 +125,38 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     click(document, 'Назад');
     assert.equal(mount.dataset.screen, 'space');
     assert.ok(document.body.textContent.includes('Разговор о новом проекте'));
+
+    app.state.personalSpace.consultationAnswers = {
+      desired: 'Ясно определить направление проекта',
+      obstacle: 'Сомнение между скоростью и качеством',
+      energy: 'Вдохновение и готовность действовать'
+    };
+    app.state.personalSpace.consultationResult = {
+      id: 'path-reading-test',
+      title: 'Проект обретает направление',
+      body: [
+        '§СУТЬ§ Ваш замысел уже собрал достаточно энергии, чтобы стать конкретным решением.',
+        '§СКРЫТОЕ§ Главный узел — желание увидеть безупречный итог раньше первого черновика.',
+        '§ОПОРА§ Ваш опыт подсказывает, где сохранить замысел, а где разрешить ему измениться.',
+        '§ШАГИ§ Первый шаг — назовите главный след проекта. Второй шаг — покажите черновик одному союзнику. Третий шаг — зафиксируйте одно решение после разговора.',
+        '§ВОПРОС§ Что можно отпустить сегодня, не теряя сути?'
+      ].join('\n\n'),
+      input: { desired: 'Ясно определить направление проекта' },
+      createdAt: new Date().toISOString()
+    };
+    app.navigate('space-consultation');
+    assert.equal(mount.querySelectorAll('.n-bottom-navigation').length, 0);
+    assert.ok(mount.querySelector('.path-consultation-hero__art'));
+    assert.equal(mount.querySelectorAll('.path-insight-card').length, 3);
+    assert.equal(mount.querySelectorAll('.path-action-step').length, 3);
+    assert.equal(mount.querySelectorAll('.path-gateway').length, 4);
+    assert.ok(document.body.textContent.includes('Что можно отпустить сегодня'));
+    click(document, 'Хиромантия');
+    assert.equal(mount.dataset.screen, 'palm-reading');
+    app.navigate('space-consultation');
+    click(document, 'Натальная карта');
+    assert.equal(mount.dataset.screen, 'natal');
+    app.navigate('space');
     click(document, 'Назад');
     assert.equal(mount.dataset.screen, 'home');
 
@@ -166,7 +199,8 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.equal(mount.dataset.screen, 'tarot-result');
     assert.equal(mount.querySelectorAll('.n-bottom-navigation').length, 0);
     assert.ok(mount.querySelector('.premium-shell--reading'));
-    assert.equal(mount.querySelectorAll('.premium-reading-copy p').length, 2);
+    assert.equal(mount.querySelectorAll('.reading-live-dialogue .esoterium-chat').length, 1);
+    assert.match(mount.querySelector('.esoterium-chat__bubble p').textContent, /Первый знак[\s\S]*Второй абзац/u);
 
     app.navigate('profile');
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -256,7 +290,8 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
 
     click(document, 'История');
     assert.equal(mount.dataset.screen, 'history');
-    assert.ok(document.body.textContent.includes('История пока пуста'));
+    assert.ok(document.body.textContent.includes('Разговор о новом проекте'));
+    assert.ok(document.body.textContent.includes('Событие пути'));
     assert.equal(fetchCalls, 0, 'Public preview must not call Telegram-protected APIs');
   } finally {
     globalThis.fetch = previousFetch;
@@ -287,10 +322,7 @@ test('bundled startup shows registration and enters the redesigned home', async 
     assert.ok(mount.textContent.includes('Я — Эзотериум'));
     assert.ok(boot.classList.contains('is-hidden'));
 
-    click(dom.window.document, 'Узнать, что я умею');
-    assert.ok(mount.textContent.includes('Чем я могу быть вам полезен'));
-    assert.equal(mount.querySelectorAll('.oracle-capability').length, 6);
-    click(dom.window.document, 'Продолжить знакомство');
+    click(dom.window.document, 'Продолжить');
     assert.ok(mount.textContent.includes('Первое знакомство'));
 
     for (const consent of [...mount.querySelectorAll('.initiation-consents input')]) {
@@ -327,7 +359,7 @@ test('bundled startup shows registration and enters the redesigned home', async 
     await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
     assert.equal(mount.dataset.screen, 'home');
     assert.equal(new URL(dom.window.location.href).searchParams.get('screen'), 'home');
-    assert.equal(mount.querySelectorAll('.premium-home-practice').length, 4);
+    assert.equal(mount.querySelectorAll('.premium-home-practice').length, 5);
     assert.equal(mount.querySelectorAll('.n-bottom-nav-item').length, 5);
     assert.equal(mount.querySelectorAll('.n-center-magic-button').length, 0);
 

@@ -65,8 +65,8 @@ const assetSources = files
     .map((file) => readFileSync(file, 'utf8'))
     .join('\n');
 const assetPaths = new Set(
-    [...assetSources.matchAll(/(?:images|video)\/[A-Za-z0-9_./-]+/g)]
-        .map((match) => match[0].replace(/[)'"`;]+$/, ''))
+    [...assetSources.matchAll(/(?:^|["'`(])\/?((?:images|video)\/[A-Za-z0-9_./-]+)/gm)]
+        .map((match) => match[1].replace(/[)'"`;]+$/, ''))
         .filter((path) => !path.includes('${'))
 );
 const missingAssets = [...assetPaths].filter((path) => !existsSync(join(root, path)));
