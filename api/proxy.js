@@ -6,7 +6,10 @@ import { normalizePersonalEvent } from '../lib/personal-space.js';
 import { runAgent } from '../lib/ai-runtime.js';
 import { buildOracleRoomAgentRequest } from '../lib/oracle-rooms.js';
 import { buildTarotDialogueAgentRequest } from '../lib/tarot-dialogue.js';
+import { buildReadingDialogueAgentRequest } from '../lib/reading-dialogue.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
+import { assertChannelMembership, checkChannelMembership } from '../lib/channel-access.js';
+import { isDailyFreeService } from '../lib/daily-lifecycle.js';
 import {
     enforceRateLimit,
     normalizeIdempotencyKey,
@@ -40,6 +43,7 @@ const READING_STORE_ACTIONS = new Set([
     'create_dialogue_session',
     'append_dialogue_message',
     'get_active_dialogue',
+    'get_reading_dialogue_context',
     'get_esoterium_context',
     'set_esoterium_memory',
     'clear_esoterium_memory',
@@ -65,6 +69,7 @@ const ORACLE_ROOM_ACTIONS = new Set([
     'join_oracle_room',
     'invite_oracle_room_username',
     'upload_oracle_room_palm',
+    'complete_oracle_room_text_preparation',
     'leave_oracle_room',
     'close_oracle_room'
 ]);
@@ -441,10 +446,14 @@ function safeErrorCode(error) {
 
 function paidServiceForFeature(feature, payload) {
     if (feature === 'tarot') {
-        return payload?.spread === 'relationship' ? 'tarot_relationship' : 'tarot';
+        return ['relationship', 'love-relationship', 'pair-compatibility'].includes(String(payload?.spread || ''))
+            ? 'tarot_relationship'
+            : 'tarot';
     }
     if (feature === 'compatibility') return 'photo_compatibility';
     if (feature === 'natal') return 'natal';
+    if (feature === 'palm_reading') return 'palm_reading';
+    if (feature === 'rune_reading') return 'rune_reading';
     if (feature === 'photo_energy') return 'photo_energy';
     if (feature === 'photo_damage') return 'photo_damage';
     if (feature === 'photo_compatibility') {
@@ -499,6 +508,18 @@ async function resolveReadingAccess(botToken, telegramId, policy, feature, paylo
     if (policy?.settings?.everythingFree === true) {
         return { source: 'global_free', amount: 0, freeUsageKey: null };
     }
+    const serviceId = paidServiceForFeature(feature, payload);
+    const subscription = await checkChannelMembership(botToken, telegramId, policy?.settings || {});
+    if (serviceId && isDailyFreeService(serviceId) && subscription.configured && subscription.member) {
+        const claimed = await userStore(botToken, 'claim_free_usage', {
+            telegramId,
+            serviceId: 'daily-choice',
+            dailyLimit: 1
+        });
+        if (claimed.claimed === true) {
+            return { source: 'daily_channel_choice', amount: 0, freeUsageKey: 'daily-choice' };
+        }
+    }
     const catalog = catalogAccessForReading(policy, feature, payload);
     if (!catalog) return null;
     const vipAccess = ({ vip: 'included', vip_only: 'only', public: 'optional' })[
@@ -512,7 +533,7 @@ async function resolveReadingAccess(botToken, telegramId, policy, feature, paylo
         throw new Error('vip_required');
     }
     const dailyLimit = Math.max(0, Math.floor(Number(catalog.item.free_checks || 0)));
-    if (dailyLimit > 0) {
+    if (dailyLimit > 0 && (!subscription.configured || subscription.member)) {
         const freeUsageKey = `${catalog.kind}:${catalog.id}`;
         const claimed = await userStore(botToken, 'claim_free_usage', {
             telegramId,
@@ -527,13 +548,41 @@ async function resolveReadingAccess(botToken, telegramId, policy, feature, paylo
 }
 
 async function releaseReadingAccess(botToken, telegramId, access) {
-    if (access?.source !== 'free_check' || !access.freeUsageKey) return;
+    if (!['free_check', 'daily_channel_choice'].includes(access?.source) || !access.freeUsageKey) return;
     await userStore(botToken, 'release_free_usage', {
         telegramId,
         serviceId: access.freeUsageKey
     }).catch((error) => {
         console.error('Free reading usage release failed:', error?.message || error);
     });
+}
+
+async function recordServiceEvent(botToken, telegramId, serviceId, eventType, accessSource = '', metadata = {}) {
+    if (!serviceId || !Number.isSafeInteger(Number(telegramId)) || Number(telegramId) <= 0) return;
+    await userStore(botToken, 'record_service_event', {
+        telegramId,
+        serviceId,
+        eventType,
+        accessSource,
+        metadata
+    }).catch((error) => console.error('Service event record failed:', error?.message || error));
+}
+
+async function appendJourneyContext(botToken, telegramId, messages) {
+    const data = await userStore(botToken, 'get_journey_context', { telegramId }).catch(() => null);
+    const journey = data?.journey;
+    if (!journey || !Array.isArray(messages)) return messages;
+    const context = {
+        verifiedProfileFacts: journey.facts || {},
+        priorVisualObservations: Array.isArray(journey.visual_observations) ? journey.visual_observations.slice(-6) : [],
+        confirmedHypotheses: Array.isArray(journey.confirmed_hypotheses) ? journey.confirmed_hypotheses.slice(-6) : [],
+        tentativeHypotheses: Array.isArray(journey.ai_hypotheses) ? journey.ai_hypotheses.slice(-4) : [],
+        recentGuidance: journey.last_guidance || {}
+    };
+    return [{
+        role: 'system',
+        content: `Контекст жизненного пути пользователя: ${JSON.stringify(context)}. Факты и подтверждённые гипотезы можно использовать как контекст. Наблюдения описывай как наблюдения, а tentativeHypotheses — только как неподтверждённые версии, не как факты.`
+    }, ...messages];
 }
 
 async function autoCompleteJointInvitation(botToken, {
@@ -647,6 +696,9 @@ async function answerOracleRoomTurn(botToken, telegramId, body) {
     const roomToken = String(body?.roomToken || '').trim().toLowerCase();
     const message = String(body?.message || '').trim().replace(/\s+/g, ' ').slice(0, 2000);
     const clientNonce = String(body?.clientNonce || '').trim();
+    const messageKind = ['question', 'answer', 'guided'].includes(String(body?.messageKind))
+        ? String(body.messageKind)
+        : 'question';
     if (!/^[a-f0-9]{32}$/.test(roomToken)) throw new Error('invalid_oracle_room_token');
     if (message.length < 2) throw new Error('invalid_oracle_room_message');
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/.test(clientNonce)) {
@@ -654,7 +706,24 @@ async function answerOracleRoomTurn(botToken, telegramId, body) {
     }
 
     let turn = null;
+    let charge = null;
     try {
+        const [policy, usageData] = await Promise.all([
+            userStore(botToken, 'get_public_config', { telegramId }),
+            userStore(botToken, 'get_oracle_room_question_usage', { telegramId, roomToken })
+        ]);
+        const mode = String(usageData?.usage?.mode || 'solo');
+        const dialoguePolicy = policy?.settings?.dialogueCatalog?.[mode]
+            || policy?.settings?.dialogueCatalog?.personal
+            || {};
+        if (dialoguePolicy.enabled === false) throw new Error('dialogue_disabled');
+        const answeredQuestions = Math.max(0, Number(usageData?.usage?.answered_questions || 0));
+        const includedQuestions = Math.max(0, Math.floor(Number(dialoguePolicy.includedQuestions ?? (mode === 'group' ? 5 : 3))));
+        const extraQuestionPrice = Math.max(0.1, Number(dialoguePolicy.extraQuestionPrice || 0.1));
+        const requiresPayment = messageKind === 'question'
+            && policy?.settings?.everythingFree !== true
+            && answeredQuestions >= includedQuestions;
+
         const begun = await userStore(botToken, 'begin_oracle_room_turn', {
             telegramId,
             roomToken,
@@ -666,10 +735,44 @@ async function answerOracleRoomTurn(botToken, telegramId, body) {
             if (turn.answer) return { room: begun.room, answer: turn.answer, replayed: true };
             throw new Error('oracle_room_busy');
         }
+        await userStore(botToken, 'set_oracle_room_turn_kind', {
+            telegramId,
+            roomToken,
+            turnId: turn?.turn_id,
+            messageKind
+        });
+
+        if (requiresPayment) {
+            try {
+                const charged = await userStore(botToken, 'charge_service', {
+                    telegramId,
+                    serviceId: `dialogue_${mode}`,
+                    serviceTitle: `Дополнительный вопрос · ${mode === 'group' ? 'групповой круг' : mode === 'pair' ? 'диалог для двоих' : 'личный диалог'}`,
+                    priceUnits: Math.max(10, Math.round(extraQuestionPrice * 100)),
+                    idempotencyKey: `dialogue-${clientNonce}`
+                });
+                charge = charged.charge;
+                if (!charge?.charge_id || charge.status === 'refunded') throw new Error('payment_retry_required');
+            } catch (error) {
+                if (error?.message === 'insufficient_funds') {
+                    const wallet = await userStore(botToken, 'get_wallet', { telegramId }).catch(() => null);
+                    error.payment = {
+                        serviceId: `dialogue_${mode}`,
+                        serviceTitle: 'Дополнительный вопрос Эзотериуму',
+                        price: extraQuestionPrice,
+                        available: Number(wallet?.wallet?.balance_units || 0) / 100,
+                        shortage: Math.max(0, Math.round(extraQuestionPrice * 100) - Number(wallet?.wallet?.balance_units || 0)) / 100,
+                        sbpTopupsEnabled: wallet?.config?.sbpTopupsEnabled === true
+                    };
+                }
+                throw error;
+            }
+        }
 
         const agentRequest = buildOracleRoomAgentRequest(begun.room, {
             turnId: turn?.turn_id,
-            message: String(turn?.content || message)
+            message: String(turn?.content || message),
+            messageKind
         });
         const generated = await runAgent({
             botToken,
@@ -683,6 +786,12 @@ async function answerOracleRoomTurn(botToken, telegramId, body) {
             turnId: turn?.turn_id,
             answer: generated.answer
         });
+        if (charge?.charge_id && charge.status !== 'fulfilled') {
+            await userStore(botToken, 'complete_service_charge', {
+                telegramId,
+                chargeId: charge.charge_id
+            });
+        }
         await Promise.allSettled((completed.chats || []).map((chat) =>
             notifyOracleRoomChat(
                 botToken,
@@ -698,6 +807,13 @@ async function answerOracleRoomTurn(botToken, telegramId, body) {
                 telegramId,
                 roomToken,
                 turnId: turn.turn_id
+            }).catch(() => null);
+        }
+        if (charge?.charge_id && charge.status !== 'fulfilled') {
+            await userStore(botToken, 'refund_service_charge', {
+                telegramId,
+                chargeId: charge.charge_id,
+                reason: 'oracle_dialogue_answer_failed'
             }).catch(() => null);
         }
         throw error;
@@ -726,6 +842,119 @@ async function answerTarotDialogueTurn(botToken, telegramId, body) {
         answer: generated.answer
     });
     return generated.answer;
+}
+
+async function answerReadingDialogueTurn(botToken, telegramId, body) {
+    const readingId = String(body?.readingId || '').trim().toLowerCase();
+    const message = String(body?.message || '').trim().replace(/\s+/g, ' ').slice(0, 2000);
+    const clientNonce = String(body?.clientNonce || '').trim();
+    const messageKind = String(body?.messageKind) === 'answer' ? 'answer' : 'question';
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(readingId)) {
+        throw new Error('invalid_reading_id');
+    }
+    if (message.length < 2) throw new Error('invalid_reading_dialogue_message');
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/.test(clientNonce)) throw new Error('invalid_idempotency_key');
+
+    let charge = null;
+    try {
+        const [context, policy] = await Promise.all([
+            userStore(botToken, 'get_reading_dialogue_context', { telegramId, readingId }),
+            userStore(botToken, 'get_public_config', { telegramId })
+        ]);
+        const dialoguePolicy = policy?.settings?.dialogueCatalog?.personal || {};
+        if (dialoguePolicy.enabled === false) throw new Error('dialogue_disabled');
+        const includedQuestions = Math.max(0, Math.floor(Number(dialoguePolicy.includedQuestions ?? 3)));
+        const answeredQuestions = Math.max(0, Number(context?.answeredQuestions || 0));
+        const extraQuestionPrice = Math.max(0.1, Number(dialoguePolicy.extraQuestionPrice || 0.1));
+        const replayedQuestion = (context?.messages || []).find((item) =>
+            item?.role === 'user' && String(item?.client_nonce || '') === clientNonce
+        );
+        const replayedAnswer = replayedQuestion
+            ? (context?.messages || []).find((item) =>
+                item?.role === 'assistant' && String(item?.turn_id || '') === String(replayedQuestion.turn_id || '')
+            )
+            : null;
+        if (replayedAnswer?.content) {
+            return {
+                answer: String(replayedAnswer.content),
+                messageKind: String(replayedQuestion?.message_kind || messageKind),
+                answeredQuestions,
+                includedQuestions,
+                extraQuestionPrice,
+                replayed: true
+            };
+        }
+        const requiresPayment = messageKind === 'question'
+            && policy?.settings?.everythingFree !== true
+            && answeredQuestions >= includedQuestions;
+        if (requiresPayment) {
+            try {
+                const charged = await userStore(botToken, 'charge_service', {
+                    telegramId,
+                    serviceId: 'dialogue_personal',
+                    serviceTitle: 'Дополнительный вопрос Эзотериуму',
+                    priceUnits: Math.max(10, Math.round(extraQuestionPrice * 100)),
+                    idempotencyKey: `dialogue-${clientNonce}`
+                });
+                charge = charged.charge;
+                if (!charge?.charge_id || charge.status === 'refunded') throw new Error('payment_retry_required');
+            } catch (error) {
+                if (error?.message === 'insufficient_funds') {
+                    const wallet = await userStore(botToken, 'get_wallet', { telegramId }).catch(() => null);
+                    const availableUnits = Number(wallet?.wallet?.balance_units || 0) - Number(wallet?.wallet?.locked_units || 0);
+                    error.payment = {
+                        serviceId: 'dialogue_personal',
+                        serviceTitle: 'Дополнительный вопрос Эзотериуму',
+                        price: extraQuestionPrice,
+                        available: availableUnits / 100,
+                        shortage: Math.max(0, Math.round(extraQuestionPrice * 100) - availableUnits) / 100,
+                        sbpTopupsEnabled: wallet?.config?.sbpTopupsEnabled === true
+                    };
+                }
+                throw error;
+            }
+        }
+
+        const agentRequest = buildReadingDialogueAgentRequest(
+            context,
+            message,
+            messageKind,
+            String(body?.userName || '')
+        );
+        const generated = await runAgent({
+            botToken,
+            slug: 'reading-dialogue',
+            message: agentRequest.message,
+            history: agentRequest.history
+        });
+        const stored = await userStore(botToken, 'append_reading_dialogue_turn', {
+            telegramId,
+            readingId,
+            message,
+            answer: generated.answer,
+            messageKind,
+            clientNonce
+        });
+        if (charge?.charge_id && charge.status !== 'fulfilled') {
+            await userStore(botToken, 'complete_service_charge', { telegramId, chargeId: charge.charge_id });
+        }
+        return {
+            answer: String(stored?.turn?.answer || generated.answer),
+            messageKind,
+            answeredQuestions: answeredQuestions + (messageKind === 'question' ? 1 : 0),
+            includedQuestions,
+            extraQuestionPrice
+        };
+    } catch (error) {
+        if (charge?.charge_id && charge.status !== 'fulfilled') {
+            await userStore(botToken, 'refund_service_charge', {
+                telegramId,
+                chargeId: charge.charge_id,
+                reason: 'reading_dialogue_answer_failed'
+            }).catch(() => null);
+        }
+        throw error;
+    }
 }
 
 export default async function handler(req, res) {
@@ -803,6 +1032,7 @@ export default async function handler(req, res) {
                 create_oracle_room: 6,
                 invite_oracle_room_username: 20,
                 upload_oracle_room_palm: 10,
+                complete_oracle_room_text_preparation: 20,
                 join_oracle_room: 20,
                 leave_oracle_room: 20,
                 close_oracle_room: 12,
@@ -860,7 +1090,7 @@ export default async function handler(req, res) {
                     )
                 ));
             }
-            if (action === 'upload_oracle_room_palm' && data.newlyOpened === true) {
+            if (['upload_oracle_room_palm', 'complete_oracle_room_text_preparation'].includes(action) && data.newlyOpened === true) {
                 await Promise.allSettled((data.chats || []).map((chat) =>
                     notifyOracleRoomChat(
                         botToken,
@@ -914,12 +1144,15 @@ export default async function handler(req, res) {
                 code === 'oracle_room_not_found' ? 404
                     : code === 'oracle_room_invite_expired' ? 410
                         : ['oracle_room_closed', 'oracle_room_full', 'oracle_room_busy', 'oracle_room_turn_changed', 'oracle_room_preparation_required'].includes(code) ? 409
+                            : code === 'insufficient_funds' ? 402
                             : code === 'oracle_room_access_denied' ? 403
+                                : code === 'dialogue_disabled' ? 403
                                 : ['invalid_oracle_room_token', 'invalid_oracle_room_message', 'invalid_idempotency_key'].includes(code) ? 400
                                     : 502
             );
             return sendJson(res, status, {
-                error: status >= 500 ? 'oracle_room_answer_unavailable' : code
+                error: status >= 500 ? 'oracle_room_answer_unavailable' : code,
+                ...(error?.payment ? { payment: error.payment } : {})
             });
         }
     }
@@ -947,6 +1180,37 @@ export default async function handler(req, res) {
                         : 502
             );
             return sendJson(res, status, { error: status >= 500 ? 'tarot_dialogue_unavailable' : code });
+        }
+    }
+
+    if (action === 'reading_dialogue_send') {
+        if (!auth.ok) return sendJson(res, 401, { error: 'telegram_auth_required' });
+        try {
+            const rateLimit = await enforceRateLimit(req, {
+                botToken,
+                telegramId,
+                scope: 'reading:dialogue',
+                limit: 60,
+                windowSeconds: 60 * 60,
+                persistent: true
+            });
+            setRateLimitHeaders(res, rateLimit);
+            if (!rateLimit.allowed) return sendJson(res, 429, { error: 'rate_limited' });
+            const dialogue = await answerReadingDialogueTurn(botToken, telegramId, req.body);
+            return sendJson(res, 200, { ok: true, ...dialogue });
+        } catch (error) {
+            const code = error?.message || 'reading_dialogue_unavailable';
+            const status = Number(error?.status) || (
+                code === 'reading_not_found' ? 404
+                    : code === 'insufficient_funds' ? 402
+                        : ['dialogue_disabled'].includes(code) ? 403
+                            : ['invalid_reading_id', 'invalid_reading_dialogue', 'invalid_reading_dialogue_message', 'invalid_idempotency_key'].includes(code) ? 400
+                                : 502
+            );
+            return sendJson(res, status, {
+                error: status >= 500 ? 'reading_dialogue_unavailable' : code,
+                ...(error?.payment ? { payment: error.payment } : {})
+            });
         }
     }
 
@@ -1098,6 +1362,10 @@ export default async function handler(req, res) {
         policy = auth.ok
             ? await userStore(botToken, 'get_public_config', { telegramId })
             : DEFAULT_PUBLIC_POLICY;
+        if (feature === 'daily_horoscope' && auth.ok) {
+            const subscription = await checkChannelMembership(botToken, telegramId, policy.settings || {});
+            assertChannelMembership(subscription);
+        }
         const invitationToken = String(requestPayload?.invitationToken || '');
         if (invitationToken) {
             if (!auth.ok || feature !== 'photo_compatibility') {
@@ -1168,6 +1436,8 @@ export default async function handler(req, res) {
         }
         if (code === 'photo_requires_review') return sendJson(res, 422, { error: code });
         if (code === 'photo_blocked') return sendJson(res, 400, { error: code });
+        if (code === 'channel_subscription_required') return sendJson(res, 403, { error: code });
+        if (code === 'channel_subscription_check_unavailable') return sendJson(res, 503, { error: code });
         if (code === 'invitation_not_found') return sendJson(res, 404, { error: code });
         if (code === 'invitation_expired') return sendJson(res, 410, { error: code });
         if (['invitation_busy', 'invitation_not_ready', 'invitation_already_completed'].includes(code)) {
@@ -1222,6 +1492,9 @@ export default async function handler(req, res) {
         }
     }
 
+    const trackingServiceId = serviceId || feature;
+    if (auth.ok) messages = await appendJourneyContext(botToken, telegramId, messages);
+    await recordServiceEvent(botToken, telegramId, trackingServiceId, 'started', access?.source || charge?.payment_source || 'direct');
     try {
         const schema = structuredSchemaForFeature(feature);
         const generated = await generateReading({ feature, messages, visionAnalysis, schema });
@@ -1252,6 +1525,38 @@ export default async function handler(req, res) {
                 chargeId: charge.charge_id
             });
         }
+        await recordServiceEvent(
+            botToken,
+            telegramId,
+            trackingServiceId,
+            'completed',
+            access?.source || charge?.payment_source || 'direct',
+            { summary: String(answer || '').replace(/\s+/g, ' ').slice(0, 500) }
+        );
+        if (access?.source === 'daily_channel_choice') {
+            await recordServiceEvent(botToken, telegramId, trackingServiceId, 'free_used', access.source);
+        } else if (charge?.charge_id) {
+            await recordServiceEvent(botToken, telegramId, trackingServiceId, 'paid_used', charge.payment_source || 'silarum');
+        }
+        if (feature === 'palm_reading' && Array.isArray(generated.result?.observations)) {
+            const capturedAt = new Date().toISOString();
+            await userStore(botToken, 'record_journey_insight', {
+                telegramId,
+                visualObservations: generated.result.observations.map((item) => ({
+                    source: 'palm_photo',
+                    capturedAt,
+                    line: String(item?.line || '').slice(0, 100),
+                    visibleDetail: String(item?.visibleDetail || '').slice(0, 500)
+                })),
+                aiHypotheses: generated.result.observations.map((item) => ({
+                    source: 'palm_interpretation',
+                    capturedAt,
+                    status: 'tentative',
+                    line: String(item?.line || '').slice(0, 100),
+                    interpretation: String(item?.interpretation || '').slice(0, 700)
+                }))
+            }).catch((error) => console.error('Journey insight record failed:', error?.message || error));
+        }
         return sendJson(res, 200, {
             answer,
             ...(generated.result ? { result: generated.result } : {}),
@@ -1262,6 +1567,9 @@ export default async function handler(req, res) {
             ...(completedInvitation ? { invitation: completedInvitation } : {})
         });
     } catch (error) {
+        await recordServiceEvent(botToken, telegramId, trackingServiceId, 'failed', access?.source || charge?.payment_source || 'direct', {
+            code: safeErrorCode(error)
+        });
         console.error('Nastardamus reading pipeline failed', {
             requestId,
             feature,

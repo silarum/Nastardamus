@@ -1,5 +1,6 @@
 import { buildReadingMessages } from '../lib/readings.js';
 import { requestDeepSeekChat } from '../lib/deepseek.js';
+import { checkChannelMembership } from '../lib/channel-access.js';
 
 const USER_STORE_URL = process.env.USER_STORE_URL
   || 'https://hngfpdsnjgdpazmortix.supabase.co/functions/v1/nastardamus-user-store';
@@ -78,6 +79,16 @@ export default async function handler(req, res) {
   try {
     await userStore(botToken, 'authorize_cron', { cronToken });
     const { recipients = [] } = await userStore(botToken, 'list_horoscope_recipients', { today: date, limit: 200 });
+    const publicConfig = await userStore(botToken, 'get_public_config', { telegramId: Number(recipients[0]?.telegram_id || 1) });
+    const eligibleRecipients = [];
+    for (let index = 0; index < recipients.length; index += 20) {
+      const batch = recipients.slice(index, index + 20);
+      const checks = await Promise.all(batch.map(async (person) => ({
+        person,
+        subscription: await checkChannelMembership(botToken, Number(person.telegram_id), publicConfig.settings || {})
+      })));
+      eligibleRecipients.push(...checks.filter(({ subscription }) => !subscription.configured || subscription.member).map(({ person }) => person));
+    }
     const currentYear = Number(date.slice(0, 4));
     const groupKey = (person) => [
       person.zodiac_sign,
@@ -85,13 +96,13 @@ export default async function handler(req, res) {
       Math.max(13, Math.min(120, currentYear - Number(person.birth_year || currentYear - 18))),
       String(person.city || '').trim().toLocaleLowerCase('ru-RU')
     ].join(':');
-    const horoscopeGroups = [...new Set(recipients.map(groupKey))];
+    const horoscopeGroups = [...new Set(eligibleRecipients.map(groupKey))];
     const readings = new Map(await Promise.all(horoscopeGroups.map(async (group) => {
       const [sign, gender, age, ...cityParts] = group.split(':');
       return [group, await createHoroscope(sign, date, gender, Number(age), cityParts.join(':'))];
     })));
     let sent = 0;
-    for (const person of recipients) {
+    for (const person of eligibleRecipients) {
       try {
         const greeting = person.first_name ? `${person.first_name}, ваш знак на сегодня:` : 'Ваш знак на сегодня:';
         await sendTelegram(botToken, {
@@ -105,7 +116,7 @@ export default async function handler(req, res) {
         console.error('Daily horoscope delivery failed:', person.telegram_id, error);
       }
     }
-    return sendJson(res, 200, { ok: true, recipients: recipients.length, sent, date });
+    return sendJson(res, 200, { ok: true, recipients: recipients.length, eligible: eligibleRecipients.length, sent, date });
   } catch (error) {
     console.error('Daily horoscope cron failed:', error);
     return sendJson(res, 503, { error: 'daily_horoscope_failed' });

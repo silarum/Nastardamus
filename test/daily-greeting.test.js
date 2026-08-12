@@ -87,7 +87,7 @@ test('practice selection is stable for one day and covers only working routes', 
   const second = selectDailyGreetingPractice('2026-08-08', 'Никита:male');
   assert.equal(first, second);
   assert.ok(DAILY_GREETING_PRACTICES[first]);
-  assert.deepEqual(Object.keys(DAILY_GREETING_PRACTICES).sort(), ['celestial', 'resource', 'rune_flow', 'tarot_day']);
+  assert.deepEqual(Object.keys(DAILY_GREETING_PRACTICES).sort(), ['celestial', 'natal_origin', 'palm_path', 'resource', 'rune_flow', 'tarot_day']);
 });
 
 test('agent message treats profile fields as data and answer cleaning keeps direct speech', () => {

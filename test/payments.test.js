@@ -178,6 +178,12 @@ test('global free mode reveals a reading without creating a service charge', asy
       if (body.action === 'take_rate_limit') {
         return { ok: true, status: 200, json: async () => ({ ok: true, allowed: true, remaining: 20 }) };
       }
+      if (body.action === 'get_journey_context') {
+        return { ok: true, status: 200, json: async () => ({ ok: true, journey: null }) };
+      }
+      if (body.action === 'record_service_event') {
+        return { ok: true, status: 200, json: async () => ({ ok: true, eventId: 'event-test' }) };
+      }
       assert.equal(body.action, 'get_public_config');
       return {
         ok: true,
@@ -215,7 +221,7 @@ test('global free mode reveals a reading without creating a service charge', asy
     assert.equal(response.body.payment.source, 'global_free');
     assert.equal(response.body.payment.amount, 0);
     assert.equal(actions.includes('charge_service'), false);
-    assert.deepEqual(actions, ['take_rate_limit', 'get_public_config', 'provider']);
+    assert.deepEqual(actions, ['take_rate_limit', 'get_public_config', 'get_journey_context', 'record_service_event', 'provider', 'record_service_event']);
   } finally {
     global.fetch = previousFetch;
     for (const [key, value] of Object.entries(previous)) {

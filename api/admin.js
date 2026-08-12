@@ -67,6 +67,24 @@ const SERVICE_DEFINITIONS = Object.freeze({
   amur_compatibility: 'Амур'
 });
 
+const DIALOGUE_DEFINITIONS = Object.freeze({
+  personal: 'Личные диалоги во всех разделах',
+  solo: 'Личная комната',
+  pair: 'Комната для двоих',
+  group: 'Групповое мероприятие'
+});
+
+const DEFAULT_DIALOGUE_CATALOG = Object.freeze(Object.fromEntries(
+  Object.entries(DIALOGUE_DEFINITIONS).map(([id, title]) => [id, {
+    id,
+    title,
+    enabled: true,
+    sectionFree: true,
+    includedQuestions: id === 'group' ? 5 : 3,
+    extraQuestionPrice: 0.1
+  }])
+));
+
 const TAROT_DEFINITIONS = Object.freeze({
   'card-of-day': { title: 'Карта дня', cardCount: 1 },
   'yes-no': { title: 'Да или нет', cardCount: 1 },
@@ -133,9 +151,15 @@ const DEFAULT_SETTINGS = Object.freeze({
   wheelDailySpins: 1,
   wheelRewards: DEFAULT_WHEEL_REWARDS,
   serviceCatalog: DEFAULT_SERVICE_CATALOG,
+  dialogueCatalog: DEFAULT_DIALOGUE_CATALOG,
   tarotCatalog: [],
   compatibilityCatalog: [],
   dailyHoroscopeEnabled: true,
+  subscriptionGateEnabled: false,
+  subscriptionChannelUsername: '',
+  subscriptionChannelTitle: 'Канал Эзотериума',
+  dailyFreeServiceIds: ['tarot', 'tarot_relationship', 'palm_reading', 'natal', 'rune_reading'],
+  tonTreasuryAddress: 'UQAVyNXcWPUm-24n7JMqIIjMjYN1bVMPXbNww29NNh-l1CyO',
   referralsEnabled: true,
   firstReferralRate: 50,
   repeatReferralRate: 13,
@@ -188,6 +212,16 @@ function cleanHttpsUrl(value) {
   }
 }
 
+function cleanTelegramChannel(value) {
+  const username = cleanText(value, 80).replace(/^https?:\/\/(?:t\.me|telegram\.me)\//i, '').replace(/^@/, '').split(/[/?#]/)[0];
+  return /^[A-Za-z0-9_]{5,32}$/.test(username) ? `@${username}` : '';
+}
+
+function cleanTonAddress(value) {
+  const address = cleanText(value, 100);
+  return /^(?:-?\d+:[0-9a-fA-F]{64}|[A-Za-z0-9_-]{40,80})$/.test(address) ? address : '';
+}
+
 function sanitizeServiceCatalog(input) {
   const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   return Object.fromEntries(Object.entries(SERVICE_DEFINITIONS).map(([id, title]) => {
@@ -200,6 +234,21 @@ function sanitizeServiceCatalog(input) {
       title,
       enabled: item.enabled !== false,
       price: numericPrice
+    }];
+  }));
+}
+
+function sanitizeDialogueCatalog(input) {
+  const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  return Object.fromEntries(Object.entries(DIALOGUE_DEFINITIONS).map(([id, title]) => {
+    const item = source[id] && typeof source[id] === 'object' ? source[id] : {};
+    return [id, {
+      id,
+      title,
+      enabled: item.enabled !== false,
+      sectionFree: item.sectionFree !== false,
+      includedQuestions: Math.round(clampNumber(item.includedQuestions, 0, 1000, id === 'group' ? 5 : 3)),
+      extraQuestionPrice: clampNumber(item.extraQuestionPrice, 0.1, 1_000_000, 0.1)
     }];
   }));
 }
@@ -331,9 +380,15 @@ function sanitizeSettings(input = {}) {
     wheelDailySpins: Math.round(clampNumber(input.wheelDailySpins, 1, 10, 1)),
     wheelRewards: sanitizeWheelRewards(input.wheelRewards),
     serviceCatalog: sanitizeServiceCatalog(input.serviceCatalog),
+    dialogueCatalog: sanitizeDialogueCatalog(input.dialogueCatalog),
     tarotCatalog: sanitizeTarotCatalog(input.tarotCatalog),
     compatibilityCatalog: sanitizeCompatibilityCatalog(input.compatibilityCatalog),
     dailyHoroscopeEnabled: input.dailyHoroscopeEnabled !== false,
+    subscriptionGateEnabled: input.subscriptionGateEnabled === true && Boolean(cleanTelegramChannel(input.subscriptionChannelUsername)),
+    subscriptionChannelUsername: cleanTelegramChannel(input.subscriptionChannelUsername),
+    subscriptionChannelTitle: cleanText(input.subscriptionChannelTitle, 80) || 'Канал Эзотериума',
+    dailyFreeServiceIds: ['tarot', 'tarot_relationship', 'palm_reading', 'natal', 'rune_reading'],
+    tonTreasuryAddress: cleanTonAddress(input.tonTreasuryAddress) || DEFAULT_SETTINGS.tonTreasuryAddress,
     referralsEnabled: Boolean(input.referralsEnabled),
     firstReferralRate: clampNumber(input.firstReferralRate, 0, 100, 50),
     repeatReferralRate: clampNumber(input.repeatReferralRate, 0, 100, 13),
@@ -424,6 +479,17 @@ async function readPayments(botToken) {
   );
   if (direct) return await direct.json();
   return (await edgeStore(botToken, 'list_sbp_topups')).orders || [];
+}
+
+async function readServicePopularity(botToken, days = 30) {
+  const safeDays = Math.max(1, Math.min(365, Math.round(Number(days || 30))));
+  const direct = await directSupabaseRequest('rpc/nastardamus_service_popularity', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_days: safeDays })
+  });
+  if (direct) return await direct.json();
+  return (await edgeStore(botToken, 'service_popularity', { days: safeDays })).services || [];
 }
 
 async function readPaymentProvider(botToken) {
@@ -590,12 +656,45 @@ async function readControlProfile(userId, botToken, telegramUser) {
 function enhanceControlFile(control, source) {
   let body = source;
   if (control === 'page') {
+    const dialogueRows = Object.entries(DEFAULT_DIALOGUE_CATALOG).map(([id, item]) => (
+      `<article class="service-price-row" data-dialogue="${id}"><div><strong>${item.title}</strong>`
+        + '<label class="switch-row"><span><small>Диалог включён</small></span><input data-dialogue-enabled type="checkbox" checked></label>'
+        + '<label class="switch-row"><span><small>Вход в чат бесплатный</small></span><input data-dialogue-free type="checkbox" checked></label></div>'
+        + `<div class="two-cols"><label>Включено вопросов<input data-dialogue-limit type="number" min="0" max="1000" step="1" value="${item.includedQuestions}"></label>`
+        + `<label>Цена следующего, S<input data-dialogue-price type="number" min="0.10" max="1000000" step="0.01" value="${item.extraQuestionPrice.toFixed(2)}"></label></div></article>`
+    )).join('');
     body = body.replace(
       '<label class="switch-row"><span><strong>Платные услуги включены</strong><small>Полный ответ выдаётся после списания цены услуги</small></span><input name="paymentsEnabled" type="checkbox" checked></label>',
       '<label class="switch-row"><span><strong>Платные услуги включены</strong><small>Полный ответ выдаётся после списания цены услуги</small></span><input name="paymentsEnabled" type="checkbox" checked></label>\n'
         + '<label class="switch-row"><span><strong>Всё бесплатно</strong><small>Глобальный режим: ответы выдаются без списания SILARUM, включая совместные чтения</small></span><input name="everythingFree" type="checkbox"></label>\n'
         + '<label class="switch-row"><span><strong>Telegram Stars</strong><small>Безопасное пополнение SILARUM встроенным счётом Telegram</small></span><input name="starsEnabled" type="checkbox" checked></label>\n'
         + '<label>Telegram Stars за 1 SILARUM<input name="starsPerSilarum" type="number" min="0.01" max="1000000" step="1" value="50"></label>'
+    );
+    body = body.replace(
+      '<label class="switch-row"><span><strong>Ежедневный гороскоп</strong><small>Рассылка только пользователям, которые включили её в профиле</small></span><input name="dailyHoroscopeEnabled" type="checkbox" checked></label>',
+      '<label class="switch-row"><span><strong>Ежедневный гороскоп</strong><small>Рассылка только пользователям, которые включили её в профиле</small></span><input name="dailyHoroscopeEnabled" type="checkbox" checked></label>\n'
+        + '<label class="switch-row"><span><strong>Проверять подписку на канал</strong><small>Бот должен быть администратором канала; проверка защищает гороскоп, Колесо и бесплатный выбор дня</small></span><input name="subscriptionGateEnabled" type="checkbox"></label>\n'
+        + '<div class="two-cols"><label>Канал, @username<input name="subscriptionChannelUsername" maxlength="80" placeholder="@your_channel"></label><label>Название канала<input name="subscriptionChannelTitle" maxlength="80" value="Канал Эзотериума"></label></div>\n'
+        + '<label>TON-кошелёк проекта<input name="tonTreasuryAddress" maxlength="100" value="UQAVyNXcWPUm-24n7JMqIIjMjYN1bVMPXbNww29NNh-l1CyO"></label>\n'
+        + '<p class="panel-copy">TON Connect используется для привязки кошелька к профилю. SILARUM внутри Telegram продаются только через Stars.</p>'
+    );
+    body = body.replace(
+      '<button type="button" data-tab="payments">Платежи</button>',
+      '<button type="button" data-tab="payments">Платежи</button>\n        <button type="button" data-tab="dialogues">Живые диалоги</button>\n        <button type="button" data-tab="popularity">Популярные сервисы</button>'
+    );
+    body = body.replace(
+      '<section class="tab-panel" data-panel="payments" hidden>',
+      '<section class="tab-panel" data-panel="dialogues" hidden>\n'
+        + '        <section class="card panel"><div class="panel-head"><div><p class="eyebrow">Квоты сообщений</p><h2>Живые диалоги Эзотериума</h2></div><span class="badge violet">SILARUM</span></div>\n'
+        + '          <p class="panel-copy">Ответы Эзотериума не расходуют лимит. Считаются только вопросы пользователя, на которые получен ответ. После лимита каждый новый вопрос оплачивается по указанной цене.</p>\n'
+        + `          <div id="dialogue-policy-list" class="service-price-list">${dialogueRows}</div>\n`
+        + '        </section>\n'
+        + '      </section>\n\n      <section class="tab-panel" data-panel="popularity" hidden>\n'
+        + '        <section class="card panel"><div class="panel-head"><div><p class="eyebrow">Использование</p><h2>Популярные сервисы</h2></div><span class="badge violet">30 дней</span></div>\n'
+        + '          <p class="panel-copy">Считаются реальные старты, завершения, ошибки, бесплатные и платные использования. Уникальные пользователи не суммируются дважды.</p>\n'
+        + '          <div id="popularity-list" class="service-price-list"><p class="empty-state">Загружаем статистику…</p></div>\n'
+        + '        </section>\n'
+        + '      </section>\n\n      <section class="tab-panel" data-panel="payments" hidden>'
     );
     const queueMarker = '<section class="card panel">\n          <div class="panel-head"><div><p class="eyebrow">Очередь</p><h2>Последние заявки</h2></div>';
     body = body.replace(
@@ -615,8 +714,67 @@ function enhanceControlFile(control, source) {
   }
   if (control === 'js') {
     body = body.replace(
+      "  const rewards = new Map((settings.wheelRewards || []).map((reward) => [reward.id, reward]));",
+      `  document.querySelectorAll('[data-dialogue]').forEach((row) => {
+    const policy = settings.dialogueCatalog?.[row.dataset.dialogue] || {};
+    row.querySelector('[data-dialogue-enabled]').checked = policy.enabled !== false;
+    row.querySelector('[data-dialogue-free]').checked = policy.sectionFree !== false;
+    row.querySelector('[data-dialogue-limit]').value = Number(policy.includedQuestions ?? (row.dataset.dialogue === 'group' ? 5 : 3));
+    row.querySelector('[data-dialogue-price]').value = Number(policy.extraQuestionPrice ?? 0.1).toFixed(2);
+  });
+  const rewards = new Map((settings.wheelRewards || []).map((reward) => [reward.id, reward]));`
+    );
+    body = body.replace(
+      'function collectWheelRewards() {',
+      `function collectDialogueCatalog() {
+  return Object.fromEntries([...document.querySelectorAll('[data-dialogue]')].map((row) => [row.dataset.dialogue, {
+    enabled: row.querySelector('[data-dialogue-enabled]').checked,
+    sectionFree: row.querySelector('[data-dialogue-free]').checked,
+    includedQuestions: Number(row.querySelector('[data-dialogue-limit]').value),
+    extraQuestionPrice: Number(row.querySelector('[data-dialogue-price]').value)
+  }]));
+}
+
+function collectWheelRewards() {`
+    );
+    body = body.replace(
+      '  values.serviceCatalog = collectServiceCatalog();\n  values.wheelRewards = collectWheelRewards();',
+      '  values.serviceCatalog = collectServiceCatalog();\n  values.dialogueCatalog = collectDialogueCatalog();\n  values.wheelRewards = collectWheelRewards();'
+    );
+    body = body.replace(
+      '  payments: null,\n  team: null,',
+      '  payments: null,\n  popularity: null,\n  team: null,'
+    );
+    body = body.replace(
       'async function loadTeam() {',
-      `const walletAdjustForm = document.getElementById('wallet-adjust-form');
+      `function renderPopularity() {
+  const list = document.getElementById('popularity-list');
+  if (!list) return;
+  const rows = state.popularity?.services || [];
+  if (!rows.length) {
+    list.innerHTML = '<p class="empty-state">Данных пока нет — статистика появится после первых завершённых практик.</p>';
+    return;
+  }
+  list.innerHTML = rows.map((row, index) => {
+    const title = state.overview?.settings?.serviceCatalog?.[row.service_id]?.title || row.service_id;
+    const started = Number(row.started || 0);
+    const completed = Number(row.completed || 0);
+    const conversion = started ? Math.round(completed / started * 100) : 0;
+    return '<article class="service-price-row"><div><small>#' + (index + 1) + ' · ' + escapeHtml(row.service_id) + '</small><strong>' + escapeHtml(title) + '</strong><p>' + Number(row.unique_users || 0) + ' пользователей · ' + conversion + '% завершено</p></div><div><strong>' + completed + ' завершений</strong><small>' + Number(row.free_used || 0) + ' бесплатно · ' + Number(row.paid_used || 0) + ' платно · ' + Number(row.failed || 0) + ' ошибок</small></div></article>';
+  }).join('');
+}
+
+async function loadPopularity() {
+  try {
+    state.popularity = await api('/api/admin?popularity=1&days=30');
+    renderPopularity();
+  } catch {
+    const list = document.getElementById('popularity-list');
+    if (list) list.innerHTML = '<p class="empty-state">Не удалось загрузить статистику.</p>';
+  }
+}
+
+const walletAdjustForm = document.getElementById('wallet-adjust-form');
 walletAdjustForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const amount = Number(walletAdjustForm.elements.amount.value);
@@ -647,6 +805,10 @@ walletAdjustForm?.addEventListener('submit', async (event) => {
 });
 
 async function loadTeam() {`
+    );
+    body = body.replace(
+      'await Promise.all([loadPayments(), loadTeam(), loadAi()]);',
+      'await Promise.all([loadPayments(), loadPopularity(), loadTeam(), loadAi()]);'
     );
   }
   return body;
@@ -764,6 +926,13 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
+      if (req.query?.popularity === '1') {
+        if (!hasPermission(profile, 'settings.manage') && !hasPermission(profile, 'finance.view')) {
+          return sendJson(res, 403, { error: 'permission_denied' });
+        }
+        const days = Math.max(1, Math.min(365, Number(req.query?.days || 30)));
+        return sendJson(res, 200, { ok: true, days, services: await readServicePopularity(botToken, days) });
+      }
       if (req.query?.payments === '1') {
         if (!hasPermission(profile, 'finance.view') && !hasPermission(profile, 'finance.manage')) {
           return sendJson(res, 403, { error: 'permission_denied' });

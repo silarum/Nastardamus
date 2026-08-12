@@ -446,6 +446,16 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (action === "service_popularity") {
+      const days = Math.max(1, Math.min(365, Math.round(Number(body?.days || 30))));
+      const response = await rest("rpc/nastardamus_service_popularity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ p_days: days })
+      });
+      return json(200, { ok: true, days, services: await response.json() });
+    }
+
     if (action === "review_sbp_topup") {
       const orderId = String(body.orderId || "");
       const decision = String(body.decision || "");

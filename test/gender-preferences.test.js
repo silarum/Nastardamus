@@ -24,7 +24,7 @@ test('preferences API and user store validate and persist gender', () => {
   assert.match(preferencesApi, /gender:\s*req\.body\?\.gender/);
   assert.match(store, /\["female", "male", "unspecified"\]\.includes\(gender\)/);
   assert.match(store, /payload\.gender = gender/);
-  assert.match(store, /select=zodiac_sign,daily_horoscope_enabled,timezone,gender/);
+  assert.match(store, /select=profile_name,zodiac_sign,daily_horoscope_enabled,timezone,gender/);
 });
 
 test('scheduled horoscopes are grouped by sign, gender, age and city', () => {
