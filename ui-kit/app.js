@@ -8,7 +8,6 @@ import {
 import { h } from './core/dom.js';
 import { Icon } from './core/icon.js';
 import { premiumArtUrl } from './core/assets.js';
-import { homeJewelSvg } from './home-jewels.js';
 import {
   LANGUAGE_OPTIONS, dateTimeLocale, normalizeLocale,
   setLocale as applyDocumentLocale, translateText
@@ -2585,8 +2584,8 @@ function homeScreen() {
   return shell([
     header,
     h('section', { className: 'home-sanctum__greeting' },
-      h('p', { className: 'premium-kicker', text: 'ВАШ МОМЕНТ' }),
-      h('h1', { text: `${firstName()}, сегодня достаточно одного ясного шага` }),
+      h('p', { className: 'premium-kicker', text: 'ВАШ ЛИЧНЫЙ ОРАКУЛ' }),
+      h('h1', { text: `${firstName()}, какой ответ вам нужен сегодня?` }),
       h('p', { text: `${state.profile.city || 'Ваш город'} · ${ZODIAC_SIGNS[state.horoscope.sign]?.label || 'ваш личный ритм'}` })
     ),
     h('button', {
@@ -2595,41 +2594,57 @@ function homeScreen() {
       on: { click: () => navigate('daily-choice') }
     },
     h('span', { className: 'home-daily-amulet__copy' },
-      h('small', { text: 'ЛИЧНЫЙ ЗНАК ДНЯ' }),
-      h('strong', { text: dailyChoiceUsed ? 'Ваш знак ждёт продолжения' : 'Что откроется вам сегодня?' }),
-      h('span', { text: dailyChoiceUsed ? 'Вернитесь к смыслу, который выбрали.' : 'Один выбор — чтобы увидеть главное и сделать следующий шаг.' }),
-      h('b', { text: dailyChoiceUsed ? 'Вернуться к знаку' : 'Открыть знак' })
+      h('small', { text: 'БЕСПЛАТНЫЙ ВЫБОР ДНЯ' }),
+      h('strong', { text: dailyChoiceUsed ? 'Ваш знак уже открыт' : 'Позвольте знаку выбрать путь' }),
+      h('span', { text: dailyChoiceUsed ? 'Вернитесь к личному посланию и продолжите выбранную практику.' : 'Откройте амулет — получите личную практику и смысл на сегодня.' }),
+      h('b', { text: dailyChoiceUsed ? 'Продолжить чтение' : 'Открыть амулет' })
     ),
-    h('span', { className: 'home-daily-amulet__art' }, homeJewel('compass'))),
-    h('h2', { className: 'home-sanctum__question', text: 'К чему прислушаетесь?' }),
+    h('span', { className: 'home-daily-amulet__art' }, homeRelic('compass'))),
+    h('h2', { className: 'home-sanctum__question', text: 'Выберите способ получить ответ' }),
     h('div', { className: 'home-jewel-grid' },
-      homeJewelCard('tarot', 'ТАРО', 'Скрытый смысл', 'Увидеть ситуацию глубже', 'tarot'),
-      homeJewelCard('runes', 'РУНЫ', 'Верный шаг', 'Получить знак для решения', 'runes'),
-      homeJewelCard('astrology', 'АСТРОЛОГИЯ', 'Личное небо', 'Понять ритм своего дня', 'natal'),
-      homeJewelCard('palm', 'ХИРОМАНТИЯ', 'Линии судьбы', 'Услышать историю ладони', 'palm-reading')
+      homeJewelCard('tarot', 'ТАРО', 'Ответ в картах', 'Выберите тему. Карты покажут скрытую причину, возможный исход и следующий шаг.', 'Выбрать расклад', 'tarot'),
+      homeJewelCard('runes', 'РУНЫ', 'Знак для решения', 'Задайте вопрос. Три руны покажут суть, вашу опору и верное действие.', 'Получить знак', 'runes'),
+      homeJewelCard('astrology', 'АСТРОЛОГИЯ', 'Ваше личное небо', 'Введите дату рождения, чтобы увидеть свои силы, важные периоды и точки перемен.', 'Открыть карту', 'natal'),
+      homeJewelCard('palm', 'ХИРОМАНТИЯ', 'История вашей ладони', 'Сфотографируйте ладонь. Эзотериум прочтёт линии прошлого, настоящего и будущего.', 'Показать ладонь', 'palm-reading')
     )
   ], { active: 'home' });
 }
 
-function homeJewel(kind) {
+const HOME_RELIC_ART = Object.freeze({
+  compass: '/ui-kit/assets/home-relics-v2/compass.webp',
+  tarot: '/ui-kit/assets/home-relics-v2/tarot.webp',
+  runes: '/ui-kit/assets/home-relics-v2/runes.webp',
+  astrology: '/ui-kit/assets/home-relics-v2/astrology.webp',
+  palm: '/ui-kit/assets/home-relics-v2/palm.webp'
+});
+
+function homeRelic(kind) {
   return h('span', {
-    className: `home-jewel home-jewel--${kind}`,
-    attrs: { 'aria-hidden': 'true' },
-    html: homeJewelSvg(kind)
-  });
+    className: `home-relic home-relic--${kind}`,
+    attrs: { 'aria-hidden': 'true' }
+  },
+  h('span', { className: 'home-relic__aura' }),
+  h('span', { className: 'home-relic__orbit home-relic__orbit--outer' }, h('i'), h('i'), h('i')),
+  h('span', { className: 'home-relic__orbit home-relic__orbit--inner' }, h('i'), h('i')),
+  h('img', { className: 'home-relic__image', attrs: { src: HOME_RELIC_ART[kind], alt: '', loading: 'eager', decoding: 'async', draggable: 'false' } }),
+  h('span', { className: 'home-relic__glint' }),
+  h('span', { className: 'home-relic__spark home-relic__spark--one' }),
+  h('span', { className: 'home-relic__spark home-relic__spark--two' })
+  );
 }
 
-function homeJewelCard(kind, eyebrow, title, description, screen) {
+function homeJewelCard(kind, eyebrow, title, description, action, screen) {
   return h('button', {
     className: `home-jewel-card home-jewel-card--${kind}`,
-    attrs: { type: 'button', 'aria-label': `${eyebrow}. ${title}. ${description}` },
+    attrs: { type: 'button', 'aria-label': `${eyebrow}. ${title}. ${description}. ${action}` },
     on: { click: () => navigate(screen) }
   },
-  h('span', { className: 'home-jewel-card__art' }, homeJewel(kind)),
+  h('span', { className: 'home-jewel-card__art' }, homeRelic(kind)),
   h('span', { className: 'home-jewel-card__copy' },
     h('small', { text: eyebrow }),
     h('strong', { text: title }),
-    h('span', { text: description })
+    h('span', { text: description }),
+    h('b', { text: action })
   ));
 }
 

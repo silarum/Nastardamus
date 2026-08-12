@@ -84,12 +84,15 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     const homeText = mount.textContent;
     const jewelsText = mount.querySelector('.home-jewel-grid').textContent;
     assert.equal(mount.querySelectorAll('.home-jewel-card').length, 4);
-    assert.equal(mount.querySelectorAll('.home-jewel svg').length, 5);
-    assert.ok(homeText.includes('сегодня достаточно одного ясного шага'));
-    assert.ok(homeText.includes('К чему прислушаетесь?'));
-    assert.ok(jewelsText.indexOf('Скрытый смысл') < jewelsText.indexOf('Верный шаг'));
-    assert.ok(jewelsText.indexOf('Верный шаг') < jewelsText.indexOf('Личное небо'));
-    assert.ok(jewelsText.indexOf('Личное небо') < jewelsText.indexOf('Линии судьбы'));
+    assert.equal(mount.querySelectorAll('.home-relic__image').length, 5);
+    assert.ok(homeText.includes('какой ответ вам нужен сегодня?'));
+    assert.ok(homeText.includes('Выберите способ получить ответ'));
+    assert.ok(jewelsText.indexOf('Ответ в картах') < jewelsText.indexOf('Знак для решения'));
+    assert.ok(jewelsText.indexOf('Знак для решения') < jewelsText.indexOf('Ваше личное небо'));
+    assert.ok(jewelsText.indexOf('Ваше личное небо') < jewelsText.indexOf('История вашей ладони'));
+    assert.ok(jewelsText.includes('Выберите тему. Карты покажут скрытую причину'));
+    assert.ok(jewelsText.includes('Сфотографируйте ладонь. Эзотериум прочтёт линии'));
+    assert.ok(jewelsText.includes('Показать ладонь'));
     assert.equal(homeText.includes('78 арканов'), false);
     assert.equal(homeText.includes('Основа натального пути'), false);
     assert.equal(homeText.includes('Спортивные знамения'), false);
@@ -367,7 +370,7 @@ test('bundled startup shows registration and enters the redesigned home', async 
     assert.equal(mount.dataset.screen, 'home');
     assert.equal(new URL(dom.window.location.href).searchParams.get('screen'), 'home');
     assert.equal(mount.querySelectorAll('.home-jewel-card').length, 4);
-    assert.equal(mount.querySelectorAll('.home-jewel svg').length, 5);
+    assert.equal(mount.querySelectorAll('.home-relic__image').length, 5);
     assert.equal(mount.querySelectorAll('.n-bottom-nav-item').length, 5);
     assert.equal(mount.querySelectorAll('.n-center-magic-button').length, 0);
 
