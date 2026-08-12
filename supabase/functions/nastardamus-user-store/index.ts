@@ -2570,16 +2570,31 @@ Deno.serve(async (req: Request) => {
               title: "Совместимость по данным",
               enabled: true,
               price: 5.55
+            },
+            sports_personal: settings.serviceCatalog?.sports_personal || {
+              id: "sports_personal",
+              title: "Персональный спортивный разбор",
+              enabled: true,
+              price: 10
             }
           },
-          dialogueCatalog: settings.dialogueCatalog && typeof settings.dialogueCatalog === "object"
-            ? settings.dialogueCatalog
-            : {
-                personal: { id: "personal", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
-                solo: { id: "solo", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
-                pair: { id: "pair", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
-                group: { id: "group", enabled: true, sectionFree: true, includedQuestions: 5, extraQuestionPrice: 0.1 }
-              },
+          dialogueCatalog: {
+            personal: { id: "personal", title: "Общие вопросы к чтению", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+            tarot: { id: "tarot", title: "Таро", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+            runes: { id: "runes", title: "Руны", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+            palm: { id: "palm", title: "Хиромантия", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+            natal: { id: "natal", title: "Натальная карта", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+            horoscope: { id: "horoscope", title: "Гороскоп дня", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+            sports: { id: "sports", title: "Спортивный аналитик", enabled: true, sectionFree: true, includedQuestions: 2, extraQuestionPrice: 5 },
+            path: { id: "path", title: "Мой путь", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+            amur: { id: "amur", title: "Амур", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+            compatibility: { id: "compatibility", title: "Совместимость", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+            photo: { id: "photo", title: "Чтение по фотографии", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+            solo: { id: "solo", title: "Личная комната", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+            pair: { id: "pair", title: "Комната для двоих", enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
+            group: { id: "group", title: "Групповая комната", enabled: true, sectionFree: true, includedQuestions: 5, extraQuestionPrice: 0.1 },
+            ...(settings.dialogueCatalog && typeof settings.dialogueCatalog === "object" ? settings.dialogueCatalog : {})
+          },
           dailyHoroscopeEnabled: settings.dailyHoroscopeEnabled !== false,
           subscriptionGateEnabled: settings.subscriptionGateEnabled === true,
           subscriptionChannelUsername: String(settings.subscriptionChannelUsername || ""),
@@ -3345,7 +3360,9 @@ Deno.serve(async (req: Request) => {
       if (!/^[a-z0-9:_-]{1,80}$/.test(scope)) {
         return json(400, { error: "invalid_scope" });
       }
-      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+      // Match the database RPC contract. A divergent 1,000 ceiling previously
+      // rejected a valid room-polling limit before the room could be read.
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10000) {
         return json(400, { error: "invalid_limit" });
       }
       if (!Number.isSafeInteger(windowSeconds) || windowSeconds < 1 || windowSeconds > 86400) {

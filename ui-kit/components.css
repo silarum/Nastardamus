@@ -1,8 +1,12 @@
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+html,
 body {
   margin: 0;
-  min-height: 100vh;
+  width: 100%;
+  height: var(--app-height, 100dvh);
+  min-height: 0;
+  overflow: hidden;
   font-family: var(--n-body-font);
   color: var(--n-text);
   background: var(--n-bg);
@@ -11,7 +15,11 @@ button, input, textarea, select { font: inherit; }
 button { color: inherit; }
 .n-icon { display: block; object-fit: contain; flex: 0 0 auto; }
 .n-app-shell {
-  min-height: 100vh;
+  width: 100%;
+  height: var(--app-height, 100dvh);
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   position: relative;
   isolation: isolate;
   overflow: hidden;
@@ -22,12 +30,19 @@ button { color: inherit; }
 }
 .n-screen-container {
   width: min(100%, 420px);
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
   margin: 0 auto;
   padding: 14px 14px 92px;
   position: relative;
   z-index: 2;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
+.n-screen-container::-webkit-scrollbar { display: none; }
 .n-cosmic-background,
 .n-star-field,
 .n-nebula-glow,

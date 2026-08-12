@@ -7,6 +7,8 @@ import { runAgent } from '../lib/ai-runtime.js';
 import { buildOracleRoomAgentRequest } from '../lib/oracle-rooms.js';
 import { buildTarotDialogueAgentRequest } from '../lib/tarot-dialogue.js';
 import { buildReadingDialogueAgentRequest } from '../lib/reading-dialogue.js';
+import { classifyDialogueTurn } from '../lib/dialogue-intelligence.js';
+import { dialogueSectionForReading } from '../lib/dialogue-policy.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 import { assertChannelMembership, checkChannelMembership } from '../lib/channel-access.js';
 import { isDailyFreeService } from '../lib/daily-lifecycle.js';
@@ -454,6 +456,7 @@ function paidServiceForFeature(feature, payload) {
     if (feature === 'natal') return 'natal';
     if (feature === 'palm_reading') return 'palm_reading';
     if (feature === 'rune_reading') return 'rune_reading';
+    if (feature === 'sports_forecast') return 'sports_personal';
     if (feature === 'photo_energy') return 'photo_energy';
     if (feature === 'photo_damage') return 'photo_damage';
     if (feature === 'photo_compatibility') {
@@ -696,7 +699,7 @@ async function answerOracleRoomTurn(botToken, telegramId, body) {
     const roomToken = String(body?.roomToken || '').trim().toLowerCase();
     const message = String(body?.message || '').trim().replace(/\s+/g, ' ').slice(0, 2000);
     const clientNonce = String(body?.clientNonce || '').trim();
-    const messageKind = ['question', 'answer', 'guided'].includes(String(body?.messageKind))
+    const requestedMessageKind = ['question', 'answer', 'guided'].includes(String(body?.messageKind))
         ? String(body.messageKind)
         : 'question';
     if (!/^[a-f0-9]{32}$/.test(roomToken)) throw new Error('invalid_oracle_room_token');
@@ -720,10 +723,6 @@ async function answerOracleRoomTurn(botToken, telegramId, body) {
         const answeredQuestions = Math.max(0, Number(usageData?.usage?.answered_questions || 0));
         const includedQuestions = Math.max(0, Math.floor(Number(dialoguePolicy.includedQuestions ?? (mode === 'group' ? 5 : 3))));
         const extraQuestionPrice = Math.max(0.1, Number(dialoguePolicy.extraQuestionPrice || 0.1));
-        const requiresPayment = messageKind === 'question'
-            && policy?.settings?.everythingFree !== true
-            && answeredQuestions >= includedQuestions;
-
         const begun = await userStore(botToken, 'begin_oracle_room_turn', {
             telegramId,
             roomToken,
@@ -735,6 +734,17 @@ async function answerOracleRoomTurn(botToken, telegramId, body) {
             if (turn.answer) return { room: begun.room, answer: turn.answer, replayed: true };
             throw new Error('oracle_room_busy');
         }
+        const turnSignal = classifyDialogueTurn({
+            message: String(turn?.content || message),
+            history: (begun.room?.messages || [])
+                .filter((item) => String(item?.turnId || item?.turn_id || '') !== String(turn?.turn_id || '')),
+            requestedKind: requestedMessageKind,
+            guided: requestedMessageKind === 'guided'
+        });
+        const messageKind = turnSignal.messageKind;
+        const requiresPayment = messageKind === 'question'
+            && policy?.settings?.everythingFree !== true
+            && answeredQuestions >= includedQuestions;
         await userStore(botToken, 'set_oracle_room_turn_kind', {
             telegramId,
             roomToken,
@@ -772,7 +782,8 @@ async function answerOracleRoomTurn(botToken, telegramId, body) {
         const agentRequest = buildOracleRoomAgentRequest(begun.room, {
             turnId: turn?.turn_id,
             message: String(turn?.content || message),
-            messageKind
+            messageKind,
+            turnSignal
         });
         const generated = await runAgent({
             botToken,
@@ -800,7 +811,7 @@ async function answerOracleRoomTurn(botToken, telegramId, body) {
                 roomToken
             )
         ));
-        return { room: completed.room, answer: generated.answer, replayed: false };
+        return { room: completed.room, answer: generated.answer, messageKind, replayed: false };
     } catch (error) {
         if (turn?.turn_id && turn?.replayed !== true) {
             await userStore(botToken, 'fail_oracle_room_turn', {
@@ -848,7 +859,7 @@ async function answerReadingDialogueTurn(botToken, telegramId, body) {
     const readingId = String(body?.readingId || '').trim().toLowerCase();
     const message = String(body?.message || '').trim().replace(/\s+/g, ' ').slice(0, 2000);
     const clientNonce = String(body?.clientNonce || '').trim();
-    const messageKind = String(body?.messageKind) === 'answer' ? 'answer' : 'question';
+    const requestedMessageKind = String(body?.messageKind) === 'answer' ? 'answer' : 'question';
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(readingId)) {
         throw new Error('invalid_reading_id');
     }
@@ -857,15 +868,26 @@ async function answerReadingDialogueTurn(botToken, telegramId, body) {
 
     let charge = null;
     try {
-        const [context, policy] = await Promise.all([
+        const [context, policy, journeyData] = await Promise.all([
             userStore(botToken, 'get_reading_dialogue_context', { telegramId, readingId }),
-            userStore(botToken, 'get_public_config', { telegramId })
+            userStore(botToken, 'get_public_config', { telegramId }),
+            userStore(botToken, 'get_journey_context', { telegramId }).catch(() => null)
         ]);
-        const dialoguePolicy = policy?.settings?.dialogueCatalog?.personal || {};
+        if (journeyData?.journey) context.journey = journeyData.journey;
+        const dialogueSection = dialogueSectionForReading(context);
+        const dialoguePolicy = policy?.settings?.dialogueCatalog?.[dialogueSection]
+            || policy?.settings?.dialogueCatalog?.personal
+            || {};
         if (dialoguePolicy.enabled === false) throw new Error('dialogue_disabled');
         const includedQuestions = Math.max(0, Math.floor(Number(dialoguePolicy.includedQuestions ?? 3)));
         const answeredQuestions = Math.max(0, Number(context?.answeredQuestions || 0));
         const extraQuestionPrice = Math.max(0.1, Number(dialoguePolicy.extraQuestionPrice || 0.1));
+        const turnSignal = classifyDialogueTurn({
+            message,
+            history: context?.messages,
+            requestedKind: requestedMessageKind
+        });
+        const messageKind = turnSignal.messageKind;
         const replayedQuestion = (context?.messages || []).find((item) =>
             item?.role === 'user' && String(item?.client_nonce || '') === clientNonce
         );
@@ -881,6 +903,7 @@ async function answerReadingDialogueTurn(botToken, telegramId, body) {
                 answeredQuestions,
                 includedQuestions,
                 extraQuestionPrice,
+                dialogueSection,
                 replayed: true
             };
         }
@@ -891,8 +914,8 @@ async function answerReadingDialogueTurn(botToken, telegramId, body) {
             try {
                 const charged = await userStore(botToken, 'charge_service', {
                     telegramId,
-                    serviceId: 'dialogue_personal',
-                    serviceTitle: 'Дополнительный вопрос Эзотериуму',
+                    serviceId: `dialogue_${dialogueSection}`,
+                    serviceTitle: `Дополнительный вопрос · ${dialoguePolicy.title || 'Эзотериум'}`,
                     priceUnits: Math.max(10, Math.round(extraQuestionPrice * 100)),
                     idempotencyKey: `dialogue-${clientNonce}`
                 });
@@ -903,8 +926,8 @@ async function answerReadingDialogueTurn(botToken, telegramId, body) {
                     const wallet = await userStore(botToken, 'get_wallet', { telegramId }).catch(() => null);
                     const availableUnits = Number(wallet?.wallet?.balance_units || 0) - Number(wallet?.wallet?.locked_units || 0);
                     error.payment = {
-                        serviceId: 'dialogue_personal',
-                        serviceTitle: 'Дополнительный вопрос Эзотериуму',
+                        serviceId: `dialogue_${dialogueSection}`,
+                        serviceTitle: `Дополнительный вопрос · ${dialoguePolicy.title || 'Эзотериум'}`,
                         price: extraQuestionPrice,
                         available: availableUnits / 100,
                         shortage: Math.max(0, Math.round(extraQuestionPrice * 100) - availableUnits) / 100,
@@ -919,7 +942,8 @@ async function answerReadingDialogueTurn(botToken, telegramId, body) {
             context,
             message,
             messageKind,
-            String(body?.userName || '')
+            String(body?.userName || ''),
+            turnSignal
         );
         const generated = await runAgent({
             botToken,
@@ -943,7 +967,8 @@ async function answerReadingDialogueTurn(botToken, telegramId, body) {
             messageKind,
             answeredQuestions: answeredQuestions + (messageKind === 'question' ? 1 : 0),
             includedQuestions,
-            extraQuestionPrice
+            extraQuestionPrice,
+            dialogueSection
         };
     } catch (error) {
         if (charge?.charge_id && charge.status !== 'fulfilled') {
@@ -1036,7 +1061,7 @@ export default async function handler(req, res) {
                 join_oracle_room: 20,
                 leave_oracle_room: 20,
                 close_oracle_room: 12,
-                get_oracle_room: 1800,
+                get_oracle_room: 1000,
                 list_oracle_rooms: 240
             };
             const rateLimit = await enforceRateLimit(req, {

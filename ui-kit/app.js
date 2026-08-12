@@ -26,12 +26,14 @@ import {
   fallbackDailyGreeting, selectDailyGreetingPractice
 } from '../lib/daily-greeting.js';
 import { DAILY_FREE_SERVICES, isDailyFreeService, recommendedDailyServices } from '../lib/daily-lifecycle.js';
+import { DIALOGUE_DEFAULT_CATALOG, dialogueSectionForReading } from '../lib/dialogue-policy.js';
 import { THEME, TonConnectUI } from '@tonconnect/ui';
 
 let tg = null;
 let telegramConfigured = false;
 let tonConnectUI = null;
 let lastTonWalletSynced = '';
+let tarotDeckPointer = null;
 
 const mount = document.getElementById('premium-app');
 const toast = document.getElementById('premium-toast');
@@ -265,6 +267,7 @@ const state = {
   tarotDialogueMessages: [],
   tarotDialogueDraft: '',
   tarotDialogueSending: false,
+  tarotShuffleProgress: 0,
   readingDialogueId: '',
   readingDialogueMessages: [],
   readingDialogueDraft: '',
@@ -276,6 +279,7 @@ const state = {
   result: null,
   sportsEvent: '',
   sportsContext: '',
+  sportsMystic: true,
   sportsResult: '',
   natalStage: 'intro',
   natalDate: String(storedProfile.birthDate || ''),
@@ -328,12 +332,7 @@ const state = {
     manualPhotoReview: true,
     adultOnly: true,
     serviceCatalog: {},
-    dialogueCatalog: {
-      personal: { enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
-      solo: { enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
-      pair: { enabled: true, sectionFree: true, includedQuestions: 3, extraQuestionPrice: 0.1 },
-      group: { enabled: true, sectionFree: true, includedQuestions: 5, extraQuestionPrice: 0.1 }
-    },
+    dialogueCatalog: { ...DIALOGUE_DEFAULT_CATALOG },
     wheelRewards: [],
     wheelDailySpins: 1,
     dailyHoroscopeEnabled: true,
@@ -390,6 +389,8 @@ const state = {
   oracleRoomStatus: requestedOracleRoomToken ? 'idle' : 'empty',
   oracleRoomsStatus: 'idle',
   oracleRoomLoading: false,
+  oracleRoomPollFailures: 0,
+  oracleRoomNextPollAt: 0,
   oracleRoomSending: false,
   oracleRoomInviteUrl: '',
   oracleRoomMode: 'solo',
@@ -900,6 +901,14 @@ function serviceTile(art, title, description, onClick, badge = '') {
 
 function field(label, control, hint = '') {
   return h('label', { className: 'premium-field' }, h('span', { text: label }), control, hint ? h('small', { text: hint }) : null);
+}
+
+function sectionGuide(icon, title, description, steps = []) {
+  return h('section', { className: 'section-use-guide' },
+    h('span', { className: 'section-use-guide__seal', attrs: { 'aria-hidden': 'true' } }, Icon(icon, { size: 24 })),
+    h('div', {}, h('strong', { text: title }), h('p', { text: description }),
+      steps.length ? h('ol', {}, steps.map((step) => h('li', { text: step }))) : null)
+  );
 }
 
 function consentRow(text, checked, onChange) {
@@ -2606,8 +2615,21 @@ function homeScreen() {
       homeJewelCard('runes', 'РУНЫ', 'Знак для решения', 'Задайте вопрос. Три руны покажут суть, вашу опору и верное действие.', 'Получить знак', 'runes'),
       homeJewelCard('astrology', 'АСТРОЛОГИЯ', 'Ваше личное небо', 'Введите дату рождения, чтобы увидеть свои силы, важные периоды и точки перемен.', 'Открыть карту', 'natal'),
       homeJewelCard('palm', 'ХИРОМАНТИЯ', 'История вашей ладони', 'Сфотографируйте ладонь. Эзотериум прочтёт линии прошлого, настоящего и будущего.', 'Показать ладонь', 'palm-reading')
+    ),
+    h('nav', { className: 'home-quick-ribbon', attrs: { 'aria-label': 'Другие пространства' } },
+      homeQuickLink('briefcase', 'Спорт', 'sports'),
+      homeQuickLink('profile', 'Комнаты', 'palm-rooms'),
+      homeQuickLink('sparkle', 'Дар дня', 'wheel'),
+      homeQuickLink('history', 'Моя история', 'history')
     )
   ], { active: 'home' });
+}
+
+function homeQuickLink(icon, label, screen) {
+  return h('button', { attrs: { type: 'button', 'aria-label': label }, on: { click: () => navigate(screen) } },
+    h('span', {}, Icon(icon, { size: 17 })),
+    h('small', { text: label })
+  );
 }
 
 const HOME_RELIC_ART = Object.freeze({
@@ -2651,41 +2673,57 @@ function homeJewelCard(kind, eyebrow, title, description, action, screen) {
 function sportsForecastScreen() {
   const reading = state.busy || Boolean(state.sportsResult);
   return shell([
-    screenHeader('Прогноз события', 'Конкретный сценарий и уровень уверенности', 'services'),
-    h('section', { className: 'premium-sports-hero' },
-      h('div', { className: 'sports-observatory', attrs: { 'aria-hidden': 'true' } },
-        h('span', { className: 'sports-observatory__moon' }),
-        h('span', { className: 'sports-observatory__pitch' }, h('i'), h('i'), h('i')),
-        h('span', { className: 'sports-observatory__arc' })
-      ),
-      h('div', { className: 'sports-observatory__copy' },
+    screenHeader('Спортивный аналитик', 'Факты, вероятности и символический слой', 'services'),
+    h('section', { className: 'sports-vault-hero' },
+      h('span', { className: 'sports-vault-hero__light', attrs: { 'aria-hidden': 'true' } }),
+      h('img', { attrs: { src: '/ui-kit/assets/sports/observatory-v1.webp', alt: '', draggable: 'false' } }),
+      h('div', { className: 'sports-vault-hero__copy' },
         h('p', { className: 'premium-kicker', text: 'ОБСЕРВАТОРИЯ СОБЫТИЙ' }),
-        h('h1', { text: 'Момент, когда рисунок матча меняется.' }),
-        h('p', { text: 'Ритм, напряжение, точка перелома и честный уровень неопределённости.' })
+        h('h1', { text: 'Увидеть рисунок матча до финального свистка' }),
+        h('p', { text: 'Собираем только переданные вами факты, сравниваем сценарии и честно показываем, где данных не хватает.' })
       )
     ),
+    sectionGuide('info', 'Как пользоваться', 'Выберите до пяти встреч и добавьте известные факты: форму, состав, травмы или важность матча.', [
+      'Каждую встречу напишите с новой строки.',
+      'Включите символический слой, если хотите добавить руны, Таро и астрологический образ.',
+      'Получите основной сценарий, альтернативу, вероятности и фактор перелома.'
+    ]),
+    h('section', { className: 'sports-daily-express' },
+      h('span', { className: 'sports-daily-express__seal', text: '3' }),
+      h('div', {}, h('small', { text: 'БЕСПЛАТНЫЙ ЭКСПРЕСС ДНЯ · 09:00' }), h('strong', { text: 'Три события с минимальным риском' }), h('p', { text: 'Публикуется только после проверки актуальных матчей. Сейчас источник расписания не подключён — выдуманных событий здесь не будет.' })),
+      h('b', { text: 'Ожидает данных' })
+    ),
     MysticCard({ className: 'premium-form-card', children: [
-      field('Событие или команды', textInput({
+      field('От 1 до 5 матчей', textarea({
         value: state.sportsEvent,
-        placeholder: 'Например: финал, команда А — команда Б',
-        attrs: { maxlength: 160 },
+        placeholder: 'Зенит — Краснодар\nСпартак — Динамо',
         onInput: (value) => { state.sportsEvent = value; }
-      })),
-      field('Что особенно интересно?', textarea({
+        ,maxLength: 500
+      }), 'Одна строка — одна встреча.'),
+      field('Какие факты уже известны?', textarea({
         value: state.sportsContext,
-        placeholder: 'Темп, возможный перелом, настроение встречи…',
+        placeholder: 'Форма команд, травмы, состав, покрытие, важность встречи…',
         onInput: (value) => { state.sportsContext = value; },
         maxLength: 500
-      }), 'Можно оставить пустым.')
+      }), 'Без фактов уверенность будет намеренно ниже.'),
+      h('label', { className: 'sports-mystic-toggle' },
+        h('span', {}, h('strong', { text: 'Добавить мистический слой' }), h('small', { text: 'Руны, Таро и астрология — отдельно от статистического вывода' })),
+        (() => { const input = h('input', { attrs: { type: 'checkbox' }, on: { change: (event) => { state.sportsMystic = event.target.checked; render(); } } }); input.checked = state.sportsMystic; return input; })()
+      ),
+      PriceLine({ label: 'Персональный разбор:', price: serviceConfig('sports_personal').price })
     ] }),
     MysticButton({
-      text: state.busy ? 'Собираем факторы…' : 'Получить конкретный прогноз',
+      text: state.busy ? 'Собираем поле вероятностей…' : 'Провести личный разбор',
       icon: 'sparkle',
       variant: 'primary',
       disabled: state.busy,
       onClick: submitSportsForecast
     }),
-    state.busy ? loadingCard('Собираем знаки события…') : null,
+    state.busy ? h('section', { className: 'sports-analysis-loading', attrs: { 'aria-live': 'polite' } },
+      h('div', { className: 'sports-analysis-loading__field' }, h('i'), h('i'), h('i'), h('i')),
+      h('div', {}, h('strong', { text: 'Сопоставляем сценарии' }), h('p', { text: 'Факты → вероятности → символический слой → честная оговорка' })),
+      h('span', { text: '68… 74… 81%' })
+    ) : null,
     state.sportsResult
       ? state.result?.kind === 'sports'
         ? readingDialoguePanel(state.result, 'Эзотериум · Прогноз события')
@@ -2699,24 +2737,27 @@ function sportsForecastScreen() {
 }
 
 async function submitSportsForecast() {
-  const event = state.sportsEvent.trim().replace(/\s+/g, ' ');
-  if (!event) return notify('Укажите спортивное событие или команды');
+  const events = state.sportsEvent.split(/\n+/u).map((item) => item.trim().replace(/\s+/g, ' ')).filter(Boolean);
+  if (!events.length) return notify('Укажите хотя бы один матч');
+  if (events.length > 5) return notify('Для одного разбора можно выбрать не больше пяти матчей');
   if (state.busy) return;
+  if (!confirmServicePayment('sports_personal')) return;
+  const event = events.join(' · ');
   state.busy = true;
   render();
   try {
     const reading = await requestReading('sports_forecast', {
       event,
-      context: state.sportsContext.trim()
+      context: [state.sportsContext.trim(), state.sportsMystic ? 'Пользователь включил отдельный символический слой: руны, Таро и астрологический образ. Не смешивай его с фактической частью.' : 'Пользователь отключил символический слой; дай только аналитическую часть.'].filter(Boolean).join(' ')
     }, '', { structured: true });
     state.sportsResult = reading.answer;
     const saved = {
       id: uniqueId('sports'), kind: 'sports', mode: 'forecast',
-      type: 'Прогноз события', title: event, body: reading.answer,
+      type: 'Спортивный разбор', title: events.length === 1 ? events[0] : `${events.length} матчей`, body: reading.answer,
       result: reading.result, createdAt: new Date().toISOString(), favorite: false
     };
     state.result = saved;
-    await saveCloudReading(saved, { subtype: 'sports-forecast', input: { event, context: state.sportsContext.trim() } });
+    await saveCloudReading(saved, { subtype: 'sports-forecast', input: { events, context: state.sportsContext.trim(), mystic: state.sportsMystic } });
     pulse('medium');
   } catch (error) {
     notify(apiErrorMessage(error));
@@ -2939,6 +2980,7 @@ async function startTarot() {
   state.tarotCards = [];
   state.revealingCard = null;
   state.tarotStage = 'shuffle';
+  state.tarotShuffleProgress = 0;
   state.tarotSessionId = '';
   state.tarotDialogueMessages = [{
     role: 'assistant',
@@ -2984,6 +3026,34 @@ async function beginTarotSelection() {
   render();
 }
 
+function tarotDeckPointerDown(event) {
+  if (state.tarotStage !== 'shuffle') return;
+  tarotDeckPointer = { id: event.pointerId, x: event.clientX };
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+  event.currentTarget.classList.add('is-dragging');
+}
+
+function tarotDeckPointerMove(event) {
+  if (!tarotDeckPointer || tarotDeckPointer.id !== event.pointerId) return;
+  const delta = Math.max(-92, Math.min(92, event.clientX - tarotDeckPointer.x));
+  event.currentTarget.style.setProperty('--deck-drag', `${delta}px`);
+  event.currentTarget.style.setProperty('--deck-turn', `${delta / 8}deg`);
+}
+
+function tarotDeckPointerUp(event) {
+  if (!tarotDeckPointer || tarotDeckPointer.id !== event.pointerId) return;
+  const delta = event.clientX - tarotDeckPointer.x;
+  tarotDeckPointer = null;
+  event.currentTarget.classList.remove('is-dragging');
+  event.currentTarget.style.removeProperty('--deck-drag');
+  event.currentTarget.style.removeProperty('--deck-turn');
+  if (Math.abs(delta) < 44) return;
+  state.tarotShuffleProgress = Math.min(3, state.tarotShuffleProgress + 1);
+  pulse();
+  if (state.tarotShuffleProgress >= 3) beginTarotSelection();
+  else render();
+}
+
 function tarotDrawScreen() {
   const spread = SPREADS[state.spread] || SPREADS['past-present-future'];
   if (state.tarotStage === 'shuffle' || state.tarotStage === 'shuffling') {
@@ -2992,15 +3062,30 @@ function tarotDrawScreen() {
       screenHeader(spread.label, 'Подготовка колоды', 'tarot-question'),
       h('section', { className: `premium-shuffle-ritual ${shuffling ? 'is-shuffling' : ''}` },
         h('span', { className: 'premium-ritual-orbit', attrs: { 'aria-hidden': 'true' } }),
-        h('div', { className: 'premium-deck-stack', attrs: { 'aria-label': 'Закрытая колода Таро' } },
+        h('div', {
+          className: 'premium-deck-stack',
+          attrs: { 'aria-label': 'Закрытая колода Таро. Проведите пальцем по колоде три раза.', role: 'img' },
+          on: shuffling ? {} : {
+            pointerdown: tarotDeckPointerDown,
+            pointermove: tarotDeckPointerMove,
+            pointerup: tarotDeckPointerUp,
+            pointercancel: tarotDeckPointerUp
+          }
+        },
           h('img', { attrs: { src: '/images/card-back.webp', alt: 'Рубашка колоды Таро' } }),
           h('img', { attrs: { src: '/images/card-back.webp', alt: '' } }),
           h('img', { attrs: { src: '/images/card-back.webp', alt: '' } })
         ),
-        h('p', { text: shuffling ? 'Карты меняют порядок. Не торопите движение.' : 'Удерживайте вопрос в мыслях. Колода откроет карты только по одной.' })
+        h('div', { className: 'tarot-swipe-meter', attrs: { 'aria-live': 'polite' } },
+          h('span', {}, ...[0, 1, 2].map((index) => h('i', { className: index < state.tarotShuffleProgress ? 'is-complete' : '' }))),
+          h('strong', { text: shuffling ? 'Колода собирается…' : 'Сдвиньте колоду пальцем влево или вправо' }),
+          h('small', { text: shuffling ? 'Карты меняют порядок и возвращаются в стопку.' : `${state.tarotShuffleProgress} из 3 движений` })
+        ),
+        h('p', { text: shuffling ? 'Карты меняют порядок. Не торопите движение.' : 'Как в настоящем ритуале: проведите пальцем по рубашке, почувствуйте сопротивление колоды и повторите три раза.' })
       ),
+      sectionGuide('tarot', 'Как пользоваться Таро', 'Сначала сформулируйте один вопрос, затем перемешайте колоду рукой и выбирайте закрытые карты по одной.', ['Не меняйте вопрос во время расклада.', 'Двигайте колоду пальцем три раза.', 'Читайте итог как ориентир, а не как неизбежный приговор.']),
       tarotDialoguePanel(spread, { compact: true }),
-      MysticButton({ text: shuffling ? 'Колода в движении…' : 'Перемешать колоду', icon: 'sparkle', variant: 'primary', disabled: shuffling, onClick: beginTarotSelection })
+      MysticButton({ text: shuffling ? 'Колода в движении…' : 'Перемешать автоматически', icon: 'sparkle', variant: 'outline', disabled: shuffling, onClick: beginTarotSelection })
     ], { tabs: false });
   }
 
@@ -3209,6 +3294,7 @@ function natalScreen() {
           h('p', { text: 'Она покажет, где вы действуете легко, где учитесь близости и какой путь требует зрелости.' })
         )
       ),
+      sectionGuide('orbit', 'Как пользоваться картой', 'Укажите дату, место и, если известно, точное время рождения. Карта покажет ваши устойчивые черты и периоды роста.', ['Введите данные рождения один раз.', 'Выберите тему, которая важна сейчас.', 'Сохраните карту и задавайте вопросы по её аспектам.']),
       MysticButton({ text: 'Открыть мою карту', icon: 'orbit', variant: 'primary', onClick: () => { state.natalStage = 'data'; pulse('medium'); render(); } })
     ]);
   }
@@ -3285,7 +3371,7 @@ function natalResultScreen() {
   const active = areas[activeIndex];
   const detail = paragraphs[activeIndex] || paragraphs[0] || 'Эзотериум ещё собирает подробный смысл этого сектора.';
   return shell([
-    screenHeader('Ваша натальная карта', state.result.natalInput?.partial ? 'Частичная карта · данные можно уточнить' : 'Полная карта рождения', 'natal'),
+    screenHeader('Ваша натальная карта', state.result.natalInput?.partial ? 'Частичная карта · данные можно уточнить' : 'По��ная карта рождения', 'natal'),
     natalChartVisual(state.result.natalChart),
     natalPlacementsPanel(state.result.natalChart),
     h('section', { className: 'natal-profile-panel' },
@@ -3301,7 +3387,7 @@ function natalResultScreen() {
       h('small', { text: active[2] }), h('h2', { text: active[1] }), h('p', { text: detail })
     ] }),
     readingDialoguePanel(state.result, 'Эзотериум · Натальная карта'),
-    MysticButton({ text: 'Сохранить карту', icon: 'save', variant: 'gold', onClick: () => saveResult(state.result) })
+    h('p', { className: 'premium-auto-history-note', text: 'Карта и разговор уже добавлены в вашу личную историю.' })
   ], { tabs: false });
 }
 
@@ -3592,7 +3678,7 @@ function imageUpload({ title, image, onImage, onRemove, capture = 'environment' 
   upload.classList.add('premium-upload-card');
   const input = h('input', { attrs: { type: 'file', accept: 'image/jpeg,image/png,image/webp', hidden: true } });
   const cameraInput = h('input', {
-    attrs: { type: 'file', accept: 'image/*', capture, hidden: true }
+    attrs: { type: 'file', accept: 'image/jpeg,image/png,image/webp', capture, hidden: true }
   });
   if (image) upload.prepend(h('img', { className: 'premium-upload-preview', attrs: { src: image, alt: '' } }));
   upload.addEventListener('click', () => input.click());
@@ -3602,14 +3688,14 @@ function imageUpload({ title, image, onImage, onRemove, capture = 'environment' 
     finally { source.value = ''; }
   };
   input.addEventListener('change', () => processInput(input));
-  cameraInput.addEventListener('change', async () => {
-    try { onImage(await prepareImage(cameraInput.files?.[0])); pulse('medium'); }
-    catch (error) { notify(error.message || 'Не удалось обработать фото'); }
-    finally { cameraInput.value = ''; }
-  });
+  cameraInput.addEventListener('change', () => processInput(cameraInput));
   const actions = h('div', { className: 'premium-upload-actions' },
     h('button', { attrs: { type: 'button' }, on: { click: () => input.click() } }, image ? 'Заменить' : 'Выбрать'),
-    h('button', { attrs: { type: 'button' }, on: { click: () => cameraInput.click() } }, image ? 'Переснять' : 'Снять'),
+    h('button', {
+      className: 'is-camera',
+      attrs: { type: 'button', 'aria-label': image ? 'Переснять фотографию камерой' : 'Открыть камеру и сделать фотографию' },
+      on: { click: () => cameraInput.click() }
+    }, image ? 'Переснять камерой' : 'Открыть камеру'),
     image && onRemove
       ? h('button', { className: 'is-danger', attrs: { type: 'button' }, on: { click: onRemove } }, 'Удалить')
       : null
@@ -3736,13 +3822,6 @@ function photoResultScreen() {
       });
 }
 
-const PALM_QUESTIONS = [
-  'Какой вопрос о настоящем для вас важнее всего?',
-  'Где вы сейчас чувствуете выбор: отношения, работа, деньги, дом или внутреннее состояние?',
-  'Что заметно изменилось в вашей жизни за последние три месяца?',
-  'Какой ответ был бы для вас не просто приятным, а действительно полезным?'
-];
-
 function palmReadingScreen() {
   const dialogue = state.palmDialogue;
   const intro = dialogue.stage === 'intro';
@@ -3772,6 +3851,7 @@ function palmReadingScreen() {
         h('p', { text: 'Эзотериум сверит видимые линии с вашей ситуацией и прямо отметит то, чего на снимке не видно.' })
       )
     ) : null,
+    intro ? sectionGuide('hand', 'Как пользоваться чтением ладони', 'Сделайте чёткий снимок раскрытой ладони и сформулируйте вопрос. Эзотериум отделит видимые линии от символического толкования.', ['Снимайте при ровном дневном свете.', 'Выберите левую или правую ладонь.', 'После чтения продолжите разговор в защищённом чате.']) : null,
     intro ? upload : null,
     intro ? h('div', { className: 'premium-segmented-choice' },
       h('button', {
@@ -3800,106 +3880,29 @@ function palmReadingScreen() {
       )
     ] }) : null,
     intro ? MysticButton({
-      text: 'Начать диалог',
+      text: 'Прочитать ладонь и открыть разговор',
       icon: 'hand',
       variant: 'primary',
       onClick: startPalmDialogue
     }) : null,
-    !intro && !completed ? palmDialoguePanel() : null,
+    !intro && !completed ? loadingCard('Эзотериум рассматривает видимые линии и готовит первый ответ на ваш вопрос…') : null,
     completed ? palmReadingResult(dialogue.result) : null
   ], { active: 'services', reading: !intro });
-}
-
-function palmDialoguePanel() {
-  const dialogue = state.palmDialogue;
-  return liveDialogue({
-    messages: dialogue.messages,
-    draft: dialogue.draft,
-    onInput: (value) => { dialogue.draft = value; },
-    onSend: submitPalmDialogueAnswer,
-    sending: state.busy,
-    placeholder: 'Ответьте Эзотериуму своими словами…',
-    title: 'Эзотериум · Хиромант',
-    subtitle: 'сверяет слова только с видимыми линиями',
-    progress: `${Math.min(dialogue.answers.length + 1, PALM_QUESTIONS.length)}/${PALM_QUESTIONS.length}`,
-    sendLabel: dialogue.answers.length === PALM_QUESTIONS.length - 1 ? 'Завершить и истолковать' : 'Ответить'
-  });
 }
 
 async function startPalmDialogue() {
   const dialogue = state.palmDialogue;
   if (!dialogue.image) return notify('Сначала добавьте фотографию ладони');
   if (dialogue.question.trim().length < 5) return notify('Сформулируйте главный вопрос');
-  dialogue.stage = 'dialogue';
-  dialogue.messages = [{ role: 'assistant', content: PALM_QUESTIONS[0] }];
-  dialogue.answers = [];
-  dialogue.draft = '';
-  render();
-  if (!tg?.initData) return;
-  try {
-    const created = await api('/api/proxy', {
-      method: 'POST',
-      body: {
-        action: 'create_dialogue_session',
-        kind: 'palm',
-        subtype: dialogue.hand,
-        title: dialogue.question.trim(),
-        input: { hand: dialogue.hand, question: dialogue.question.trim() }
-      }
-    });
-    dialogue.sessionId = created.sessionId || '';
-    if (dialogue.sessionId) {
-      await api('/api/proxy', {
-        method: 'POST',
-        body: { action: 'append_dialogue_message', readingId: dialogue.sessionId, role: 'assistant', content: PALM_QUESTIONS[0] }
-      });
-    }
-  } catch {
-    notify('Диалог продолжится; синхронизация восстановится при сохранении');
-  }
-}
-
-async function submitPalmDialogueAnswer() {
-  const dialogue = state.palmDialogue;
-  const answer = dialogue.draft.trim().replace(/\s+/g, ' ');
-  if (answer.length < 3) return notify('Расскажите чуть подробнее');
-  if (dialogue.answers.length === PALM_QUESTIONS.length - 1 && !confirmServicePayment('palm_reading')) return;
-  const index = dialogue.answers.length;
-  dialogue.answers.push(answer);
-  dialogue.messages.push({ role: 'user', content: answer });
-  dialogue.draft = '';
-  if (dialogue.sessionId) {
-    api('/api/proxy', {
-      method: 'POST',
-      body: { action: 'append_dialogue_message', readingId: dialogue.sessionId, role: 'user', content: answer }
-    }).catch(() => {});
-  }
-  if (dialogue.answers.length < PALM_QUESTIONS.length) {
-    const acknowledgement = index === 0
-      ? 'Я понял направление вопроса. Теперь уточним, где именно сейчас находится напряжение.'
-      : index === 1
-        ? 'Эта область обозначена. Важно увидеть, что уже начало меняться.'
-        : 'Контекст стал яснее. Осталось отделить полезный ответ от просто желаемого.';
-    const nextQuestion = PALM_QUESTIONS[dialogue.answers.length];
-    dialogue.messages.push({ role: 'assistant', content: `${acknowledgement} ${nextQuestion}` });
-    if (dialogue.sessionId) {
-      api('/api/proxy', {
-        method: 'POST',
-        body: { action: 'append_dialogue_message', readingId: dialogue.sessionId, role: 'assistant', content: `${acknowledgement} ${nextQuestion}` }
-      }).catch(() => {});
-    }
-    pulse();
-    return render();
-  }
+  if (!confirmServicePayment('palm_reading')) return;
   state.busy = true;
-  dialogue.messages.push({ role: 'assistant', content: 'Спасибо. Теперь я сопоставляю ваши ответы с теми линиями, которые действительно различимы на снимке.' });
+  dialogue.stage = 'analyzing';
   render();
   try {
     const reading = await requestReading('palm_reading', {
       image: dialogue.image,
       hand: dialogue.hand === 'left' ? 'левой' : 'правой',
       question: dialogue.question.trim(),
-      answers: dialogue.answers,
       consentOwn: true
     }, '', { structured: true });
     dialogue.result = reading.result;
@@ -3916,13 +3919,13 @@ async function submitPalmDialogueAnswer() {
       favorite: false
     };
     await saveCloudReading(state.result, {
-      readingId: dialogue.sessionId,
       subtype: dialogue.hand,
-      input: { question: dialogue.question.trim(), hand: dialogue.hand, answers: dialogue.answers },
+      input: { question: dialogue.question.trim(), hand: dialogue.hand },
       media: [dialogue.image]
     });
     pulse('medium');
   } catch (error) {
+    dialogue.stage = 'intro';
     notify(apiErrorMessage(error));
   } finally {
     state.busy = false;
@@ -4277,6 +4280,20 @@ function oracleRoomSummaryCard(room) {
 
 function oracleRoomsScreen() {
   if (state.oracleRoomsStatus === 'idle') queueMicrotask(() => loadOracleRooms());
+  const roomChoices = [
+    {
+      mode: 'solo', icon: 'hand', label: 'Личная комната', kicker: 'РАЗГОВОР ОДИН НА ОДИН',
+      copy: 'Задавайте вопросы Эзотериуму в своём темпе. История сохраняется, поэтому к разговору можно вернуться позже.'
+    },
+    {
+      mode: 'pair', icon: 'heart', label: 'Комната для двоих', kicker: 'ОБЩИЙ ВОПРОС',
+      copy: 'Пригласите близкого человека по ссылке. Каждый проходит личную подготовку, затем открывается общий разговор.'
+    },
+    {
+      mode: 'group', icon: 'profile', label: 'Групповой круг', kicker: 'ДО ПЯТИ УЧАСТНИКОВ',
+      copy: 'Соберите небольшой круг: ведущий видит участников и помогает обсуждать один общий вопрос по очереди.'
+    }
+  ];
   return shell([
     screenHeader('Мои комнаты', 'Личные и совместные разговоры', 'palm-reading'),
     h('section', { className: 'oracle-room-list-hero' },
@@ -4290,11 +4307,19 @@ function oracleRoomsScreen() {
         ? state.oracleRooms.map(oracleRoomSummaryCard)
         : h('p', { className: 'personal-empty', text: 'Комнат пока нет. Создайте личный разговор, встречу для двоих или групповой круг.' })
     ) : null,
-    h('div', { className: 'oracle-room-new-actions' },
-      MysticButton({ text: 'Личная комната', icon: 'hand', variant: 'secondary', onClick: () => openOracleRoomCreator('solo') }),
-      MysticButton({ text: 'Для двоих', icon: 'heart', variant: 'secondary', onClick: () => openOracleRoomCreator('pair') }),
-      MysticButton({ text: 'Групповой круг', icon: 'profile', variant: 'primary', onClick: () => openOracleRoomCreator('group') })
-    )
+    h('div', { className: 'oracle-room-new-actions' }, roomChoices.map((choice) => h('button', {
+      className: `oracle-room-choice is-${choice.mode}`,
+      attrs: { type: 'button', 'aria-label': `${choice.label}. ${choice.copy}` },
+      on: { click: () => openOracleRoomCreator(choice.mode) }
+    },
+    h('span', { className: 'oracle-room-choice__seal' }, Icon(choice.icon, { size: 25 })),
+    h('span', { className: 'oracle-room-choice__copy' },
+      h('small', { text: choice.kicker }),
+      h('strong', { text: choice.label }),
+      h('p', { text: choice.copy })
+    ),
+    h('b', { attrs: { 'aria-hidden': 'true' }, text: '›' })
+    )))
   ], { active: 'services' });
 }
 
@@ -4319,6 +4344,8 @@ function openOracleRoom(token) {
   state.oracleRoom = null;
   state.oracleRoomStatus = 'idle';
   state.oracleRoomError = '';
+  state.oracleRoomPollFailures = 0;
+  state.oracleRoomNextPollAt = 0;
   state.oracleRoomJoinConsent = false;
   state.oracleRoomJoinAdult = false;
   state.oracleRoomMessageDraft = '';
@@ -4380,10 +4407,15 @@ async function loadOracleRoom({ silent = false } = {}) {
     state.oracleRoomInviteUrl = data.inviteUrl || state.oracleRoomInviteUrl;
     state.oracleRoomStatus = 'ready';
     state.oracleRoomError = '';
+    state.oracleRoomPollFailures = 0;
+    state.oracleRoomNextPollAt = Date.now() + 4000;
     const after = oracleRoomSignature(state.oracleRoom);
     if (state.screen === 'palm-room' && (!silent || before !== after)) render();
   } catch (error) {
-    state.oracleRoomStatus = 'error';
+    state.oracleRoomPollFailures += 1;
+    state.oracleRoomNextPollAt = Date.now() + Math.min(30_000, 4000 * (2 ** Math.min(3, state.oracleRoomPollFailures)));
+    // Keep an already-open room visible during a transient network failure.
+    state.oracleRoomStatus = state.oracleRoom ? 'ready' : 'error';
     state.oracleRoomError = apiErrorMessage(error);
     if (state.screen === 'palm-room' && !silent) render();
   } finally {
@@ -4721,8 +4753,8 @@ function oracleRoomQuotaNotice(room, policy) {
     h('div', {},
       h('strong', { text: paid ? `Следующий вопрос · ${formatMoney(policy.price)} S` : `${policy.remaining} ${questionWord} включено` }),
       h('small', { text: paid
-        ? 'Оплата только за вашу новую реплику. Ответ Эзотериума лимит не расходует.'
-        : `Использовано ${policy.used} из ${policy.included}. Ответы Эзотериума не считаются.` })
+        ? 'Оплата только за новый самостоятельный вопрос. Ответ, поправка или просьба объяснить остаются продолжением беседы.'
+        : `Использовано ${policy.used} из ${policy.included}. Ответы, поправки и восстановление разговора лимит не расходуют.` })
     )
   );
 }
@@ -4769,17 +4801,13 @@ function palmRoomScreen() {
           'guided'
         ) })
       ) : null,
-      h('div', { className: 'oracle-room-message-kind', attrs: { role: 'group', 'aria-label': 'Тип сообщения' } },
-        h('button', { className: state.oracleRoomMessageKind === 'answer' ? 'is-active' : '', attrs: { type: 'button' }, on: { click: () => { state.oracleRoomMessageKind = 'answer'; state.oracleRoomMessageNonce = ''; render(); } }, text: 'Ответ Эзотериуму · бесплатно' }),
-        h('button', { className: state.oracleRoomMessageKind === 'question' ? 'is-active' : '', attrs: { type: 'button' }, on: { click: () => { state.oracleRoomMessageKind = 'question'; state.oracleRoomMessageNonce = ''; render(); } }, text: questionPolicy.remaining > 0 ? 'Мой новый вопрос' : `Новый вопрос · ${formatMoney(questionPolicy.price)} S` })
-      ),
       liveDialogue({
         messages: room.messages || [],
         draft: state.oracleRoomMessageDraft,
         onInput: (value) => { state.oracleRoomMessageDraft = value; state.oracleRoomMessageNonce = ''; },
         onSend: sendOracleRoomMessage,
         sending: room.assistantState === 'thinking' || state.oracleRoomSending,
-        placeholder: state.oracleRoomMessageKind === 'answer' ? 'Ответьте на вопрос Эзотериума…' : room.mode === 'solo' ? 'Задайте новый вопрос…' : 'Задайте новый вопрос всем…',
+        placeholder: room.mode === 'solo' ? 'Напишите вопрос, ответ или поправку…' : 'Обратитесь к Эзотериуму или участникам…',
         title: room.mode === 'solo' ? 'Эзотериум · личный диалог' : room.title,
         subtitle: room.mode === 'solo' ? 'закрытая комната' : `${room.participantCount} участников · Эзотериум обращается по имени`,
         progress: questionPolicy.remaining > 0 ? `${questionPolicy.remaining}/${questionPolicy.included}` : `${formatMoney(questionPolicy.price)} S`,
@@ -5009,7 +5037,7 @@ async function sendOracleRoomMessage(presetMessage = '', presetKind = '') {
   const clientNonce = state.oracleRoomMessageNonce || uniqueId('oracle-room-message');
   const messageKind = ['question', 'answer', 'guided'].includes(presetKind)
     ? presetKind
-    : state.oracleRoomMessageKind;
+    : 'question';
   state.oracleRoomMessageNonce = clientNonce;
   state.oracleRoomSending = true;
   state.oracleRoomMessageDraft = '';
@@ -5028,7 +5056,7 @@ async function sendOracleRoomMessage(presetMessage = '', presetKind = '') {
     state.oracleRoom = data.room;
     state.oracleRoomStatus = 'ready';
     state.oracleRoomMessageNonce = '';
-    state.oracleRoomMessageKind = String(data.answer || '').includes('?') ? 'answer' : 'question';
+    state.oracleRoomMessageKind = data.messageKind || 'question';
     pulse();
   } catch (error) {
     state.oracleRoomMessageDraft = message;
@@ -5086,6 +5114,7 @@ function runeScreen() {
         h('p', { text: 'Войдите с одним вопросом. Храм откроет тенденцию, границу и доступную силу.' })
       )
     ),
+    sectionGuide('sparkle', 'Как пользоваться рунами', 'Задайте один конкретный вопрос и выберите глубину расклада. Руны показывают тенденцию и доступное действие, но не решают вместо вас.', ['Сформулируйте вопрос без двух вариантов сразу.', 'Выберите 1, 3 или больше рун.', 'Сопоставьте знак с реальными обстоятельствами.']),
     h('nav', { className: 'rune-temple-tabs', attrs: { 'aria-label': 'Разделы рунического храма' } }, tabs.map(([id, label]) => h('button', {
       className: state.runeView === id ? 'is-active' : '', attrs: { type: 'button', 'aria-current': state.runeView === id ? 'page' : null },
       on: { click: () => { state.runeView = id; pulse(); render(); } }
@@ -6274,20 +6303,16 @@ function compatibilityResultScreen(backOverride = '') {
     spheres.length ? SectionTitle({ text: 'Карта связи' }) : null,
     spheres.length ? ForecastGrid({ items: spheres }) : null,
     FinalScoreCard({ score, message: `Уверенность: ${result.result?.confidence || 'не указана'} · символический ориентир` }),
-    h('div', { className: 'n-share-actions' },
-      MysticButton({
-        text: result.favorite ? 'В избранном' : 'В избранное',
-        icon: 'save',
-        variant: 'primary',
-        onClick: () => toggleFavorite(result.id)
-      }),
-      MysticButton({ text: 'Поделиться', icon: 'share', variant: 'gold', onClick: () => shareResult(result) })
-    )
+    h('p', { className: 'premium-auto-history-note', text: 'Чтение уже находится в вашей личной истории.' })
   ], { tabs: false, reading: true });
 }
 
-function personalReadingQuestionPolicy() {
-  const policy = state.publicConfig.dialogueCatalog?.personal || {};
+function personalReadingQuestionPolicy(result = null) {
+  const section = dialogueSectionForReading(result);
+  const policy = state.publicConfig.dialogueCatalog?.[section]
+    || state.publicConfig.dialogueCatalog?.personal
+    || DIALOGUE_DEFAULT_CATALOG[section]
+    || DIALOGUE_DEFAULT_CATALOG.personal;
   const included = Math.max(0, Math.floor(Number(policy.includedQuestions ?? 3)));
   const used = Math.max(0, Number(state.readingDialogueAnsweredQuestions || 0));
   return {
@@ -6296,7 +6321,9 @@ function personalReadingQuestionPolicy() {
     included,
     used,
     remaining: Math.max(0, included - used),
-    price: Math.max(0.1, Number(policy.extraQuestionPrice || 0.1))
+    section,
+    title: policy.title || DIALOGUE_DEFAULT_CATALOG[section]?.title || 'Диалог',
+    price: Math.max(0, Number(policy.extraQuestionPrice ?? 0.1))
   };
 }
 
@@ -6406,23 +6433,19 @@ async function sendReadingDialogueMessage() {
 
 function readingDialoguePanel(result, title = '') {
   prepareReadingDialogue(result);
-  const policy = personalReadingQuestionPolicy();
+  const policy = personalReadingQuestionPolicy(result);
   const available = tg?.initData && /^[0-9a-f-]{36}$/i.test(String(result?.id || ''));
   return h('section', { className: 'reading-live-dialogue' },
     oracleRoomQuotaNotice(null, policy),
-    h('div', { className: 'oracle-room-message-kind', attrs: { role: 'group', 'aria-label': 'Тип сообщения' } },
-      h('button', { className: state.readingDialogueKind === 'answer' ? 'is-active' : '', attrs: { type: 'button' }, on: { click: () => { state.readingDialogueKind = 'answer'; state.readingDialogueNonce = ''; render(); } }, text: 'Ответ Эзотериуму · бесплатно' }),
-      h('button', { className: state.readingDialogueKind === 'question' ? 'is-active' : '', attrs: { type: 'button' }, on: { click: () => { state.readingDialogueKind = 'question'; state.readingDialogueNonce = ''; render(); } }, text: policy.remaining > 0 ? 'Мой новый вопрос' : `Новый вопрос · ${formatMoney(policy.price)} S` })
-    ),
     liveDialogue({
       messages: state.readingDialogueMessages,
       draft: state.readingDialogueDraft,
       onInput: (value) => { state.readingDialogueDraft = value; state.readingDialogueNonce = ''; },
       onSend: sendReadingDialogueMessage,
       sending: state.readingDialogueSending || state.readingDialogueLoading,
-      placeholder: state.readingDialogueKind === 'answer' ? 'Ответьте Эзотериуму…' : 'Задайте вопрос по этому чтению…',
+      placeholder: 'Напишите вопрос, ответ или поправку…',
       title: title || `Эзотериум · ${result?.type || 'личный диалог'}`,
-      subtitle: 'помнит исходное чтение и продолжает разговор',
+      subtitle: `${policy.title} · помнит исходное чтение`,
       progress: policy.remaining > 0 ? `${policy.remaining}/${policy.included}` : `${formatMoney(policy.price)} S`,
       canWrite: available && policy.enabled
     }),
@@ -6441,20 +6464,12 @@ function resultScreen({ title, subtitle, back, result, showCards = false, contex
       h('div', {},
         h('small', { text: formatDate(result.createdAt) }),
         h('strong', { text: result.title || title })
-      ),
-      h('button', {
-        className: `premium-favorite-button ${result.favorite ? 'is-active' : ''}`,
-        attrs: { type: 'button', 'aria-pressed': result.favorite ? 'true' : 'false', 'aria-label': result.favorite ? 'Убрать из избранного' : 'Добавить в избранное' },
-        on: { click: () => toggleFavorite(result.id) }
-      }, result.favorite ? '★' : '☆')
+      )
     ] }),
     ...contextCards,
     showCards ? tarotComposition(spread, result.cards) : null,
     readingDialoguePanel(result, `Эзотериум · ${title}`),
-    h('div', { className: 'n-share-actions' },
-      MysticButton({ text: result.favorite ? 'В избранном' : 'В избранное', icon: 'save', variant: 'primary', onClick: () => toggleFavorite(result.id) }),
-      MysticButton({ text: 'Поделиться', icon: 'share', variant: 'gold', onClick: () => shareResult(result) })
-    ),
+    h('p', { className: 'premium-auto-history-note', text: 'Результат и продолжение разговора сохраняются в личной истории автоматически.' }),
     MysticButton({ text: 'Начать новый расклад', icon: 'tarot', variant: 'outline', onClick: () => navigate('tarot') }),
     state.revealingCard ? tarotRevealOverlay(state.revealingCard) : null
   ], { tabs: false, reading: true });
@@ -6917,13 +6932,12 @@ function profileCabinetHero(wallet, vip) {
 }
 
 function profileSectionTabs({ wallet, vip, giftCount }) {
-  const clockLabel = CLOCK_STYLES.find((item) => item.id === currentClockStyle())?.label || 'Каллиграфия';
   const ready = state.walletStatus === 'ready';
   const sections = [
     { id: 'wallet', icon: 'coin', label: 'SILARUM', value: ready ? formatMoney(wallet.available) : '—' },
     { id: 'access', icon: 'sparkle', label: 'Доступ', value: vip ? 'VIP' : 'Базовый' },
     { id: 'gifts', icon: 'wheel', label: 'Дары', value: String(giftCount) },
-    { id: 'settings', icon: 'orbit', label: 'Среда', value: `${state.locale.toLocaleUpperCase('en')} · ${clockLabel}` }
+    { id: 'settings', icon: 'orbit', label: 'Среда', value: `${state.locale.toLocaleUpperCase('en')} · Настройки` }
   ];
   return h('nav', { className: 'profile-command-grid', attrs: { role: 'tablist', 'aria-label': 'Разделы личного круга' } },
     sections.map((section) => h('button', {
@@ -7086,10 +7100,6 @@ function profileSettingsPanel() {
       h('section', { className: 'profile-setting-block' },
         h('div', {}, h('strong', { text: 'Язык' }), h('small', { text: 'Меняет интерфейс и ответы Эзотериума' })),
         languagePicker()
-      ),
-      h('section', { className: 'profile-setting-block' },
-        h('div', { className: 'profile-setting-block__clock-head' }, h('div', {}, h('strong', { text: 'Почерк часов' }), h('small', { text: 'Сохраняется на этом устройстве' })), celestialClock()),
-        clockStylePicker()
       ),
       tonWalletPanel(),
       h('div', { className: 'profile-setting-links' },
@@ -7863,7 +7873,13 @@ async function loadPublicConfig() {
   if (!tg?.initData) return;
   try {
     const data = await api('/api/config');
-    state.publicConfig = { ...state.publicConfig, ...(data.settings || {}) };
+    const incoming = data.settings || {};
+    state.publicConfig = {
+      ...state.publicConfig,
+      ...incoming,
+      serviceCatalog: { ...state.publicConfig.serviceCatalog, ...(incoming.serviceCatalog || {}) },
+      dialogueCatalog: { ...DIALOGUE_DEFAULT_CATALOG, ...state.publicConfig.dialogueCatalog, ...(incoming.dialogueCatalog || {}) }
+    };
   } catch {
     // Secure defaults remain active when configuration is unavailable.
   }
@@ -8062,10 +8078,16 @@ if (!loadTelegramData()) {
 }
 
 window.setInterval(() => {
-  if (state.screen === 'palm-room' && state.oracleRoomToken && document.visibilityState !== 'hidden') {
+  if (
+    state.screen === 'palm-room'
+    && state.oracleRoomToken
+    && document.visibilityState !== 'hidden'
+    && Date.now() >= Number(state.oracleRoomNextPollAt || 0)
+  ) {
+    state.oracleRoomNextPollAt = Date.now() + 4000;
     loadOracleRoom({ silent: true });
   }
-}, 2500);
+}, 1000);
 
 window.setInterval(updateVisibleClocks, 1000);
 document.addEventListener('visibilitychange', () => {

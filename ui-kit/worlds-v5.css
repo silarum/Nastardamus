@@ -2130,7 +2130,7 @@ html[data-visual-quality="lite"] .initiation-step__body { backdrop-filter: none;
 }
 
 #premium-app[data-screen="home"] .premium-stack {
-  grid-template-rows: auto auto clamp(118px, 16.3vh, 136px) auto minmax(0, 1fr);
+  grid-template-rows: auto auto clamp(112px, 15.5vh, 132px) auto minmax(0, 1fr) auto;
   gap: clamp(4px, .82vh, 7px);
 }
 
@@ -2187,6 +2187,12 @@ html[data-visual-quality="lite"] .initiation-step__body { backdrop-filter: none;
 .home-jewel-grid {
   gap: clamp(6px, 1.8vw, 9px);
 }
+
+.home-quick-ribbon { min-height:44px; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; }
+.home-quick-ribbon button { min-width:0; min-height:44px; padding:5px 2px; border:1px solid rgba(229,187,99,.27); border-radius:14px; display:grid; justify-items:center; align-content:center; gap:2px; color:#c9b9cb; background:linear-gradient(155deg,rgba(255,245,219,.08),rgba(17,10,29,.76)); box-shadow:0 8px 18px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.07); }
+.home-quick-ribbon button:active { transform:translateY(2px) scale(.97); }
+.home-quick-ribbon span { width:22px; height:22px; display:grid; place-items:center; color:#e5b95f; filter:drop-shadow(0 0 6px rgba(227,177,76,.3)); }
+.home-quick-ribbon small { max-width:100%; overflow:hidden; color:#cabdce; font-size:clamp(7px,1.9vw,8.5px); white-space:nowrap; text-overflow:ellipsis; }
 
 .home-jewel-card {
   grid-template-rows: minmax(72px, 43%) minmax(0, 57%);
@@ -2438,7 +2444,7 @@ html[data-visual-quality="lite"] .initiation-step__body { backdrop-filter: none;
 
 @media (max-height: 760px) {
   #premium-app[data-screen="home"] .premium-screen { padding-bottom: calc(69px + max(env(safe-area-inset-bottom, 0px), var(--tg-safe-bottom, 0px))); }
-  #premium-app[data-screen="home"] .premium-stack { grid-template-rows: auto auto 105px auto minmax(0, 1fr); gap: 4px; }
+  #premium-app[data-screen="home"] .premium-stack { grid-template-rows: auto auto 101px auto minmax(0, 1fr) 40px; gap: 4px; }
   .home-sanctum__header { min-height: 37px; }
   .home-sanctum__header .n-brand-logo__mark { width: 23px; height: 23px; }
   .home-sanctum__header .celestial-clock { transform: scale(.84); transform-origin: right center; }
@@ -2459,6 +2465,7 @@ html[data-visual-quality="lite"] .initiation-step__body { backdrop-filter: none;
   .home-jewel-card__copy b { font-size: clamp(7px, 1.9vw, 8.4px); }
   #premium-app[data-screen="home"] .n-bottom-navigation { min-height: 54px; }
   #premium-app[data-screen="home"] .n-bottom-nav-item { min-height: 44px; }
+  .home-quick-ribbon { min-height:40px; }.home-quick-ribbon button{min-height:40px;padding:3px 1px}.home-quick-ribbon span{width:19px;height:19px}.home-quick-ribbon small{font-size:clamp(8px,1.9vw,9px)}
 }
 
 @media (max-width: 360px) {
