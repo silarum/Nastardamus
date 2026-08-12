@@ -8,6 +8,7 @@ import {
 import { h } from './core/dom.js';
 import { Icon } from './core/icon.js';
 import { premiumArtUrl } from './core/assets.js';
+import { homeJewelSvg } from './home-jewels.js';
 import {
   LANGUAGE_OPTIONS, dateTimeLocale, normalizeLocale,
   setLocale as applyDocumentLocale, translateText
@@ -2571,8 +2572,8 @@ async function clearPersonalSpace() {
 }
 
 function homeScreen() {
-  const wallet = state.wallet?.wallet || { freeSpins: 0 };
-  const header = h('header', { className: 'premium-home-header' }, BrandLogo(),
+  const dailyChoiceUsed = Boolean(state.dailyAccess.dailyChoice?.used);
+  const header = h('header', { className: 'premium-home-header home-sanctum__header' }, BrandLogo(),
     h('div', { className: 'premium-home-header__tools' },
       celestialClock(),
       h('button', { className: 'premium-avatar-button', attrs: { type: 'button', 'aria-label': 'Открыть профиль' }, on: { click: () => navigate('profile') } },
@@ -2580,115 +2581,62 @@ function homeScreen() {
       )
     )
   );
-  const wheelEnabled = state.publicConfig.wheelEnabled === true;
-  const horoscopeReady = state.horoscope.reading && state.horoscope.date === new Intl.DateTimeFormat('en-CA').format(new Date());
 
   return shell([
     header,
-    h('section', { className: 'premium-home-greeting' },
-      h('p', { className: 'premium-kicker', text: 'СЕГОДНЯ ВАЖНО' }),
-      h('h1', { text: `${firstName()}, найдите одну ясную точку опоры` }),
-      h('p', { text: `${state.profile.city || 'Ваш город'} · ${ZODIAC_SIGNS[state.horoscope.sign]?.label || 'личный ритм'}` })
+    h('section', { className: 'home-sanctum__greeting' },
+      h('p', { className: 'premium-kicker', text: 'ВАШ МОМЕНТ' }),
+      h('h1', { text: `${firstName()}, сегодня достаточно одного ясного шага` }),
+      h('p', { text: `${state.profile.city || 'Ваш город'} · ${ZODIAC_SIGNS[state.horoscope.sign]?.label || 'ваш личный ритм'}` })
     ),
     h('button', {
-      className: 'premium-daily-card',
-      attrs: { type: 'button' },
+      className: `home-daily-amulet ${dailyChoiceUsed ? 'is-opened' : ''}`,
+      attrs: { type: 'button', 'aria-label': dailyChoiceUsed ? 'Вернуться к знаку дня' : 'Открыть личный знак дня' },
       on: { click: () => navigate('daily-choice') }
     },
-    h('img', { attrs: { src: premiumArtUrl('cosmic-card'), alt: '' } }),
-    h('span', { className: 'premium-daily-card__copy' },
-      h('small', { text: 'БЕСПЛАТНЫЙ ВЫБОР ДНЯ' }),
-      h('strong', { text: state.dailyAccess.dailyChoice?.used ? 'Сегодняшний знак уже открыт' : 'Что выберешь сегодня?' }),
-      h('span', { text: state.dailyAccess.dailyChoice?.used ? 'Завтра круг обновится.' : 'Таро на успех или любовь, ладонь, руны либо начальная карта.' }),
-      h('b', { text: 'Открыть выбор →' })
-    )),
-    h('button', {
-      className: 'personal-space-entry', attrs: { type: 'button' },
-      on: { click: () => { navigate('space'); loadPersonalSpace(); } }
-    },
-    h('span', { className: 'personal-space-entry__sigil', text: '✦' }),
-    h('span', {},
-      h('small', { text: 'ВАШЕ ЛИЧНОЕ ПРОСТРАНСТВО' }),
-      h('strong', { text: 'Личное пространство Эзотериума' }),
-      h('span', { text: 'Энергия дня, события, цели и ваш живой ритм.' })
+    h('span', { className: 'home-daily-amulet__copy' },
+      h('small', { text: 'ЛИЧНЫЙ ЗНАК ДНЯ' }),
+      h('strong', { text: dailyChoiceUsed ? 'Ваш знак ждёт продолжения' : 'Что откроется вам сегодня?' }),
+      h('span', { text: dailyChoiceUsed ? 'Вернитесь к смыслу, который выбрали.' : 'Один выбор — чтобы увидеть главное и сделать следующий шаг.' }),
+      h('b', { text: dailyChoiceUsed ? 'Вернуться к знаку' : 'Открыть знак' })
     ),
-    h('b', { text: 'Открыть →' })),
-    h('button', {
-      className: 'premium-daily-card',
-      attrs: { type: 'button' },
-      on: { click: () => navigate('horoscope') }
-    },
-    h('img', { attrs: { src: premiumArtUrl('astrology-forecast'), alt: '' } }),
-    h('span', { className: 'premium-daily-card__copy' },
-      h('small', { text: 'ЛИЧНЫЙ ОРИЕНТИР' }),
-      h('strong', { text: horoscopeReady ? 'Ваш совет на сегодня готов' : 'Короткий гороскоп дня' }),
-      h('span', { text: horoscopeReady ? String(state.horoscope.reading).split('\n')[0].slice(0, 110) : 'Фокус, отношения, дела и один конкретный шаг.' }),
-      h('b', { text: horoscopeReady ? 'Открыть снова →' : 'Получить совет →' })
-    )),
-    SectionTitle({ text: 'Ваши практики' }),
-    h('div', { className: 'premium-home-practices' },
-      homePracticeCard('palm-oracle', 'Ладонь', 'Диалог и чтение линий', 'palm-reading'),
-      homePracticeCard('rune-sanctum', 'Руны', 'Три знака и действие', 'runes'),
-      homePracticeCard('tarot-deck', 'Таро', 'Полная колода · 78 арканов', 'tarot'),
-      homePracticeCard('astrology-forecast', 'Начальная карта', 'Основа натального пути', 'natal'),
-      homePracticeCard('amur-dice', 'Амур', 'Кости и совместимость', 'amur')
-    ),
-    sportsForecastPanel(),
-    h('div', { className: 'premium-home-footer-row' },
-      h('button', {
-        className: 'premium-mini-feature',
-        attrs: { type: 'button' },
-        on: { click: () => openEnabledFeature(wheelEnabled, 'wheel', 'Колесо отключено администратором') }
-      },
-      Icon('wheel', { size: 28 }),
-      h('span', {}, h('strong', { text: 'Колесо Фортуны' }), h('small', { text: wallet.freeSpins ? `${wallet.freeSpins} вращение доступно` : 'Подарок дня' }))),
-      h('button', {
-        className: 'premium-mini-feature',
-        attrs: { type: 'button' },
-        on: { click: () => navigate('history') }
-      },
-      Icon('history', { size: 28 }),
-      h('span', {}, h('strong', { text: 'Моя история' }), h('small', { text: 'Все сохранённые чтения' })))
+    h('span', { className: 'home-daily-amulet__art' }, homeJewel('compass'))),
+    h('h2', { className: 'home-sanctum__question', text: 'К чему прислушаетесь?' }),
+    h('div', { className: 'home-jewel-grid' },
+      homeJewelCard('tarot', 'ТАРО', 'Скрытый смысл', 'Увидеть ситуацию глубже', 'tarot'),
+      homeJewelCard('runes', 'РУНЫ', 'Верный шаг', 'Получить знак для решения', 'runes'),
+      homeJewelCard('astrology', 'АСТРОЛОГИЯ', 'Личное небо', 'Понять ритм своего дня', 'natal'),
+      homeJewelCard('palm', 'ХИРОМАНТИЯ', 'Линии судьбы', 'Услышать историю ладони', 'palm-reading')
     )
   ], { active: 'home' });
 }
 
-function homePracticeCard(art, title, description, screen) {
-  return h('button', {
-    className: 'premium-home-practice',
-    attrs: { type: 'button' },
-    on: { click: () => navigate(screen) }
-  },
-  h('img', { attrs: { src: premiumArtUrl(art), alt: '', loading: 'lazy' } }),
-  h('span', {}, h('strong', { text: title }), h('small', { text: description })));
+function homeJewel(kind) {
+  return h('span', {
+    className: `home-jewel home-jewel--${kind}`,
+    attrs: { 'aria-hidden': 'true' },
+    html: homeJewelSvg(kind)
+  });
 }
 
-function sportsForecastPanel() {
+function homeJewelCard(kind, eyebrow, title, description, screen) {
   return h('button', {
-    className: 'premium-sports-banner',
-    attrs: { type: 'button', 'aria-label': 'Открыть спортивные знамения Эзотериума' },
-    on: { click: () => navigate('sports') }
+    className: `home-jewel-card home-jewel-card--${kind}`,
+    attrs: { type: 'button', 'aria-label': `${eyebrow}. ${title}. ${description}` },
+    on: { click: () => navigate(screen) }
   },
-  h('img', {
-    attrs: {
-      src: premiumArtUrl('sports-prophecy-banner'),
-      alt: '',
-      draggable: 'false'
-    }
-  }),
-  h('span', { className: 'premium-sports-banner__scrim' }),
-  h('span', { className: 'premium-sports-banner__copy' },
-    h('small', { text: 'ПРЕДСКАЗАНИЯ СОБЫТИЙ' }),
-    h('strong', { text: 'Спортивные знамения' }),
-    h('span', { text: 'Назовите встречу — Эзотериум раскроет её символический рисунок.' }),
-    h('b', { text: 'Открыть прогноз →' })
+  h('span', { className: 'home-jewel-card__art' }, homeJewel(kind)),
+  h('span', { className: 'home-jewel-card__copy' },
+    h('small', { text: eyebrow }),
+    h('strong', { text: title }),
+    h('span', { text: description })
   ));
 }
 
 function sportsForecastScreen() {
   const reading = state.busy || Boolean(state.sportsResult);
   return shell([
-    screenHeader('Прогноз события', 'Конкретный сценарий и уровень уверенности', 'home'),
+    screenHeader('Прогноз события', 'Конкретный сценарий и уровень уверенности', 'services'),
     h('section', { className: 'premium-sports-hero' },
       h('div', { className: 'sports-observatory', attrs: { 'aria-hidden': 'true' } },
         h('span', { className: 'sports-observatory__moon' }),
@@ -2732,7 +2680,7 @@ function sportsForecastScreen() {
       className: 'premium-info-note',
       text: 'Прогноз показывает вероятный сценарий и неопределённость. Он не является гарантией и не предназначен для ставок.'
     })
-  ], { active: 'home', reading });
+  ], { active: 'services', reading });
 }
 
 async function submitSportsForecast() {
@@ -2770,22 +2718,26 @@ function walletStatusText() {
 }
 
 function servicesScreen() {
+  const wheelEnabled = state.publicConfig.wheelEnabled === true;
   return shell([
-    screenHeader('Практики', 'Каждая практика — отдельный понятный путь', 'home'),
+    screenHeader('Практики', 'Выберите то, что откликается именно сейчас', 'home'),
     MysticCard({ className: 'premium-practices-intro', children: [
-      h('p', { className: 'premium-kicker', text: 'ЭЗОТЕРИУМ' }),
-      h('h2', { text: 'Выберите один вопрос и один способ чтения' }),
-      h('p', { text: 'Совместимость и приглашения собраны отдельно в «Амуре», чтобы здесь не было повторяющихся экранов.' })
+      h('p', { className: 'premium-kicker', text: 'ВАШЕ ПРОСТРАНСТВО' }),
+      h('h2', { text: 'Начните с вопроса, который не даёт покоя' }),
+      h('p', { text: 'Здесь можно найти подсказку, лучше понять себя или сохранить важное для будущего.' })
     ] }),
     h('div', { className: 'premium-service-list' },
-      serviceTile('tarot-deck', 'Двенадцать раскладов Таро', 'От одного знака до глубокого Кельтского креста', () => navigate('tarot'), serviceBadge('tarot')),
-      serviceTile('palm-oracle', 'Чтение по ладони', 'Фото ладони, вопросы мастера и подробное толкование', () => navigate('palm-reading'), serviceBadge('palm_reading', 'Бесплатно')),
-      serviceTile('rune-sanctum', 'Рунический храм', 'Руна дня, расклады до 12 знаков и полный каталог', () => navigate('runes'), serviceBadge('rune_reading', 'Бесплатно')),
-      serviceTile('astrology-forecast', 'Натальная подсказка', 'Сильные стороны и текущий ориентир', () => navigate('natal'), serviceBadge('natal')),
-      serviceTile('photo-energy-imprint', 'Энергетический след', 'Фото как личный символ и точка опоры', () => navigate('photo-energy'), serviceBadge('photo_energy')),
-      serviceTile('result-magic-seal', 'Определение порчи', 'Фото, ваша история и совет Эзотериума', () => navigate('photo-damage'), serviceBadge('photo_damage')),
-      serviceTile('shortcut-astro-orbit', 'Гороскоп дня', 'Личный знак и ежедневное послание', () => navigate('horoscope'), ''),
-      serviceTile('brand-sun', 'Спросить Эзотериума', 'Помощник по функциям приложения', () => navigate('support'))
+      serviceTile('path-oracle-hero', 'Мой путь', 'Соберите цели, события и внутренние открытия в одну живую историю', () => { navigate('space'); loadPersonalSpace(); }),
+      serviceTile('tarot-deck', 'Ответ в картах', 'Посмотрите на важную ситуацию с неожиданной стороны', () => navigate('tarot'), serviceBadge('tarot')),
+      serviceTile('palm-oracle', 'История вашей ладони', 'Откройте характер, поворотные моменты и линии будущего', () => navigate('palm-reading'), serviceBadge('palm_reading', 'Бесплатно')),
+      serviceTile('rune-sanctum', 'Знак для решения', 'Получите короткий и ясный ориентир, когда трудно выбрать', () => navigate('runes'), serviceBadge('rune_reading', 'Бесплатно')),
+      serviceTile('astrology-forecast', 'Карта вашего неба', 'Узнайте свои сильные стороны и подходящий ритм перемен', () => navigate('natal'), serviceBadge('natal')),
+      serviceTile('shortcut-astro-orbit', 'Ваш день в звёздах', 'Начните утро с личного послания и одного полезного шага', () => navigate('horoscope')),
+      serviceTile('sports-prophecy-banner', 'Знамения события', 'Почувствуйте ритм встречи, её напряжение и возможный перелом', () => navigate('sports')),
+      serviceTile('fortune-wheel', 'Подарок судьбы', 'Откройте знак или приятный сюрприз, приготовленный на сегодня', () => openEnabledFeature(wheelEnabled, 'wheel', 'Сегодня подарок судьбы отдыхает')),
+      serviceTile('photo-energy-imprint', 'Образ вашей энергии', 'Увидьте настроение и внутреннюю опору, которые передаёт ваш образ', () => navigate('photo-energy'), serviceBadge('photo_energy')),
+      serviceTile('result-magic-seal', 'Что тревожит вашу энергию', 'Разберите смутное беспокойство и найдите способ вернуть спокойствие', () => navigate('photo-damage'), serviceBadge('photo_damage')),
+      serviceTile('brand-sun', 'Разговор с Эзотериумом', 'Задайте свой вопрос и получите бережный ответ', () => navigate('support'))
     )
   ], { active: 'services' });
 }

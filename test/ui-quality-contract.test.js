@@ -6,6 +6,7 @@ const components = readFileSync(new URL('../ui-kit/components.css', import.meta.
 const app = readFileSync(new URL('../ui-kit/app.css', import.meta.url), 'utf8');
 const worlds = readFileSync(new URL('../ui-kit/worlds-v5.css', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../ui-kit/app.js', import.meta.url), 'utf8');
+const homeJewels = readFileSync(new URL('../ui-kit/home-jewels.js', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const css = `${components}\n${app}\n${worlds}`;
 const artV2 = new URL('../ui-kit/assets/art-v2/', import.meta.url);
@@ -37,7 +38,7 @@ test('premium UI keeps readable text and complete mobile headers', () => {
   assert.doesNotMatch(app, /\.premium-wallet-state\s*\{[^}]*text-overflow:\s*ellipsis/s);
 });
 
-test('gift wheel and compact five-slot navigation preserve their geometry', () => {
+test('home sanctum and compact five-slot navigation preserve their geometry', () => {
   const wheelComponent = readFileSync(new URL('../ui-kit/components/FortuneWheel.js', import.meta.url), 'utf8');
   const navigation = readFileSync(new URL('../ui-kit/components/BottomNavigation.js', import.meta.url), 'utf8');
   assert.doesNotMatch(wheelComponent, /WheelSegment|values=/);
@@ -48,8 +49,16 @@ test('gift wheel and compact five-slot navigation preserve their geometry', () =
   assert.equal((navigation.match(/\bitem\("/g) || []).length, 5);
   assert.doesNotMatch(navigation, /CenterMagicButton/);
   assert.match(components, /\.n-icon-button\s*\{[^}]*width:\s*44px;\s*height:\s*44px/s);
-  assert.match(appSource, /SectionTitle\(\{\s*text:\s*'Ваши практики'/);
-  assert.match(appSource, /homePracticeCard\('palm-oracle'[\s\S]*homePracticeCard\('rune-sanctum'[\s\S]*homePracticeCard\('tarot-deck'[\s\S]*homePracticeCard\('amur-dice'/);
+  assert.match(appSource, /homeJewelCard\('tarot'[\s\S]*homeJewelCard\('runes'[\s\S]*homeJewelCard\('astrology'[\s\S]*homeJewelCard\('palm'/);
+  assert.equal((homeJewels.match(/<svg\b/g) || []).length, 5);
+  assert.match(homeJewels, /home-jewel__spin/);
+  assert.match(homeJewels, /home-jewel__rune-glow/);
+  assert.match(homeJewels, /home-jewel__trace/);
+  assert.match(worlds, /#premium-app\[data-screen="home"\]\s*\{[^}]*overflow:\s*hidden/s);
+  assert.match(worlds, /#premium-app\[data-screen="home"\] \.n-cosmic-background__art\s*\{\s*display:\s*none/s);
+  assert.match(worlds, /\.home-jewel-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2/s);
+  assert.match(worlds, /\.home-daily-amulet\s*\{[^}]*border-radius:\s*999px/s);
+  assert.match(html, /Nastardamus — ваш личный мир знаков/);
 });
 
 test('Amur and palm journeys keep their artwork and controls aligned', () => {
