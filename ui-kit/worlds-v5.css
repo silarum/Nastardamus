@@ -2090,3 +2090,392 @@ html[data-visual-quality="lite"] .initiation-step__body { backdrop-filter: none;
   .home-jewel__planet { animation: none !important; }
   .home-jewel__trace { stroke-dashoffset: 0; }
 }
+
+/* Living Home Relics v2 — cinematic artefacts, readable guidance and layered motion. */
+#premium-app[data-screen="home"] .n-cosmic-background {
+  background:
+    radial-gradient(ellipse at -8% 32%, rgba(111, 30, 132, .42), transparent 44%),
+    radial-gradient(ellipse at 106% 74%, rgba(27, 42, 107, .35), transparent 48%),
+    linear-gradient(112deg, #24072e 0%, #10091d 48%, #050713 100%);
+}
+
+#premium-app[data-screen="home"] .n-world-light {
+  opacity: 1;
+  filter: blur(22px);
+  background:
+    radial-gradient(circle at 8% 14%, rgba(255, 219, 139, .2) 0 1.5%, transparent 13%),
+    radial-gradient(circle at 92% 28%, rgba(242, 190, 91, .16) 0 2.5%, transparent 16%),
+    radial-gradient(circle at 16% 78%, rgba(208, 139, 60, .13) 0 1.7%, transparent 14%),
+    radial-gradient(circle at 84% 88%, rgba(255, 221, 142, .11) 0 1.5%, transparent 13%),
+    radial-gradient(ellipse at 48% 48%, rgba(132, 54, 180, .17), transparent 52%);
+  animation: home-nebula-drift 13s ease-in-out infinite alternate;
+}
+
+#premium-app[data-screen="home"] .n-world-particles {
+  opacity: .38;
+  background-image:
+    radial-gradient(circle, rgba(255, 223, 150, .9) 0 .65px, transparent 1.35px),
+    radial-gradient(circle, rgba(182, 128, 235, .78) 0 .55px, transparent 1.2px),
+    radial-gradient(circle, rgba(255, 245, 211, .55) 0 .45px, transparent 1px);
+  background-size: 91px 127px, 147px 113px, 181px 163px;
+  background-position: 0 0, 37px 61px, 83px 19px;
+  animation: home-star-drift 22s linear infinite;
+}
+
+#premium-app[data-screen="home"] .premium-screen {
+  padding-top: max(4px, env(safe-area-inset-top, 0px), var(--tg-safe-top, 0px));
+  padding-right: clamp(10px, 3vw, 14px);
+  padding-left: clamp(10px, 3vw, 14px);
+  padding-bottom: calc(74px + max(env(safe-area-inset-bottom, 0px), var(--tg-safe-bottom, 0px)));
+}
+
+#premium-app[data-screen="home"] .premium-stack {
+  grid-template-rows: auto auto clamp(118px, 16.3vh, 136px) auto minmax(0, 1fr);
+  gap: clamp(4px, .82vh, 7px);
+}
+
+.home-sanctum__header { min-height: clamp(40px, 5.8vh, 48px); }
+.home-sanctum__greeting { padding: 0 4px; }
+.home-sanctum__greeting .premium-kicker { font-size: clamp(8px, 2.15vw, 10px); }
+.home-sanctum__greeting h1 {
+  margin: 2px 0 1px;
+  max-width: 390px;
+  font-size: clamp(19px, 5.2vw, 24px);
+  line-height: 1.01;
+}
+.home-sanctum__greeting > p:last-child { font-size: clamp(9px, 2.35vw, 11px); }
+
+.home-daily-amulet {
+  grid-template-columns: minmax(0, 1.28fr) minmax(112px, .72fr);
+  padding: clamp(10px, 2.6vw, 14px) clamp(8px, 2vw, 11px) clamp(10px, 2.6vw, 14px) clamp(20px, 5.8vw, 28px);
+  border-radius: clamp(31px, 9vw, 48px);
+  background: transparent;
+  box-shadow:
+    0 21px 42px rgba(0, 0, 0, .46),
+    0 0 34px rgba(165, 86, 210, .14),
+    inset 0 1px rgba(255, 255, 255, .17);
+}
+
+.home-daily-amulet::after {
+  background:
+    radial-gradient(ellipse at 85% 48%, rgba(139, 56, 201, .42), transparent 45%),
+    radial-gradient(ellipse at 12% 2%, rgba(255, 224, 164, .12), transparent 42%),
+    linear-gradient(112deg, rgba(88, 38, 100, .69), rgba(16, 11, 31, .84) 62%, rgba(9, 8, 24, .9));
+}
+
+.home-daily-amulet__copy { gap: 2px; }
+.home-daily-amulet__copy small { font-size: clamp(7px, 1.95vw, 9px); }
+.home-daily-amulet__copy strong { font-size: clamp(16px, 4.25vw, 20px); line-height: 1.02; }
+.home-daily-amulet__copy > span {
+  display: -webkit-box;
+  max-width: 245px;
+  overflow: hidden;
+  font-size: clamp(8px, 2.15vw, 10px);
+  line-height: 1.23;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.home-daily-amulet__copy b { margin-top: 2px; font-size: clamp(8px, 2.25vw, 10px); }
+.home-daily-amulet__art { position: relative; overflow: visible; }
+
+.home-sanctum__question {
+  padding: 0 4px;
+  font-size: clamp(14px, 3.7vw, 17px);
+  line-height: 1.05;
+}
+
+.home-jewel-grid {
+  gap: clamp(6px, 1.8vw, 9px);
+}
+
+.home-jewel-card {
+  grid-template-rows: minmax(72px, 43%) minmax(0, 57%);
+  border-color: rgba(237, 199, 119, .42);
+  border-radius: clamp(18px, 4.6vw, 24px);
+  background:
+    radial-gradient(circle at 74% 10%, rgba(171, 81, 231, .31), transparent 48%),
+    linear-gradient(150deg, rgba(255, 244, 223, .13), rgba(81, 40, 102, .17) 42%, rgba(8, 7, 20, .76));
+  box-shadow:
+    15px 18px 34px rgba(0, 0, 0, .5),
+    0 0 25px rgba(106, 42, 132, .23),
+    inset 0 1px rgba(255, 255, 255, .14),
+    inset 0 -24px 42px rgba(1, 1, 8, .28);
+  transform: translateZ(0);
+}
+
+.home-jewel-card--runes {
+  background:
+    radial-gradient(circle at 68% 13%, rgba(153, 82, 217, .28), transparent 48%),
+    linear-gradient(145deg, rgba(243, 227, 198, .11), rgba(43, 45, 70, .25) 47%, rgba(7, 7, 18, .82));
+}
+.home-jewel-card--astrology {
+  background:
+    radial-gradient(circle at 34% 9%, rgba(79, 92, 214, .31), transparent 50%),
+    linear-gradient(145deg, rgba(237, 225, 205, .1), rgba(31, 32, 85, .28) 48%, rgba(6, 7, 22, .82));
+}
+.home-jewel-card--palm {
+  background:
+    radial-gradient(circle at 73% 12%, rgba(178, 69, 214, .32), transparent 48%),
+    linear-gradient(145deg, rgba(246, 224, 210, .11), rgba(83, 34, 98, .21) 45%, rgba(10, 7, 21, .8));
+}
+
+.home-jewel-card:nth-child(2) {
+  box-shadow: -14px 18px 35px rgba(0,0,0,.48), 0 0 25px rgba(106,42,132,.2), inset 0 1px rgba(255,255,255,.14), inset 0 -24px 42px rgba(1,1,8,.28);
+}
+.home-jewel-card:nth-child(3) {
+  box-shadow: 15px -11px 31px rgba(0,0,0,.44), 0 0 25px rgba(78,61,164,.18), inset 0 1px rgba(255,255,255,.14), inset 0 -24px 42px rgba(1,1,8,.28);
+}
+.home-jewel-card:nth-child(4) {
+  box-shadow: -14px -11px 32px rgba(0,0,0,.45), 0 0 25px rgba(122,48,145,.19), inset 0 1px rgba(255,255,255,.14), inset 0 -24px 42px rgba(1,1,8,.28);
+}
+
+.home-jewel-card::before {
+  z-index: 4;
+  inset: -70% -130%;
+  border-radius: 0;
+  opacity: .52;
+  background: linear-gradient(108deg, transparent 43%, rgba(255, 239, 191, .18) 49%, rgba(255,255,255,.36) 50%, rgba(226,181,98,.12) 52%, transparent 58%);
+  transform: translateX(-38%) rotate(7deg);
+  animation: home-card-sheen 7.2s ease-in-out infinite;
+}
+
+.home-jewel-card:nth-child(2)::before { animation-delay: -1.8s; }
+.home-jewel-card:nth-child(3)::before { animation-delay: -3.6s; }
+.home-jewel-card:nth-child(4)::before { animation-delay: -5.4s; }
+
+.home-jewel-card::after {
+  right: 10%;
+  left: 10%;
+  background: linear-gradient(90deg, transparent, rgba(255, 225, 158, .92), transparent);
+  box-shadow: 0 0 15px 3px rgba(224, 169, 72, .25);
+}
+
+.home-jewel-card:active {
+  transform: translateY(3px) scale(.965);
+  border-color: rgba(255, 224, 151, .74);
+}
+
+.home-jewel-card__art {
+  min-height: 72px;
+  overflow: visible;
+  isolation: isolate;
+}
+
+.home-jewel-card__art::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 74%;
+  height: 70%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(141, 65, 205, .34), rgba(82, 35, 126, .12) 42%, transparent 72%);
+  filter: blur(7px);
+  animation: home-aura-breathe 4.6s ease-in-out infinite;
+}
+
+.home-jewel-card__art::after {
+  right: 18%;
+  bottom: 1px;
+  left: 18%;
+  height: 6px;
+  background: rgba(171, 91, 226, .35);
+  filter: blur(7px);
+}
+
+.home-jewel-card__copy {
+  align-content: end;
+  padding: 0 clamp(9px, 2.5vw, 12px) clamp(8px, 2vw, 11px);
+  gap: 2px;
+}
+
+.home-jewel-card__copy small {
+  color: #e6b75e;
+  font-size: clamp(7px, 1.8vw, 8.5px);
+}
+
+.home-jewel-card__copy strong {
+  font-size: clamp(14px, 3.6vw, 17px);
+  line-height: 1.01;
+}
+
+.home-jewel-card__copy > span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: rgba(226, 217, 229, .82);
+  font-size: clamp(7.8px, 2.05vw, 9.6px);
+  line-height: 1.2;
+  white-space: normal;
+  text-overflow: clip;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.home-jewel-card__copy b {
+  width: max-content;
+  margin-top: 1px;
+  color: #f1ca72;
+  font-size: clamp(7.8px, 2.05vw, 9.5px);
+  font-weight: 800;
+  line-height: 1.15;
+  text-shadow: 0 0 10px rgba(239, 190, 90, .28);
+}
+
+.home-jewel-card__copy b::after { content: "  ›"; font-size: 1.18em; }
+
+.home-relic {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  perspective: 700px;
+}
+
+.home-relic__image {
+  z-index: 3;
+  width: 122%;
+  height: 122%;
+  max-width: none;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 11px rgba(0,0,0,.48)) drop-shadow(0 0 11px rgba(171,82,225,.27));
+  transform: translateZ(0);
+  animation: home-relic-float 4.8s cubic-bezier(.42,0,.35,1) infinite;
+}
+
+.home-relic--tarot .home-relic__image { width: 127%; height: 127%; animation-delay: -.7s; }
+.home-relic--runes .home-relic__image { width: 120%; height: 120%; animation-delay: -1.8s; }
+.home-relic--astrology .home-relic__image { width: 126%; height: 126%; animation-delay: -2.7s; }
+.home-relic--palm .home-relic__image { width: 116%; height: 116%; animation-delay: -3.5s; }
+
+.home-relic__aura {
+  position: absolute;
+  z-index: 0;
+  width: 78%;
+  height: 64%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(190, 96, 245, .36), rgba(103, 46, 169, .14) 45%, transparent 72%);
+  filter: blur(9px);
+  animation: home-aura-breathe 4s ease-in-out infinite;
+}
+
+.home-relic__orbit {
+  position: absolute;
+  z-index: 2;
+  border: 1px solid rgba(237, 195, 104, .37);
+  border-right-color: transparent;
+  border-left-color: rgba(172, 91, 217, .18);
+  border-radius: 50%;
+  transform: rotate(-14deg);
+  animation: home-relic-orbit 12s linear infinite;
+}
+
+.home-relic__orbit--outer { width: 82%; height: 58%; }
+.home-relic__orbit--inner { width: 64%; height: 44%; animation-duration: 9s; animation-direction: reverse; }
+
+.home-relic__orbit i {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #ffe4a1;
+  box-shadow: 0 0 8px 2px rgba(239, 185, 77, .6);
+}
+.home-relic__orbit i:nth-child(1) { top: 8%; left: 18%; }
+.home-relic__orbit i:nth-child(2) { right: 5%; bottom: 24%; }
+.home-relic__orbit i:nth-child(3) { bottom: 2%; left: 38%; }
+
+.home-relic__glint {
+  position: absolute;
+  z-index: 5;
+  top: 4%;
+  bottom: 4%;
+  left: -32%;
+  width: 22%;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.46), rgba(255,222,145,.26), transparent);
+  filter: blur(3px);
+  transform: skewX(-18deg);
+  animation: home-relic-glint 6.4s ease-in-out infinite;
+}
+
+.home-relic__spark {
+  position: absolute;
+  z-index: 6;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #fff1b7;
+  box-shadow: 0 0 8px 2px rgba(255, 203, 95, .72), 0 0 18px 6px rgba(166, 75, 222, .24);
+  animation: home-relic-spark 3.2s ease-in-out infinite;
+}
+.home-relic__spark--one { top: 20%; right: 16%; }
+.home-relic__spark--two { bottom: 18%; left: 17%; animation-delay: -1.65s; transform: scale(.68); }
+
+.home-daily-amulet .home-relic {
+  width: 158%;
+  height: 136%;
+  margin-left: -33%;
+}
+.home-daily-amulet .home-relic__image {
+  width: 116%;
+  height: 116%;
+  animation-name: home-compass-float;
+  animation-duration: 5.6s;
+  filter: drop-shadow(0 12px 14px rgba(0,0,0,.52)) drop-shadow(0 0 13px rgba(190,91,231,.32));
+}
+.home-daily-amulet .home-relic__orbit--outer { width: 88%; height: 64%; }
+.home-daily-amulet .home-relic__orbit--inner { width: 70%; height: 50%; }
+
+@keyframes home-star-drift { to { background-position: 91px 127px, -110px 174px, 264px -144px; } }
+@keyframes home-card-sheen { 0%, 58% { transform: translateX(-40%) rotate(7deg); opacity: 0; } 68% { opacity: .55; } 84% { opacity: .18; } 100% { transform: translateX(42%) rotate(7deg); opacity: 0; } }
+@keyframes home-relic-float { 0%, 100% { transform: translate3d(0, 2px, 0) rotate(-.7deg) scale(.985); } 50% { transform: translate3d(0, -5px, 18px) rotate(.8deg) scale(1.018); } }
+@keyframes home-compass-float { 0%, 100% { transform: translate3d(0, 2px, 0) rotate(-1deg) scale(.985); } 50% { transform: translate3d(0, -4px, 22px) rotate(1.25deg) scale(1.025); } }
+@keyframes home-relic-orbit { to { transform: rotate(346deg); } }
+@keyframes home-relic-glint { 0%, 56% { left: -32%; opacity: 0; } 64% { opacity: .8; } 80% { left: 115%; opacity: 0; } 100% { left: 115%; opacity: 0; } }
+@keyframes home-relic-spark { 0%, 100% { opacity: .3; transform: scale(.55); } 45% { opacity: 1; transform: scale(1.35); } }
+@keyframes home-aura-breathe { 50% { opacity: .68; transform: scale(1.13); } }
+
+@media (max-height: 760px) {
+  #premium-app[data-screen="home"] .premium-screen { padding-bottom: calc(69px + max(env(safe-area-inset-bottom, 0px), var(--tg-safe-bottom, 0px))); }
+  #premium-app[data-screen="home"] .premium-stack { grid-template-rows: auto auto 105px auto minmax(0, 1fr); gap: 4px; }
+  .home-sanctum__header { min-height: 37px; }
+  .home-sanctum__header .n-brand-logo__mark { width: 23px; height: 23px; }
+  .home-sanctum__header .celestial-clock { transform: scale(.84); transform-origin: right center; }
+  .home-sanctum__header .premium-avatar-button { width: 32px; height: 32px; }
+  .home-sanctum__greeting .premium-kicker { font-size: clamp(7px, 2vw, 8px); }
+  .home-sanctum__greeting h1 { margin-top: 1px; font-size: clamp(17px, 4.9vw, 20px); }
+  .home-sanctum__greeting > p:last-child { font-size: clamp(8px, 2.25vw, 9px); }
+  .home-daily-amulet { padding-top: 8px; padding-bottom: 8px; }
+  .home-daily-amulet__copy strong { font-size: clamp(14px, 4vw, 18px); }
+  .home-daily-amulet__copy > span { font-size: clamp(7.4px, 2vw, 8.8px); line-height: 1.16; }
+  .home-daily-amulet__copy b { font-size: clamp(7.5px, 2vw, 9px); }
+  .home-sanctum__question { font-size: clamp(12px, 3.5vw, 15px); }
+  .home-jewel-card { grid-template-rows: minmax(62px, 41%) minmax(0, 59%); }
+  .home-jewel-card__art { min-height: 62px; }
+  .home-jewel-card__copy { padding-right: 8px; padding-bottom: 6px; padding-left: 8px; gap: 1px; }
+  .home-jewel-card__copy strong { font-size: clamp(12.5px, 3.45vw, 15.5px); }
+  .home-jewel-card__copy > span { font-size: clamp(7px, 1.95vw, 8.5px); line-height: 1.14; }
+  .home-jewel-card__copy b { font-size: clamp(7px, 1.9vw, 8.4px); }
+  #premium-app[data-screen="home"] .n-bottom-navigation { min-height: 54px; }
+  #premium-app[data-screen="home"] .n-bottom-nav-item { min-height: 44px; }
+}
+
+@media (max-width: 360px) {
+  .home-daily-amulet { grid-template-columns: minmax(0, 1.34fr) minmax(91px, .66fr); padding-left: 18px; }
+  .home-daily-amulet .home-relic { width: 168%; margin-left: -43%; }
+  .home-daily-amulet__copy > span { display: -webkit-box; }
+  .home-jewel-card__copy > span { display: -webkit-box; }
+  .home-jewel-card__copy strong { font-size: clamp(12px, 3.75vw, 14px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #premium-app[data-screen="home"] .n-world-particles,
+  .home-jewel-card::before,
+  .home-jewel-card__art::before,
+  .home-relic__image,
+  .home-relic__aura,
+  .home-relic__orbit,
+  .home-relic__glint,
+  .home-relic__spark { animation: none !important; }
+}
