@@ -209,6 +209,35 @@ async function writeRow(path: string, payload: unknown, method = "POST") {
   return rows?.[0] || null;
 }
 
+async function countRows(path: string) {
+  const response = await rest(path, {
+    headers: { Prefer: "count=exact", Range: "0-0" }
+  });
+  const total = Number(String(response.headers.get("content-range") || "").split("/").pop());
+  return Number.isSafeInteger(total) && total >= 0 ? total : 0;
+}
+
+async function userExists(telegramId: number) {
+  const response = await rest(`nastardamus_users?telegram_id=eq.${telegramId}&select=telegram_id&limit=1`);
+  return Boolean((await response.json())?.[0]);
+}
+
+function validTimezone(value: unknown) {
+  const timezone = cleanText(value || "Europe/Berlin", 80) || "Europe/Berlin";
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: timezone }).format(new Date());
+    return timezone;
+  } catch {
+    return "";
+  }
+}
+
+function safeDate(value: unknown) {
+  const text = cleanText(value, 40);
+  const timestamp = Date.parse(text);
+  return Number.isFinite(timestamp) ? new Date(timestamp) : null;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
@@ -239,6 +268,300 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify({ key: "global", settings: { ...current, ...incoming }, updated_at: new Date().toISOString() })
       });
       return json(200, { ok: true });
+    }
+
+    if (action === "admin_overview") {
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString();
+      const [
+        users,
+        completedProfiles,
+        newUsers7d,
+        horoscopeEnabled,
+        activeVip,
+        readings,
+        openSupport,
+        pendingPayments,
+        walletResponse,
+        paidLedgerResponse
+      ] = await Promise.all([
+        countRows("nastardamus_users?select=telegram_id"),
+        countRows("nastardamus_users?profile_completed_at=not.is.null&select=telegram_id"),
+        countRows(`nastardamus_users?created_at=gte.${encodeURIComponent(sevenDaysAgo)}&select=telegram_id`),
+        countRows("nastardamus_users?daily_horoscope_enabled=eq.true&select=telegram_id"),
+        countRows(`nastardamus_vip_subscriptions?status=eq.active&expires_at=gt.${encodeURIComponent(now.toISOString())}&select=id`),
+        countRows("nastardamus_reading_sessions?deleted_at=is.null&select=id"),
+        countRows("nastardamus_support_tickets?status=in.(open,pending)&select=id"),
+        countRows("nastardamus_sbp_topups?status=in.(pending,awaiting_confirmation)&select=id"),
+        rest("nastardamus_wallets?select=balance_units,locked_units&limit=5000"),
+        rest(`nastardamus_wallet_ledger?amount_units=gt.0&created_at=gte.${encodeURIComponent(thirtyDaysAgo)}&select=amount_units&limit=5000`)
+      ]);
+      const wallets = await walletResponse.json();
+      const paidLedger = await paidLedgerResponse.json();
+      return json(200, {
+        ok: true,
+        metrics: {
+          users,
+          completedProfiles,
+          newUsers7d,
+          horoscopeEnabled,
+          activeVip,
+          readings,
+          openSupport,
+          pendingPayments,
+          walletBalanceUnits: wallets.reduce((sum: number, row: Record<string, unknown>) => sum + Number(row.balance_units || 0), 0),
+          walletLockedUnits: wallets.reduce((sum: number, row: Record<string, unknown>) => sum + Number(row.locked_units || 0), 0),
+          paidUnits30d: paidLedger.reduce((sum: number, row: Record<string, unknown>) => sum + Number(row.amount_units || 0), 0),
+          generatedAt: now.toISOString()
+        }
+      });
+    }
+
+    if (action === "list_users") {
+      const search = cleanText(body.search, 80).toLocaleLowerCase("ru-RU");
+      const filter = ["all", "vip", "horoscope", "complete", "incomplete"].includes(String(body.filter))
+        ? String(body.filter)
+        : "all";
+      const page = Math.max(1, Math.min(10000, Number(body.page) || 1));
+      const limit = Math.max(10, Math.min(50, Number(body.limit) || 20));
+      const includeFinance = body.includeFinance === true;
+      const usersResponse = await rest(
+        "nastardamus_users?select=telegram_id,username,first_name,profile_name,timezone,zodiac_sign,daily_horoscope_enabled,last_horoscope_sent_on,gender,birth_year,city,profile_completed_at,created_at,updated_at&order=updated_at.desc&limit=2000"
+      );
+      const userRows = await usersResponse.json();
+      if (!userRows.length) {
+        return json(200, { ok: true, users: [], pagination: { page, limit, total: 0, pages: 1 } });
+      }
+      const [walletResponse, vipResponse, readingResponse] = await Promise.all([
+        includeFinance
+          ? rest("nastardamus_wallets?select=telegram_id,balance_units,locked_units&limit=5000")
+          : Promise.resolve(null),
+        rest(`nastardamus_vip_subscriptions?status=eq.active&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=telegram_id,plan_id,expires_at&order=expires_at.desc&limit=5000`),
+        rest("nastardamus_reading_sessions?deleted_at=is.null&select=telegram_id&limit=10000")
+      ]);
+      const wallets = walletResponse ? await walletResponse.json() : [];
+      const vipRows = await vipResponse.json();
+      const readingRows = await readingResponse.json();
+      const walletByUser = new Map(wallets.map((row: Record<string, unknown>) => [Number(row.telegram_id), row]));
+      const vipByUser = new Map<number, Record<string, unknown>>();
+      for (const row of vipRows) {
+        const id = Number(row.telegram_id);
+        if (!vipByUser.has(id)) vipByUser.set(id, row);
+      }
+      const readingsByUser = new Map<number, number>();
+      for (const row of readingRows) {
+        const id = Number(row.telegram_id);
+        readingsByUser.set(id, (readingsByUser.get(id) || 0) + 1);
+      }
+      const summaries = userRows.map((row: Record<string, unknown>) => {
+        const telegramId = Number(row.telegram_id);
+        const wallet = walletByUser.get(telegramId) as Record<string, unknown> | undefined;
+        const vip = vipByUser.get(telegramId);
+        return {
+          telegramId,
+          username: row.username || null,
+          name: row.profile_name || row.first_name || "Пользователь",
+          city: row.city || null,
+          gender: row.gender || "unspecified",
+          zodiacSign: row.zodiac_sign || null,
+          horoscopeEnabled: row.daily_horoscope_enabled === true,
+          lastHoroscopeSentOn: row.last_horoscope_sent_on || null,
+          profileCompleted: Boolean(row.profile_completed_at),
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          readingCount: readingsByUser.get(telegramId) || 0,
+          vip: vip ? { planId: vip.plan_id, expiresAt: vip.expires_at } : null,
+          ...(includeFinance ? {
+            balanceUnits: Number(wallet?.balance_units || 0),
+            lockedUnits: Number(wallet?.locked_units || 0)
+          } : {})
+        };
+      }).filter((row: Record<string, unknown>) => {
+        const haystack = [row.telegramId, row.username, row.name, row.city, row.zodiacSign]
+          .join(" ").toLocaleLowerCase("ru-RU");
+        if (search && !haystack.includes(search)) return false;
+        if (filter === "vip" && !row.vip) return false;
+        if (filter === "horoscope" && row.horoscopeEnabled !== true) return false;
+        if (filter === "complete" && row.profileCompleted !== true) return false;
+        if (filter === "incomplete" && row.profileCompleted === true) return false;
+        return true;
+      });
+      const total = summaries.length;
+      const pages = Math.max(1, Math.ceil(total / limit));
+      const safePage = Math.min(page, pages);
+      const start = (safePage - 1) * limit;
+      return json(200, {
+        ok: true,
+        users: summaries.slice(start, start + limit),
+        pagination: { page: safePage, limit, total, pages }
+      });
+    }
+
+    if (action === "get_user_admin_view") {
+      const telegramId = Number(body.telegramId);
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const includeFinance = body.includeFinance === true;
+      const userResponse = await rest(
+        `nastardamus_users?telegram_id=eq.${telegramId}&select=telegram_id,username,first_name,profile_name,timezone,zodiac_sign,daily_horoscope_enabled,last_horoscope_sent_on,gender,birth_year,birth_date,birth_time,birth_time_known,city,interests,goals,natal_chart,profile_completed_at,created_at,updated_at&limit=1`
+      );
+      const profile = (await userResponse.json())?.[0];
+      if (!profile) return json(200, { ok: true, user: null });
+      const financePromise = includeFinance
+        ? Promise.all([
+            rest(`nastardamus_wallets?telegram_id=eq.${telegramId}&select=balance_units,locked_units,free_spins,created_at,updated_at&limit=1`),
+            rest(`nastardamus_wallet_ledger?telegram_id=eq.${telegramId}&select=id,entry_type,amount_units,balance_after_units,locked_after_units,reference_type,reference_id,created_at&order=created_at.desc&limit=30`),
+            rest(`nastardamus_payment_orders?telegram_id=eq.${telegramId}&select=id,provider,silarum_units,provider_amount,provider_currency,status,created_at,paid_at&order=created_at.desc&limit=20`)
+          ])
+        : Promise.resolve([]);
+      const [vipResponse, entitlementResponse, readingResponse, usageResponse, financeResponses] = await Promise.all([
+        rest(`nastardamus_vip_subscriptions?telegram_id=eq.${telegramId}&select=id,plan_id,status,source,starts_at,expires_at,created_at,updated_at&order=expires_at.desc&limit=10`),
+        rest(`nastardamus_service_entitlements?telegram_id=eq.${telegramId}&select=service_id,quantity,updated_at&order=service_id.asc`),
+        rest(`nastardamus_reading_sessions?telegram_id=eq.${telegramId}&deleted_at=is.null&select=id,kind,subtype,title,state,is_favorite,completed_at,created_at,updated_at&order=created_at.desc&limit=25`),
+        rest(`nastardamus_free_usage?telegram_id=eq.${telegramId}&select=service_id,usage_date,uses,updated_at&order=usage_date.desc&limit=30`),
+        financePromise
+      ]);
+      const [walletResponse, ledgerResponse, paymentResponse] = financeResponses as Response[];
+      return json(200, {
+        ok: true,
+        user: {
+          profile,
+          vip: await vipResponse.json(),
+          entitlements: await entitlementResponse.json(),
+          readings: await readingResponse.json(),
+          freeUsage: await usageResponse.json(),
+          ...(includeFinance ? {
+            wallet: (await walletResponse.json())?.[0] || { balance_units: 0, locked_units: 0, free_spins: 0 },
+            ledger: await ledgerResponse.json(),
+            payments: await paymentResponse.json()
+          } : {})
+        }
+      });
+    }
+
+    if (action === "admin_update_user_delivery") {
+      const telegramId = Number(body.telegramId);
+      const timezone = validTimezone(body.timezone);
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      if (!timezone) return json(400, { error: "invalid_timezone" });
+      if (!(await userExists(telegramId))) return json(404, { error: "user_not_found" });
+      const row = await writeRow(
+        `nastardamus_users?telegram_id=eq.${telegramId}`,
+        {
+          daily_horoscope_enabled: body.enabled === true,
+          timezone,
+          updated_at: new Date().toISOString()
+        },
+        "PATCH"
+      );
+      return json(200, { ok: true, user: row });
+    }
+
+    if (action === "admin_set_user_vip") {
+      const telegramId = Number(body.telegramId);
+      const adminId = Number(body.adminId);
+      const active = body.active === true;
+      const planId = cleanText(body.planId || "vip-month", 64);
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      if (!Number.isSafeInteger(adminId) || adminId <= 0) return json(400, { error: "invalid_admin_id" });
+      if (!/^[a-z0-9][a-z0-9_-]{1,63}$/.test(planId)) return json(400, { error: "invalid_plan_id" });
+      if (!(await userExists(telegramId))) return json(404, { error: "user_not_found" });
+      if (!active) {
+        await rest(`nastardamus_vip_subscriptions?telegram_id=eq.${telegramId}&status=eq.active`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+          body: JSON.stringify({ status: "cancelled", updated_at: new Date().toISOString() })
+        });
+        return json(200, { ok: true, vip: null });
+      }
+      const expiry = safeDate(body.expiresAt);
+      const now = Date.now();
+      if (!expiry || expiry.getTime() < now + 3600000 || expiry.getTime() > now + 3660 * 86400000) {
+        return json(400, { error: "invalid_vip_expiry" });
+      }
+      const [planResponse, existingResponse] = await Promise.all([
+        rest(`nastardamus_vip_plans?id=eq.${encodeURIComponent(planId)}&is_active=eq.true&select=id&limit=1`),
+        rest(`nastardamus_vip_subscriptions?telegram_id=eq.${telegramId}&status=eq.active&select=id,plan_id,expires_at&order=expires_at.desc&limit=10`)
+      ]);
+      if (!(await planResponse.json())?.[0]) return json(400, { error: "vip_plan_not_found" });
+      const existing = await existingResponse.json();
+      const primary = existing?.[0];
+      const payload = {
+        telegram_id: telegramId,
+        plan_id: planId,
+        status: "active",
+        source: "admin",
+        starts_at: new Date().toISOString(),
+        expires_at: expiry.toISOString(),
+        metadata: { admin_id: adminId },
+        updated_at: new Date().toISOString()
+      };
+      const vip = primary
+        ? await writeRow(`nastardamus_vip_subscriptions?id=eq.${primary.id}`, payload, "PATCH")
+        : await writeRow("nastardamus_vip_subscriptions", payload);
+      if (existing.length > 1) {
+        const otherIds = existing.slice(1).map((row: Record<string, unknown>) => row.id).filter(Boolean);
+        if (otherIds.length) {
+          await rest(`nastardamus_vip_subscriptions?id=in.(${otherIds.join(",")})`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+            body: JSON.stringify({ status: "cancelled", updated_at: new Date().toISOString() })
+          });
+        }
+      }
+      return json(200, { ok: true, vip });
+    }
+
+    if (action === "admin_set_user_entitlement") {
+      const telegramId = Number(body.telegramId);
+      const serviceId = cleanText(body.serviceId, 100);
+      const quantity = Number(body.quantity);
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      if (!/^[a-z0-9:_-]{1,100}$/.test(serviceId)) return json(400, { error: "invalid_service_id" });
+      if (!Number.isInteger(quantity) || quantity < 0 || quantity > 10000) return json(400, { error: "invalid_quantity" });
+      if (!(await userExists(telegramId))) return json(404, { error: "user_not_found" });
+      await rest("nastardamus_service_entitlements?on_conflict=telegram_id,service_id", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ telegram_id: telegramId, service_id: serviceId, quantity, updated_at: new Date().toISOString() })
+      });
+      return json(200, { ok: true });
+    }
+
+    if (action === "admin_reset_user_daily_usage") {
+      const telegramId = Number(body.telegramId);
+      const serviceId = cleanText(body.serviceId, 100);
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      if (serviceId && !/^[a-z0-9:_-]{1,100}$/.test(serviceId)) return json(400, { error: "invalid_service_id" });
+      if (!(await userExists(telegramId))) return json(404, { error: "user_not_found" });
+      const serviceFilter = serviceId ? `&service_id=eq.${encodeURIComponent(serviceId)}` : "";
+      await rest(`nastardamus_free_usage?telegram_id=eq.${telegramId}${serviceFilter}`, {
+        method: "DELETE",
+        headers: { Prefer: "return=minimal" }
+      });
+      return json(200, { ok: true });
+    }
+
+    if (action === "list_admin_audit") {
+      const limit = Math.max(20, Math.min(200, Number(body.limit) || 100));
+      const [auditResponse, adminsResponse] = await Promise.all([
+        rest(`nastardamus_admin_audit?select=id,telegram_id,action,payload,created_at&order=created_at.desc&limit=${limit}`),
+        rest("nastardamus_admins?select=telegram_id,display_name,username,role")
+      ]);
+      const admins = new Map((await adminsResponse.json()).map((row: Record<string, unknown>) => [Number(row.telegram_id), row]));
+      const entries = (await auditResponse.json()).map((row: Record<string, unknown>) => {
+        const admin = admins.get(Number(row.telegram_id)) as Record<string, unknown> | undefined;
+        return {
+          id: row.id,
+          telegramId: Number(row.telegram_id),
+          adminName: admin?.display_name || admin?.username || `ID ${row.telegram_id}`,
+          role: admin?.role || null,
+          action: row.action,
+          payload: row.payload && typeof row.payload === "object" ? row.payload : {},
+          createdAt: row.created_at
+        };
+      });
+      return json(200, { ok: true, entries });
     }
 
     if (action === "read_payment_provider") {

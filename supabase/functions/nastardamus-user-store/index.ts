@@ -3084,15 +3084,24 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "list_horoscope_recipients") {
-      const today = String(body?.today || "");
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) return json(400, { error: "invalid_date" });
       const settings = await readSettings();
       if (settings.dailyHoroscopeEnabled === false) {
         return json(200, { ok: true, recipients: [] });
       }
       const limit = Math.max(1, Math.min(500, Number(body?.limit || 200)));
+      // Older API deployments pass a global date and expect the store to filter
+      // already delivered rows. Keep that contract during rolling deployments;
+      // the current API omits `today` and performs each recipient's local-date
+      // check itself.
+      const legacyToday = String(body?.today || "");
+      const legacyDateFilter = /^\d{4}-\d{2}-\d{2}$/.test(legacyToday)
+        ? `&or=(last_horoscope_sent_on.is.null,last_horoscope_sent_on.lt.${legacyToday})`
+        : "";
       const response = await rest(
-        `nastardamus_users?daily_horoscope_enabled=eq.true&zodiac_sign=not.is.null&or=(last_horoscope_sent_on.is.null,last_horoscope_sent_on.lt.${today})&select=telegram_id,chat_id,first_name,zodiac_sign,gender,birth_year,city&order=telegram_id.asc&limit=${limit}`
+        "nastardamus_users?daily_horoscope_enabled=eq.true&zodiac_sign=not.is.null"
+          + legacyDateFilter
+          + "&select=telegram_id,chat_id,first_name,profile_name,zodiac_sign,gender,birth_year,birth_date,birth_time,birth_time_known,city,timezone,interests,goals,natal_chart,last_horoscope_sent_on"
+          + `&order=telegram_id.asc&limit=${limit}`
       );
       return json(200, { ok: true, recipients: await response.json() });
     }

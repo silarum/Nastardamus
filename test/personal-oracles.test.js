@@ -108,7 +108,9 @@ test('reading storage shares the proxy function and stays within the Hobby deplo
 
 test('administrators can manage every Tarot and compatibility catalog entry', () => {
   assert.match(admin, /data-tab=\\"content\\"/);
-  assert.match(admin, /Таро и практики/);
+  assert.match(admin, /Таро и совместимость/);
+  assert.match(admin, /data-tab=\\"users\\"/);
+  assert.match(admin, /Журнал действий/);
   assert.match(admin, /tarotContentDefinitions/);
   assert.match(admin, /compatibilityContentDefinitions/);
   assert.match(admin, /sanitizeTarotCatalog/);
