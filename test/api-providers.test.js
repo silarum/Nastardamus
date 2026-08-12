@@ -652,14 +652,16 @@ test('daily horoscope uses DeepSeek', async () => {
         const answer = await createHoroscope('aries', '2026-07-27', 'female', 34, 'Казань');
         assert.equal(answer, 'Сегодня берегите внутренний ритм.');
         assert.equal(request.url, 'https://api.deepseek.com/chat/completions');
-        assert.equal(request.body.max_tokens, 700);
-        assert.match(request.body.messages[0].content, /короткий и ясный ориентир/i);
-        assert.match(request.body.messages[0].content, /конкретный фокус/i);
+        assert.equal(request.body.max_tokens, 900);
+        assert.match(request.body.messages[0].content, /личный утренний ориентир/i);
+        assert.match(request.body.messages[0].content, /заданные ниже мини-заголовки/i);
         assert.match(request.body.messages[0].content, /женском роде/i);
         assert.match(request.body.messages[1].content, /Искательница/i);
         assert.match(request.body.messages[1].content, /34/);
         assert.match(request.body.messages[1].content, /Казань/);
-        assert.match(request.body.messages[1].content, /80–130 слов/i);
+        assert.match(request.body.messages[1].content, /130–180 слов/i);
+        assert.match(request.body.messages[1].content, /ПРОФИЛЬ_JSON/i);
+        assert.match(request.body.messages[1].content, /не изображай расчёт текущих транзитов/i);
     } finally {
         restore();
         global.fetch = previousFetch;

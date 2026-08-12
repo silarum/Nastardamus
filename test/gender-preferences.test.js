@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { dailyVariationKey, localMoment } from '../api/daily-horoscope.js';
 
 const migration = readFileSync(
   new URL('../supabase/migrations/20260728131204_add_user_gender_preference.sql', import.meta.url),
@@ -27,9 +28,18 @@ test('preferences API and user store validate and persist gender', () => {
   assert.match(store, /select=profile_name,zodiac_sign,daily_horoscope_enabled,timezone,gender/);
 });
 
-test('scheduled horoscopes are grouped by sign, gender, age and city', () => {
-  assert.match(horoscopeApi, /person\.zodiac_sign,[\s\S]*normalizeGender\(person\.gender\)/);
-  assert.match(horoscopeApi, /person\.birth_year/);
-  assert.match(horoscopeApi, /person\.city/);
-  assert.match(horoscopeApi, /createHoroscope\(sign, date, gender, Number\(age\), cityParts\.join\(':'\)\)/);
+test('scheduled horoscopes are personal and delivered in the recipient local morning', () => {
+  const now = new Date('2026-08-08T05:15:00.000Z');
+  assert.deepEqual(localMoment({ timezone: 'Europe/Berlin' }, now), {
+    timezone: 'Europe/Berlin', date: '2026-08-08', hour: 7
+  });
+  assert.equal(localMoment({ timezone: 'Invalid/Zone' }, now).timezone, 'UTC');
+  assert.equal(dailyVariationKey(101, '2026-08-08'), dailyVariationKey(101, '2026-08-08'));
+  assert.notEqual(dailyVariationKey(101, '2026-08-08'), dailyVariationKey(102, '2026-08-08'));
+  assert.match(horoscopeApi, /createHoroscope\(\{[\s\S]*\.\.\.person/);
+  assert.match(horoscopeApi, /person\.last_horoscope_sent_on/);
+  assert.match(horoscopeApi, /local\.hour >= 7 && local\.hour <= 9/);
+  assert.match(horoscopeApi, /const slot = Math\.floor\(now\.getTime\(\) \/ 600000\)/);
+  assert.match(horoscopeApi, /attempted: due\.length/);
+  assert.doesNotMatch(horoscopeApi, /const groups = new Map/);
 });
