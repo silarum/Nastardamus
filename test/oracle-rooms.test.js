@@ -10,6 +10,14 @@ import { buildOracleRoomAgentRequest } from '../lib/oracle-rooms.js';
 const ROOM_TOKEN = 'b'.repeat(32);
 const TURN_ID = '743a8d3f-7654-4d1e-aeed-1fc420fc1282';
 
+test('room lobby explains how each room type is used', () => {
+  const source = readFileSync(new URL('../ui-kit/app.js', import.meta.url), 'utf8');
+  assert.match(source, /Задавайте вопросы Эзотериуму в своём темпе/u);
+  assert.match(source, /Пригласите близкого человека по ссылке/u);
+  assert.match(source, /ДО ПЯТИ УЧАСТНИКОВ/u);
+  assert.match(source, /oracle-room-choice/u);
+});
+
 function createResponse() {
   return {
     headers: new Map(),
@@ -277,7 +285,9 @@ test('room schema and client keep membership, photos and live access protected',
   assert.match(sql, /nastardamus_find_user_by_username/u);
   assert.match(client, /invite_oracle_room_username/u);
   assert.match(client, /Поделиться ссылкой/u);
-  assert.match(client, /window\.setInterval\(\(\) => \{[\s\S]*loadOracleRoom\(\{ silent: true \}\);[\s\S]*\}, 2500\);/u);
+  assert.match(client, /Date\.now\(\) >= Number\(state\.oracleRoomNextPollAt \|\| 0\)/u);
+  assert.match(client, /state\.oracleRoomNextPollAt = Date\.now\(\) \+ 4000/u);
+  assert.match(client, /Math\.min\(30_000, 4000 \* \(2 \*\*/u);
   assert.match(client, /Личные ответы и фотография ладони остаются закрытыми/u);
   assert.match(client, /Отправить живую открытку/u);
   assert.match(client, /Начать чтение совместимости/u);

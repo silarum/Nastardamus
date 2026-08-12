@@ -95,7 +95,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.ok(jewelsText.includes('Показать ладонь'));
     assert.equal(homeText.includes('78 арканов'), false);
     assert.equal(homeText.includes('Основа натального пути'), false);
-    assert.equal(homeText.includes('Спортивные знамения'), false);
+    assert.ok(homeText.includes('Спорт'));
 
     click(document, 'Открыть личный знак дня');
     assert.equal(mount.dataset.screen, 'daily-choice');
@@ -106,7 +106,9 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.equal(mount.dataset.screen, 'services');
     click(document, 'Знамения события');
     assert.equal(mount.dataset.screen, 'sports');
-    assert.ok(document.body.textContent.includes('Конкретный сценарий и уровень уверенности'));
+    assert.ok(document.body.textContent.includes('Факты, вероятности и символический слой'));
+    assert.ok(document.body.textContent.includes('Как пользоваться'));
+    assert.ok(document.body.textContent.includes('От 1 до 5 матчей'));
     assert.equal(mount.querySelectorAll('.n-bottom-navigation').length, 1);
     app.state.sportsResult = 'Арена на мгновение замирает.\n\nРисунок встречи меняется в самой тишине.';
     app.render();
@@ -184,7 +186,9 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     question.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
     click(document, 'Войти в ритуал');
     assert.equal(mount.dataset.screen, 'tarot-draw');
-    click(document, 'Перемешать колоду');
+    assert.ok(document.body.textContent.includes('Сдвиньте колоду пальцем'));
+    assert.equal(document.querySelectorAll('.tarot-swipe-meter i').length, 3);
+    click(document, 'Перемешать автоматически');
     await new Promise((resolve) => setTimeout(resolve, 280));
 
     for (let index = 0; index < 3; index += 1) {
@@ -220,6 +224,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.equal(document.body.textContent.includes('Возраст'), false);
     assert.equal(document.body.textContent.includes('Город'), false);
     assert.equal(document.body.textContent.includes('Как к вам обращаться?'), false);
+    assert.equal(document.body.textContent.includes('Каллиграфия'), false);
     assert.equal(app.state.userGender, 'male');
     app.state.walletStatus = 'ready';
     app.state.wallet = {
@@ -417,4 +422,14 @@ test('a repeat visitor receives a short continuation instead of repeating the in
   } finally {
     dom.window.close();
   }
+});
+
+test('palm photo control opens the device camera and results save without manual action buttons', () => {
+  const app = readFileSync(new URL('../ui-kit/app.js', import.meta.url), 'utf8');
+  assert.match(app, /capture: 'environment'/u);
+  assert.match(app, /Открыть камеру/u);
+  assert.match(app, /Переснять фотографию камерой/u);
+  assert.match(app, /Результат и продолжение разговора сохраняются в личной истории автоматически/u);
+  assert.doesNotMatch(app, /text: 'Сохранить карту'/u);
+  assert.doesNotMatch(app, /text: 'Поделиться', icon: 'share'/u);
 });
