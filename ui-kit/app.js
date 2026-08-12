@@ -3371,7 +3371,7 @@ function natalResultScreen() {
   const active = areas[activeIndex];
   const detail = paragraphs[activeIndex] || paragraphs[0] || 'Эзотериум ещё собирает подробный смысл этого сектора.';
   return shell([
-    screenHeader('Ваша натальная карта', state.result.natalInput?.partial ? 'Частичная карта · данные можно уточнить' : 'По��ная карта рождения', 'natal'),
+    screenHeader('Ваша натальная карта', state.result.natalInput?.partial ? 'Частичная карта · данные можно уточнить' : 'Полная карта рождения', 'natal'),
     natalChartVisual(state.result.natalChart),
     natalPlacementsPanel(state.result.natalChart),
     h('section', { className: 'natal-profile-panel' },
