@@ -82,19 +82,26 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.equal(mount.querySelectorAll('.n-balance-card').length, 0, 'Balance must not be shown on the home screen');
     assert.equal(document.body.textContent.includes('Посмотреть приветствие'), false);
     const homeText = mount.textContent;
-    const practicesText = mount.querySelector('.premium-home-practices').textContent;
-    assert.ok(homeText.indexOf('Ваши практики') < homeText.indexOf('Спортивные знамения'));
-    assert.ok(practicesText.indexOf('Ладонь') < practicesText.indexOf('Руны'));
-    assert.ok(practicesText.indexOf('Руны') < practicesText.indexOf('Таро'));
-    assert.ok(practicesText.indexOf('Таро') < practicesText.indexOf('Амур'));
-    assert.ok(homeText.indexOf('Спортивные знамения') < homeText.lastIndexOf('Колесо Фортуны'));
-    assert.ok(homeText.includes('Личное пространство Эзотериума'));
-    assert.match(
-      mount.querySelector('.premium-sports-banner > img').getAttribute('src'),
-      /sports-prophecy-banner\.webp$/
-    );
+    const jewelsText = mount.querySelector('.home-jewel-grid').textContent;
+    assert.equal(mount.querySelectorAll('.home-jewel-card').length, 4);
+    assert.equal(mount.querySelectorAll('.home-jewel svg').length, 5);
+    assert.ok(homeText.includes('сегодня достаточно одного ясного шага'));
+    assert.ok(homeText.includes('К чему прислушаетесь?'));
+    assert.ok(jewelsText.indexOf('Скрытый смысл') < jewelsText.indexOf('Верный шаг'));
+    assert.ok(jewelsText.indexOf('Верный шаг') < jewelsText.indexOf('Личное небо'));
+    assert.ok(jewelsText.indexOf('Личное небо') < jewelsText.indexOf('Линии судьбы'));
+    assert.equal(homeText.includes('78 арканов'), false);
+    assert.equal(homeText.includes('Основа натального пути'), false);
+    assert.equal(homeText.includes('Спортивные знамения'), false);
 
-    click(document, 'Спортивные знамения');
+    click(document, 'Открыть личный знак дня');
+    assert.equal(mount.dataset.screen, 'daily-choice');
+    click(document, 'Назад');
+    assert.equal(mount.dataset.screen, 'home');
+
+    click(document, 'Практики');
+    assert.equal(mount.dataset.screen, 'services');
+    click(document, 'Знамения события');
     assert.equal(mount.dataset.screen, 'sports');
     assert.ok(document.body.textContent.includes('Конкретный сценарий и уровень уверенности'));
     assert.equal(mount.querySelectorAll('.n-bottom-navigation').length, 1);
@@ -106,9 +113,9 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     app.state.sportsResult = '';
     app.render();
     click(document, 'Назад');
-    assert.equal(mount.dataset.screen, 'home');
+    assert.equal(mount.dataset.screen, 'services');
 
-    click(document, 'Личное пространство Эзотериума');
+    click(document, 'Мой путь');
     assert.equal(mount.dataset.screen, 'space');
     assert.ok(document.body.textContent.toLocaleLowerCase('ru').includes('энергия дня'));
     assert.ok(document.body.textContent.includes('Важное сегодня'));
@@ -163,7 +170,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     click(document, 'Практики');
     assert.equal(mount.dataset.screen, 'services');
 
-    click(document, 'Двенадцать раскладов Таро');
+    click(document, 'Ответ в картах');
     assert.equal(mount.dataset.screen, 'tarot');
     assert.equal(document.querySelectorAll('.premium-spread-card').length, 12);
     click(document, 'Прошлое · настоящее · будущее');
@@ -248,13 +255,13 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.equal(mount.dataset.screen, 'home');
 
     click(document, 'Практики');
-    click(document, 'Энергетический след');
+    click(document, 'Образ вашей энергии');
     assert.equal(mount.dataset.screen, 'photo-energy');
     assert.equal(document.querySelectorAll('.n-info-banner').length, 0);
 
     click(document, 'Назад');
     assert.equal(mount.dataset.screen, 'services');
-    click(document, 'Определение порчи');
+    click(document, 'Что тревожит вашу энергию');
     assert.equal(mount.dataset.screen, 'photo-damage');
     assert.ok(document.body.textContent.includes('Опишите, что происходит'));
 
@@ -280,11 +287,11 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     assert.equal(app.suggestGenderFromName('Саша'), 'unspecified');
 
     click(document, 'Практики');
-    click(document, 'Чтение по ладони');
+    click(document, 'История вашей ладони');
     assert.equal(mount.dataset.screen, 'palm-reading');
     assert.ok(document.body.textContent.includes('Сначала — ладонь'));
     click(document, 'Назад');
-    click(document, 'Спросить Эзотериума');
+    click(document, 'Разговор с Эзотериумом');
     assert.equal(mount.dataset.screen, 'support');
     assert.ok(document.querySelector('textarea'));
 
@@ -359,7 +366,8 @@ test('bundled startup shows registration and enters the redesigned home', async 
     await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
     assert.equal(mount.dataset.screen, 'home');
     assert.equal(new URL(dom.window.location.href).searchParams.get('screen'), 'home');
-    assert.equal(mount.querySelectorAll('.premium-home-practice').length, 5);
+    assert.equal(mount.querySelectorAll('.home-jewel-card').length, 4);
+    assert.equal(mount.querySelectorAll('.home-jewel svg').length, 5);
     assert.equal(mount.querySelectorAll('.n-bottom-nav-item').length, 5);
     assert.equal(mount.querySelectorAll('.n-center-magic-button').length, 0);
 
