@@ -2250,6 +2250,110 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (action === "list_campaigns") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const [campaignResponse, entryResponse] = await Promise.all([
+        rest("nastardamus_campaigns?status=eq.active&remaining_slots=gt.0&select=id,kind,title,description,action_url,poster_url,total_slots,remaining_slots,reward_units,prize_units,starts_at,ends_at,created_at&order=created_at.desc"),
+        rest(`nastardamus_campaign_entries?telegram_id=eq.${telegramId}&select=campaign_id,status,reward_units,created_at&order=created_at.desc`)
+      ]);
+      const campaigns = await campaignResponse.json();
+      const entries = await entryResponse.json();
+      const byCampaign = new Map((entries || []).map((entry: Record<string, unknown>) => [String(entry.campaign_id), entry]));
+      return json(200, {
+        ok: true,
+        campaigns: (campaigns || []).map((item: Record<string, unknown>) => ({
+          id: item.id, kind: item.kind, title: item.title, description: item.description,
+          actionUrl: item.action_url || "", posterUrl: item.poster_url || "",
+          totalSlots: Number(item.total_slots || 0), remainingSlots: Number(item.remaining_slots || 0),
+          reward: Number(item.reward_units || 0) / 100, prize: Number(item.prize_units || 0) / 100,
+          startsAt: item.starts_at || null, endsAt: item.ends_at || null, createdAt: item.created_at,
+          entry: byCampaign.get(String(item.id)) || null
+        }))
+      });
+    }
+
+    if (action === "submit_campaign") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+        return json(400, { error: "invalid_telegram_id" });
+      }
+      const campaignId = cleanReadingId(body?.campaignId);
+      if (!campaignId) return json(400, { error: "invalid_campaign_id" });
+      const answer = String(body?.answer || "").trim().replace(/\s+/g, " ").slice(0, 180);
+      const normalizedAnswer = answer.toLocaleLowerCase("ru");
+      const answerHash = normalizedAnswer ? await sha256Hex(normalizedAnswer) : null;
+      const response = await rest("rpc/nastardamus_submit_campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_campaign_id: campaignId,
+          p_telegram_id: telegramId,
+          p_answer_hash: answerHash,
+          p_answer_preview: answer || null
+        })
+      });
+      return json(200, { ok: true, submission: await response.json() });
+    }
+
+    if (action === "join_lucky_match") {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      const response = await rest("rpc/nastardamus_join_lucky_match", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ p_telegram_id: telegramId })
+      });
+      const matchId = await response.json();
+      return json(200, { ok: true, matchId });
+    }
+
+    if (["get_lucky_match", "play_lucky_match", "send_lucky_message"].includes(action)) {
+      if (!Number.isSafeInteger(telegramId) || telegramId <= 0) return json(400, { error: "invalid_telegram_id" });
+      let matchId = cleanReadingId(body?.matchId);
+      if (!matchId && action === "get_lucky_match") {
+        const activeResponse = await rest(`nastardamus_lucky_matches?or=(player_a.eq.${telegramId},player_b.eq.${telegramId})&select=id&order=created_at.desc&limit=1`);
+        matchId = String((await activeResponse.json())?.[0]?.id || "");
+      }
+      if (!matchId) return json(400, { error: "invalid_lucky_match_id" });
+      const matchResponse = await rest(`nastardamus_lucky_matches?id=eq.${matchId}&or=(player_a.eq.${telegramId},player_b.eq.${telegramId})&select=*&limit=1`);
+      const match = (await matchResponse.json())?.[0];
+      if (!match) return json(404, { error: "lucky_match_not_found" });
+
+      if (action === "play_lucky_match") {
+        const playResponse = await rest("rpc/nastardamus_play_lucky_match", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ p_match_id: matchId, p_telegram_id: telegramId, p_action: String(body?.turnAction || ""), p_prediction: body?.prediction || null })
+        });
+        await playResponse.json();
+      }
+      if (action === "send_lucky_message") {
+        const content = cleanOracleText(body?.message, 500, 1);
+        const senderName = cleanOracleText(body?.senderName || "Участник", 80, 1);
+        await rest("nastardamus_lucky_messages", {
+          method: "POST", headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+          body: JSON.stringify({ match_id: matchId, sender_telegram_id: telegramId, sender_name: senderName, content })
+        });
+      }
+      const [freshMatchResponse, messagesResponse] = await Promise.all([
+        rest(`nastardamus_lucky_matches?id=eq.${matchId}&select=*&limit=1`),
+        rest(`nastardamus_lucky_messages?match_id=eq.${matchId}&select=id,sender_telegram_id,sender_name,content,created_at&order=created_at.asc&limit=120`)
+      ]);
+      const fresh = (await freshMatchResponse.json())?.[0];
+      const messages = await messagesResponse.json();
+      return json(200, {
+        ok: true,
+        match: fresh ? {
+          id: fresh.id, status: fresh.status, playerA: Number(fresh.player_a), playerB: Number(fresh.player_b) || null,
+          scoreA: Number(fresh.score_a), scoreB: Number(fresh.score_b), chooser: Number(fresh.chooser) || null,
+          roller: Number(fresh.roller) || null, prediction: fresh.prediction || "", lastRoll: fresh.last_roll || null,
+          round: Number(fresh.round_no), winner: Number(fresh.winner) || null, createdAt: fresh.created_at, updatedAt: fresh.updated_at
+        } : null,
+        messages: (messages || []).map((message: Record<string, unknown>) => ({
+          id: message.id, senderTelegramId: Number(message.sender_telegram_id), senderName: message.sender_name,
+          content: message.content, createdAt: message.created_at
+        }))
+      });
+    }
+
     if (action === "create_external_payment_order") {
       if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
         return json(400, { error: "invalid_telegram_id" });
@@ -3514,6 +3618,20 @@ Deno.serve(async (req: Request) => {
     if (message.includes("oracle_room_owner_must_close")) return json(409, { error: "oracle_room_owner_must_close" });
     if (message.includes("oracle_room_turn_changed")) return json(409, { error: "oracle_room_turn_changed" });
     if (message.includes("oracle_palm_upload_")) return json(503, { error: "oracle_palm_unavailable" });
+    if (message.includes("campaign_not_found")) return json(404, { error: "campaign_not_found" });
+    if (message.includes("campaign_not_active") || message.includes("campaign_not_started") || message.includes("campaign_ended") || message.includes("campaign_full")) {
+      const campaignError = ["campaign_not_active", "campaign_not_started", "campaign_ended", "campaign_full"]
+        .find((code) => message.includes(code)) || "campaign_unavailable";
+      return json(409, { error: campaignError });
+    }
+    if (message.includes("lucky_match_not_found")) return json(404, { error: "lucky_match_not_found" });
+    if (message.includes("lucky_match_forbidden")) return json(403, { error: "lucky_match_forbidden" });
+    if (message.includes("lucky_match_not_active") || message.includes("lucky_not_your_turn") || message.includes("lucky_prediction_required")) {
+      const luckyError = ["lucky_match_not_active", "lucky_not_your_turn", "lucky_prediction_required"]
+        .find((code) => message.includes(code)) || "lucky_match_unavailable";
+      return json(409, { error: luckyError });
+    }
+    if (message.includes("lucky_invalid_prediction")) return json(400, { error: "lucky_invalid_prediction" });
     return json(502, { error: "wallet_store_failed" });
   }
 });

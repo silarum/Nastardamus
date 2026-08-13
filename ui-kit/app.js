@@ -256,6 +256,15 @@ const state = {
   tonWallet: { status: 'loading', address: '', chain: '', walletApp: '' },
   profileSection: 'wallet',
   profileOverlay: '',
+  campaignKind: 'task',
+  campaigns: [],
+  campaignsStatus: 'idle',
+  campaignAnswers: {},
+  luckyMatch: null,
+  luckyMessages: [],
+  luckyStatus: 'idle',
+  luckySending: false,
+  luckyDraft: '',
   busy: false,
   spread: 'past-present-future',
   tarotCategory: 'all',
@@ -961,6 +970,7 @@ function dailyGreetingContext() {
   return {
     userName: firstName(),
     userGender: state.userGender,
+    age: Number(state.profile.age) || 0,
     locale: state.locale,
     todayFirstLogin: state.dailyGreeting.todayFirstLogin,
     dayPart: state.dailyGreeting.dayPart,
@@ -1121,7 +1131,16 @@ function openDailyService(serviceId) {
   navigate('palm-reading');
 }
 
-async function loadDailyGreeting({ force = false } = {}) {
+function updateDailyGreetingSpeech() {
+  if (state.screen !== 'welcome') return false;
+  const speech = document.querySelector('.oracle-daily-greeting__speech');
+  if (!speech) return false;
+  speech.textContent = state.dailyGreeting.answer;
+  speech.classList.toggle('is-listening', state.dailyGreeting.status === 'loading');
+  return true;
+}
+
+async function loadDailyGreeting({ force = false, forceRender = true } = {}) {
   if (!state.profile.completed) return;
   const context = dailyGreetingContext();
   const requestKey = JSON.stringify(context);
@@ -1131,12 +1150,12 @@ async function loadDailyGreeting({ force = false } = {}) {
   state.dailyGreeting.requestKey = requestKey;
   if (!tg?.initData) {
     state.dailyGreeting.status = 'fallback';
-    if (state.screen === 'welcome') render();
+    if (forceRender && !updateDailyGreetingSpeech() && state.screen === 'welcome') render();
     return;
   }
 
   state.dailyGreeting.status = 'loading';
-  if (state.screen === 'welcome') render();
+  if (forceRender) updateDailyGreetingSpeech();
   try {
     const data = await api('/api/assistant', {
       method: 'POST',
@@ -1150,7 +1169,7 @@ async function loadDailyGreeting({ force = false } = {}) {
     state.dailyGreeting.answer = fallbackDailyGreeting(context);
     state.dailyGreeting.status = 'fallback';
   }
-  if (state.screen === 'welcome') render();
+  if (forceRender && !updateDailyGreetingSpeech() && state.screen === 'welcome') render();
 }
 
 function initiationThresholdScreen() {
@@ -2619,6 +2638,7 @@ function homeScreen() {
     h('nav', { className: 'home-quick-ribbon', attrs: { 'aria-label': 'Другие пространства' } },
       homeQuickLink('briefcase', 'Спорт', 'sports'),
       homeQuickLink('profile', 'Комнаты', 'palm-rooms'),
+      homeQuickLink('sparkle', 'Камень', 'lucky-stone'),
       homeQuickLink('sparkle', 'Дар дня', 'wheel'),
       homeQuickLink('history', 'Моя история', 'history')
     )
@@ -3694,13 +3714,83 @@ function imageUpload({ title, image, onImage, onRemove, capture = 'environment' 
     h('button', {
       className: 'is-camera',
       attrs: { type: 'button', 'aria-label': image ? 'Переснять фотографию камерой' : 'Открыть камеру и сделать фотографию' },
-      on: { click: () => cameraInput.click() }
+      on: {
+        click: async () => {
+          const opened = await openDeviceCamera(onImage, capture);
+          if (!opened) {
+            notify('Встроенная камера недоступна — открою камеру или галерею устройства');
+            if (typeof cameraInput.showPicker === 'function') cameraInput.showPicker();
+            else cameraInput.click();
+          }
+        }
+      }
     }, image ? 'Переснять камерой' : 'Открыть камеру'),
     image && onRemove
       ? h('button', { className: 'is-danger', attrs: { type: 'button' }, on: { click: onRemove } }, 'Удалить')
       : null
   );
   return h('div', { className: 'premium-upload-wrap' }, input, cameraInput, upload, actions);
+}
+
+async function openDeviceCamera(onImage, facingMode = 'environment') {
+  if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) return false;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: facingMode || 'environment' }, width: { ideal: 1440 }, height: { ideal: 1920 } }
+    });
+  } catch (error) {
+    if (error?.name === 'NotAllowedError') notify('Разрешите доступ к камере в настройках Telegram и откройте её снова');
+    else if (error?.name === 'NotFoundError') notify('Камера не найдена на этом устройстве');
+    return false;
+  }
+
+  const overlay = h('div', { className: 'camera-capture', attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Съёмка ладони' } });
+  const video = h('video', { className: 'camera-capture__video', attrs: { autoplay: true, muted: true, playsinline: true } });
+  video.srcObject = stream;
+  const stop = () => {
+    stream?.getTracks?.().forEach((track) => track.stop());
+    overlay.remove();
+  };
+  const close = h('button', {
+    className: 'camera-capture__close',
+    attrs: { type: 'button', 'aria-label': 'Закрыть камеру' },
+    on: { click: stop }
+  }, '×');
+  const captureButton = h('button', {
+    className: 'camera-capture__shutter',
+    attrs: { type: 'button', 'aria-label': 'Сфотографировать ладонь' },
+    on: {
+      click: async () => {
+        if (!video.videoWidth || !video.videoHeight) return notify('Камера ещё настраивает изображение');
+        const scale = Math.min(1, 1440 / Math.max(video.videoWidth, video.videoHeight));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+        canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+        canvas.getContext('2d', { alpha: false }).drawImage(video, 0, 0, canvas.width, canvas.height);
+        const data = canvas.toDataURL('image/webp', 0.82);
+        stop();
+        onImage(data);
+        pulse('medium');
+        render();
+      }
+    }
+  }, h('span'));
+  overlay.append(
+    video,
+    h('div', { className: 'camera-capture__shade' }),
+    close,
+    h('div', { className: 'camera-capture__guide' },
+      h('strong', { text: 'Поместите всю ладонь в контур' }),
+      h('p', { text: 'Расслабьте пальцы, держите камеру прямо и избегайте бликов.' }),
+      h('span', { attrs: { 'aria-hidden': 'true' } })
+    ),
+    captureButton
+  );
+  document.body.append(overlay);
+  try { await video.play(); } catch {}
+  return true;
 }
 
 async function prepareImage(file) {
@@ -6645,15 +6735,6 @@ function toggleFavorite(id) {
   render();
 }
 
-async function shareResult(result) {
-  const text = `${result.type}: ${result.title}\n\n${result.body}\n\nNastardamus`;
-  try {
-    if (navigator.share) await navigator.share({ title: result.type, text });
-    else await navigator.clipboard.writeText(text);
-    notify('Результат готов к отправке');
-  } catch (error) { if (error?.name !== 'AbortError') notify('Не удалось поделиться'); }
-}
-
 function horoscopeScreen() {
   if (subscriptionRequired()) {
     return shell([
@@ -6708,7 +6789,16 @@ async function createDailyHoroscope() {
       name: firstName(),
       gender: state.userGender,
       age: Number(state.profile.age) || 18,
-      city: state.profile.city
+      city: state.profile.city,
+      timezone: state.profile.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+      birthDate: state.profile.birthDate || '',
+      birthTime: state.profile.birthTime || '',
+      birthTimeKnown: state.profile.birthTimeKnown === true,
+      interests: state.profile.interests || [],
+      goals: state.profile.goals || [],
+      natalChart: state.profile.natalChart || null,
+      dayNumber: String(date).replace(/\D/g, '').split('').reduce((sum, digit) => sum + Number(digit), 0) % 9 || 9,
+      variationKey: `${Number(tg?.initDataUnsafe?.user?.id) || firstName()}:${date}`.slice(0, 40)
     }, '', { structured: true });
     const saved = {
       id: uniqueId('horoscope'), kind: 'horoscope', mode: 'daily', type: 'Гороскоп дня',
@@ -6933,9 +7023,11 @@ function profileCabinetHero(wallet, vip) {
 
 function profileSectionTabs({ wallet, vip, giftCount }) {
   const ready = state.walletStatus === 'ready';
+  const missionCount = state.campaigns.filter((item) => !item.entry).length;
   const sections = [
     { id: 'wallet', icon: 'coin', label: 'SILARUM', value: ready ? formatMoney(wallet.available) : '—' },
     { id: 'access', icon: 'sparkle', label: 'Доступ', value: vip ? 'VIP' : 'Базовый' },
+    { id: 'missions', icon: 'briefcase', label: 'Задания', value: state.campaignsStatus === 'ready' ? String(missionCount) : 'Новое' },
     { id: 'gifts', icon: 'wheel', label: 'Дары', value: String(giftCount) },
     { id: 'settings', icon: 'orbit', label: 'Среда', value: `${state.locale.toLocaleUpperCase('en')} · Настройки` }
   ];
@@ -6955,18 +7047,160 @@ function profileSectionTabs({ wallet, vip, giftCount }) {
 }
 
 function selectProfileSection(section) {
-  if (!['wallet', 'access', 'gifts', 'settings'].includes(section) || state.profileSection === section) return;
+  if (!['wallet', 'access', 'missions', 'gifts', 'settings'].includes(section) || state.profileSection === section) return;
   state.profileSection = section;
   pulse();
   render();
+  if (section === 'missions') loadCampaigns();
 }
 
 function profileSectionContent(context) {
   if (state.profileSection === 'access') return profileAccessPanel(context.vip);
+  if (state.profileSection === 'missions') return profileMissionsPanel();
   if (state.profileSection === 'gifts') return profileGiftsPanel(context.entitlements);
   if (state.profileSection === 'settings') return profileSettingsPanel();
   return profileWalletPanel(context.wallet, context.ledger);
 }
+
+async function loadCampaigns({ force = false } = {}) {
+  if (!tg?.initData || (!force && ['loading', 'ready'].includes(state.campaignsStatus))) return;
+  state.campaignsStatus = 'loading';
+  if (state.screen === 'profile' && state.profileSection === 'missions') render();
+  try {
+    const data = await api('/api/proxy', { method: 'POST', body: { action: 'list_campaigns' } });
+    state.campaigns = Array.isArray(data.campaigns) ? data.campaigns : [];
+    state.campaignsStatus = 'ready';
+  } catch {
+    state.campaignsStatus = 'error';
+  }
+  if (state.screen === 'profile' && state.profileSection === 'missions') render();
+}
+
+function profileMissionsPanel() {
+  const kind = state.campaignKind;
+  const items = state.campaigns.filter((item) => item.kind === kind);
+  return [
+    profilePanelHead('НАГРАДЫ ЗА ДЕЙСТВИЯ', 'Задания и квесты'),
+    h('div', { className: 'profile-panel-body campaign-panel' },
+      h('p', { className: 'campaign-panel__intro', text: 'Выполняйте открытые задания, участвуйте в квестах и получайте SILARUM. Количество мест и победитель проверяются сервером.' }),
+      h('div', { className: 'premium-segmented-choice campaign-segments' },
+        h('button', { className: kind === 'task' ? 'is-active' : '', attrs: { type: 'button' }, on: { click: () => { state.campaignKind = 'task'; render(); } } }, 'Задания'),
+        h('button', { className: kind === 'quest' ? 'is-active' : '', attrs: { type: 'button' }, on: { click: () => { state.campaignKind = 'quest'; render(); } } }, 'Квесты')
+      ),
+      state.campaignsStatus === 'loading' ? loadingCard('Собираем доступные задания…') : null,
+      state.campaignsStatus === 'error' ? h('div', { className: 'profile-state-message' }, h('p', { text: 'Задания временно не загрузились.' }), MysticButton({ text: 'Повторить', icon: 'orbit', variant: 'outline', onClick: () => loadCampaigns({ force: true }) })) : null,
+      state.campaignsStatus === 'ready' && !items.length
+        ? h('div', { className: 'profile-quiet-empty' }, h('span', { text: kind === 'quest' ? '◇' : '✦' }), h('p', { text: kind === 'quest' ? 'Новый квест появится здесь после публикации.' : 'Все доступные задания уже выполнены или закончились.' }))
+        : h('div', { className: 'campaign-list' }, items.map(campaignCard))
+    )
+  ];
+}
+
+function campaignCard(item) {
+  const answered = Boolean(item.entry);
+  const reward = item.kind === 'quest' ? item.prize : item.reward;
+  const answer = state.campaignAnswers[item.id] || '';
+  const art = item.posterUrl || (item.kind === 'quest' ? '/ui-kit/assets/campaigns/quest.webp' : '/ui-kit/assets/campaigns/task.webp');
+  const resultLabel = item.entry?.status === 'winner' ? 'Вы победили' : item.entry?.status === 'incorrect' ? 'Ответ принят' : answered ? 'Выполнено' : '';
+  return h('article', { className: `campaign-card campaign-card--${item.kind}${answered ? ' is-complete' : ''}` },
+    h('div', { className: 'campaign-card__art' }, h('img', { attrs: { src: art, alt: '', loading: 'lazy' } }), h('span', { text: item.kind === 'quest' ? 'КВЕСТ' : 'ЗАДАНИЕ' })),
+    h('div', { className: 'campaign-card__body' },
+      h('div', { className: 'campaign-card__meta' },
+        h('span', { text: `${Math.max(0, Number(item.remainingSlots))} из ${Math.max(0, Number(item.totalSlots))} мест` }),
+        reward > 0 ? h('b', { text: `${formatMoney(reward)} SILARUM` }) : null
+      ),
+      h('h3', { text: item.title }),
+      h('p', { text: item.description }),
+      item.actionUrl && !answered ? h('a', { className: 'campaign-card__link', attrs: { href: item.actionUrl, target: '_blank', rel: 'noopener noreferrer' } }, 'Перейти к выполнению ↗') : null,
+      item.kind === 'quest' && !answered ? h('label', { className: 'campaign-card__answer' },
+        h('span', { text: 'Ваш ответ' }),
+        textInput({ value: answer, placeholder: 'Введите точный ответ', onInput: (value) => { state.campaignAnswers[item.id] = value; }, attrs: { maxlength: 180 } })
+      ) : null,
+      answered ? h('div', { className: 'campaign-card__result', text: resultLabel }) : MysticButton({
+        text: item.kind === 'quest' ? 'Отправить ответ' : 'Отметить выполненным',
+        icon: item.kind === 'quest' ? 'send' : 'sparkle', variant: 'gold', disabled: state.busy,
+        onClick: () => submitCampaign(item)
+      })
+    )
+  );
+}
+
+async function submitCampaign(item) {
+  if (state.busy) return;
+  const answer = String(state.campaignAnswers[item.id] || '').trim();
+  if (item.kind === 'quest' && answer.length < 1) return notify('Введите ответ на квест');
+  state.busy = true; render();
+  try {
+    const data = await api('/api/proxy', { method: 'POST', body: { action: 'submit_campaign', campaignId: item.id, answer } });
+    const submission = data.submission || {};
+    notify(submission.status === 'winner' ? 'Вы первыми дали правильный ответ — приз начислен' : submission.status === 'completed' ? 'Задание выполнено — награда начислена' : 'Ответ принят');
+    await Promise.all([loadCampaigns({ force: true }), loadWallet({ force: true })]);
+  } catch (error) { notify(apiErrorMessage(error)); }
+  finally { state.busy = false; render(); }
+}
+
+function luckyStoneScreen() {
+  const match = state.luckyMatch;
+  const viewerId = Number(tg?.initDataUnsafe?.user?.id || 0);
+  const active = match?.status === 'active';
+  const completed = match?.status === 'completed';
+  const isA = Number(match?.playerA) === viewerId;
+  const myScore = isA ? Number(match?.scoreA || 0) : Number(match?.scoreB || 0);
+  const theirScore = isA ? Number(match?.scoreB || 0) : Number(match?.scoreA || 0);
+  const chooseTurn = active && Number(match.chooser) === viewerId && !match.prediction;
+  const rollTurn = active && Number(match.roller) === viewerId && Boolean(match.prediction);
+  return shell([
+    screenHeader('Счастливый камень', 'Закрытый поединок до пяти очков', 'profile'),
+    h('section', { className: 'lucky-stone-hero' },
+      h('img', { attrs: { src: '/ui-kit/assets/campaigns/lucky-stone.webp', alt: '', draggable: 'false' } }),
+      h('div', {}, h('p', { className: 'premium-kicker', text: 'ПОЕДИНОК ИНТУИЦИИ' }), h('h1', { text: 'Угадайте сторону шестёрки' }), h('p', { text: 'Один выбирает «больше 6» или «меньше 6», второй бросает два камня. Затем роли меняются. Побеждает первый, кто наберёт пять очков.' }))
+    ),
+    h('div', { className: 'lucky-stone-notice' }, h('strong', { text: 'Свободная игра без ставок' }), h('p', { text: 'SILARUM не списываются и не передаются между игроками. Это честный дружеский поединок без денежного риска.' })),
+    !match && state.luckyStatus !== 'loading' ? MysticButton({ text: 'Найти соперника', icon: 'sparkle', variant: 'primary', onClick: joinLuckyMatch }) : null,
+    state.luckyStatus === 'loading' ? loadingCard('Ищем свободный круг…') : null,
+    match?.status === 'waiting' ? h('section', { className: 'lucky-arena is-waiting' }, h('span', { className: 'lucky-orbit' }), h('strong', { text: 'Ожидаем второго игрока' }), h('p', { text: 'Оставьте экран открытым — круг обновляется автоматически.' })) : null,
+    active || completed ? h('section', { className: `lucky-arena${completed ? ' is-complete' : ''}` },
+      h('div', { className: 'lucky-score' }, h('span', {}, h('small', { text: 'ВЫ' }), h('strong', { text: String(myScore) })), h('b', { text: 'до 5' }), h('span', {}, h('small', { text: 'СОПЕРНИК' }), h('strong', { text: String(theirScore) }))),
+      match.lastRoll ? h('div', { className: 'lucky-dice', attrs: { 'aria-live': 'polite' } }, h('i', { text: String(match.lastRoll.dice?.[0] || '—') }), h('i', { text: String(match.lastRoll.dice?.[1] || '—') }), h('strong', { text: match.lastRoll.neutral ? 'Ровно 6 — переброс' : `Сумма: ${match.lastRoll.sum}` })) : h('div', { className: 'lucky-dice is-idle' }, h('i', { text: '✦' }), h('i', { text: '✦' })),
+      chooseTurn ? h('div', { className: 'lucky-actions' }, h('strong', { text: 'Ваш выбор' }), h('p', { text: 'Какую сторону шестёрки покажут два камня?' }), MysticButton({ text: 'Больше 6', icon: 'sparkle', variant: 'gold', onClick: () => playLucky('predict', 'higher') }), MysticButton({ text: 'Меньше 6', icon: 'sparkle', variant: 'outline', onClick: () => playLucky('predict', 'lower') })) : null,
+      active && Number(match.chooser) === viewerId && match.prediction ? h('p', { className: 'lucky-turn-note', text: `Вы выбрали: ${match.prediction === 'higher' ? 'больше 6' : 'меньше 6'}. Соперник бросает.` }) : null,
+      rollTurn ? h('div', { className: 'lucky-actions' }, h('strong', { text: 'Ваш бросок' }), h('p', { text: `Соперник выбрал: ${match.prediction === 'higher' ? 'больше 6' : 'меньше 6'}.` }), MysticButton({ text: 'Бросить камни', icon: 'sparkle', variant: 'primary', onClick: () => playLucky('roll') })) : null,
+      active && Number(match.roller) === viewerId && !match.prediction ? h('p', { className: 'lucky-turn-note', text: 'Соперник выбирает сторону шестёрки.' }) : null,
+      completed ? h('div', { className: 'lucky-result' }, h('strong', { text: Number(match.winner) === viewerId ? 'Вы выиграли поединок' : 'В этот раз победил соперник' }), h('p', { text: 'Счёт закрыт честно на сервере. Можно открыть новый круг.' }), MysticButton({ text: 'Новый соперник', icon: 'orbit', variant: 'gold', onClick: newLuckyMatch })) : null
+    ) : null,
+    match?.playerB ? liveDialogue({ messages: state.luckyMessages.map((message) => ({ ...message, role: 'user' })), draft: state.luckyDraft, onInput: (value) => { state.luckyDraft = value; }, onSend: sendLuckyMessage, sending: state.luckySending, placeholder: 'Сообщение сопернику…', title: 'Чат поединка', subtitle: 'виден только двум участникам', group: true, viewerId }) : null,
+    sectionGuide('info', 'Как проходит игра', 'Матч и броски создаются на сервере, поэтому результат нельзя изменить с устройства.', ['Первый игрок выбирает сторону шестёрки.', 'Второй бросает два камня; ровно 6 даёт переброс.', 'После хода роли меняются. Первый до пяти очков побеждает.'])
+  ], { active: 'profile', reading: true });
+}
+
+async function luckyRequest(action, extra = {}) { return api('/api/proxy', { method: 'POST', body: { action, matchId: state.luckyMatch?.id, ...extra } }); }
+async function joinLuckyMatch() {
+  if (!tg?.initData) return notify('Поиск соперника доступен внутри Telegram');
+  state.luckyStatus = 'loading'; render();
+  try { const joined = await luckyRequest('join_lucky_match'); const data = await api('/api/proxy', { method: 'POST', body: { action: 'get_lucky_match', matchId: joined.matchId } }); state.luckyMatch = data.match; state.luckyMessages = data.messages || []; state.luckyStatus = 'ready'; }
+  catch (error) { state.luckyStatus = 'error'; notify(apiErrorMessage(error)); }
+  render();
+}
+async function refreshLuckyMatch({ silent = false } = {}) {
+  if (!state.luckyMatch?.id || state.luckySending) return;
+  try { const data = await luckyRequest('get_lucky_match'); state.luckyMatch = data.match; state.luckyMessages = data.messages || []; state.luckyStatus = 'ready'; if (!silent) render(); }
+  catch { if (!silent) notify('Не удалось обновить поединок'); }
+  if (silent && state.screen === 'lucky-stone') render();
+}
+async function playLucky(turnAction, prediction = '') {
+  if (state.busy) return; state.busy = true; render();
+  try { const data = await luckyRequest('play_lucky_match', { turnAction, prediction: prediction || undefined }); state.luckyMatch = data.match; state.luckyMessages = data.messages || []; pulse('medium'); }
+  catch (error) { notify(apiErrorMessage(error)); }
+  finally { state.busy = false; render(); }
+}
+async function sendLuckyMessage() {
+  const message = state.luckyDraft.trim(); if (!message || state.luckySending) return;
+  state.luckySending = true; render();
+  try { const data = await luckyRequest('send_lucky_message', { message, senderName: firstName() }); state.luckyDraft = ''; state.luckyMatch = data.match; state.luckyMessages = data.messages || []; }
+  catch (error) { notify(apiErrorMessage(error)); }
+  finally { state.luckySending = false; render(); }
+}
+function newLuckyMatch() { state.luckyMatch = null; state.luckyMessages = []; state.luckyDraft = ''; state.luckyStatus = 'idle'; render(); }
 
 function profilePanelHead(kicker, title, action = null) {
   return h('header', { className: 'profile-panel-head' },
@@ -7106,6 +7340,7 @@ function profileSettingsPanel() {
         profileSettingLink('profile', 'Образ профиля', 'Сменить фото', () => openProfileOverlay('avatar')),
         profileSettingLink('orbit', 'Гороскоп дня', state.horoscope.enabled ? 'Ежедневный ритм включён' : 'Выбрать знак и ритм', () => navigate('horoscope')),
         profileSettingLink('history', 'Память, звук и графика', 'Приватность и атмосфера', () => navigate('space-settings')),
+        profileSettingLink('sparkle', 'Счастливый камень', 'Свободный поединок без ставок', () => navigate('lucky-stone')),
         profileSettingLink('info', 'Связь с поддержкой', 'Вопросы по приложению и оплате', () => navigate('support'))
       )
     )
@@ -7613,7 +7848,7 @@ async function markTopupSent(orderId) {
 }
 
 function ledgerRow(entry) {
-  const labels = { purchase: 'Покупка SILARUM', service_charge: 'Оплата услуги', wheel_prize: 'Приз Колеса', referral_commission: 'Партнёрское начисление', withdrawal_hold: 'Заявка на обмен', withdrawal_paid: 'Обмен выполнен', withdrawal_release: 'Средства возвращены', adjustment: 'Корректировка' };
+  const labels = { purchase: 'Покупка SILARUM', service_charge: 'Оплата услуги', campaign_reward: 'Награда за активность', wheel_prize: 'Приз Колеса', referral_commission: 'Партнёрское начисление', withdrawal_hold: 'Заявка на обмен', withdrawal_paid: 'Обмен выполнен', withdrawal_release: 'Средства возвращены', adjustment: 'Корректировка' };
   return MysticCard({ className: 'premium-ledger-row', children: [
     Icon(Number(entry.amount) >= 0 ? 'coin' : 'payment', { size: 24 }),
     h('span', {}, h('strong', { text: labels[entry.type] || 'Операция' }), h('small', { text: formatDate(entry.createdAt) })),
@@ -7843,7 +8078,18 @@ function apiErrorMessage(error) {
     oracle_room_turn_changed: 'Разговор уже продолжился. Обновите комнату.',
     oracle_palm_unavailable: 'Не удалось сохранить ладонь. Попробуйте другой снимок.',
     oracle_room_unavailable: 'Комната временно недоступна. Попробуйте открыть её ещё раз.',
-    oracle_room_answer_unavailable: 'Эзотериум временно не ответил. Сообщение сохранено — повторите вопрос.'
+    oracle_room_answer_unavailable: 'Эзотериум временно не ответил. Сообщение сохранено — повторите вопрос.',
+    campaign_not_found: 'Задание больше не найдено.',
+    campaign_not_active: 'Это задание пока не опубликовано.',
+    campaign_not_started: 'Задание ещё не началось.',
+    campaign_ended: 'Срок задания завершён.',
+    campaign_full: 'Все доступные места уже заняты.',
+    lucky_match_not_found: 'Поединок больше не найден.',
+    lucky_match_forbidden: 'Этот поединок принадлежит другим участникам.',
+    lucky_match_not_active: 'Поединок уже завершён.',
+    lucky_not_your_turn: 'Сейчас ход соперника. Дождитесь обновления круга.',
+    lucky_prediction_required: 'Сначала соперник должен выбрать сторону шестёрки.',
+    lucky_invalid_prediction: 'Выберите «больше 6» или «меньше 6».'
   };
   return messages[error?.message] || 'Не удалось выполнить действие. Повторите попытку немного позже.';
 }
@@ -8001,7 +8247,8 @@ function render() {
     'invite-start': inviteStartScreen, 'invite-compose': inviteComposerScreen, invitation: invitationScreen,
     space: personalSpaceScreen, 'space-event': personalEventScreen, 'space-event-form': personalEventFormScreen,
     'space-goal': personalGoalScreen, 'space-goal-form': personalGoalFormScreen, 'space-consultation': personalConsultationScreen, 'space-settings': personalSettingsScreen,
-    history: historyScreen, profile: profileScreen, topup: topupScreen, withdrawal: withdrawalScreen, support: supportScreen
+    history: historyScreen, profile: profileScreen, topup: topupScreen, withdrawal: withdrawalScreen,
+    support: supportScreen, 'lucky-stone': luckyStoneScreen
   };
   if (!routes[state.screen]) state.screen = 'home';
   mount.dataset.screen = state.screen;
@@ -8051,12 +8298,12 @@ function updateVisibleClocks() {
   document.querySelectorAll('[data-celestial-date]').forEach((node) => { node.textContent = parts.date; });
 }
 
-function loadTelegramData({ force = false } = {}) {
+async function loadTelegramData({ force = false, initialHydration = false } = {}) {
   if (!configureTelegram()) return false;
   loadPublicConfig();
   loadWallet({ force });
-  loadPreferences();
-  loadDailyGreeting({ force });
+  await loadPreferences({ forceRender: !initialHydration });
+  loadDailyGreeting({ force, forceRender: !initialHydration });
   loadReadingCatalog();
   loadCloudReadings({ force });
   loadPersonalSpace({ force });
@@ -8066,16 +8313,31 @@ function loadTelegramData({ force = false } = {}) {
   return true;
 }
 
-render();
-initializeTonWallet();
-hideBootScreen();
-if (!loadTelegramData()) {
-  document.getElementById('telegram-web-app-sdk')?.addEventListener(
-    'load',
-    () => loadTelegramData({ force: true }),
-    { once: true }
-  );
+async function bootstrapApp() {
+  render();
+  initializeTonWallet();
+  if (!configureTelegram()) {
+    hideBootScreen();
+    document.getElementById('telegram-web-app-sdk')?.addEventListener(
+      'load',
+      async () => {
+        await loadTelegramData({ force: true, initialHydration: true });
+        render();
+      },
+      { once: true }
+    );
+    return;
+  }
+  const started = await loadTelegramData({ initialHydration: true });
+  render();
+  hideBootScreen();
+  if (!started) throw new Error('Telegram initialization was interrupted');
 }
+
+bootstrapApp().catch(() => {
+  render();
+  hideBootScreen();
+});
 
 window.setInterval(() => {
   if (
@@ -8088,6 +8350,12 @@ window.setInterval(() => {
     loadOracleRoom({ silent: true });
   }
 }, 1000);
+
+window.setInterval(() => {
+  if (state.screen === 'lucky-stone' && state.luckyMatch?.id && document.visibilityState !== 'hidden') {
+    refreshLuckyMatch({ silent: true });
+  }
+}, 3500);
 
 window.setInterval(updateVisibleClocks, 1000);
 document.addEventListener('visibilitychange', () => {

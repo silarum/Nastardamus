@@ -659,7 +659,7 @@ test('daily horoscope uses DeepSeek', async () => {
         assert.match(request.body.messages[1].content, /Искательница/i);
         assert.match(request.body.messages[1].content, /34/);
         assert.match(request.body.messages[1].content, /Казань/);
-        assert.match(request.body.messages[1].content, /130–180 слов/i);
+        assert.match(request.body.messages[1].content, /90–130 слов/i);
         assert.match(request.body.messages[1].content, /ПРОФИЛЬ_JSON/i);
         assert.match(request.body.messages[1].content, /не изображай расчёт текущих транзитов/i);
     } finally {

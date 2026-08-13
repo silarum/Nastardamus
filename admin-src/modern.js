@@ -31,7 +31,9 @@ const modernState = {
   pagination: { page: 1, pages: 1, total: 0, limit: 20 },
   userCapabilities: {},
   selectedUser: null,
-  auditLoaded: false
+  auditLoaded: false,
+  campaigns: [],
+  campaignsLoaded: false
 };
 
 function adminDate(value, withTime = true) {
@@ -237,6 +239,64 @@ async function loadAudit() {
   }
 }
 
+function campaignForm() { return document.getElementById('campaign-form'); }
+
+function syncCampaignKind() {
+  const form = campaignForm();
+  if (!form) return;
+  const quest = form.elements.kind.value === 'quest';
+  form.querySelectorAll('[data-campaign-quest]').forEach((node) => { node.hidden = !quest; });
+  form.querySelectorAll('[data-campaign-task]').forEach((node) => { node.hidden = quest; });
+}
+
+function resetCampaignForm() {
+  const form = campaignForm();
+  if (!form) return;
+  form.reset(); form.elements.id.value = '';
+  form.elements.totalSlots.value = '1000'; form.elements.remainingSlots.value = '1000';
+  form.elements.reward.value = '1'; form.elements.prize.value = '10';
+  const preview = document.getElementById('campaign-poster-preview');
+  if (preview) { preview.hidden = true; preview.removeAttribute('src'); }
+  syncCampaignKind();
+}
+
+function renderCampaigns() {
+  const list = document.getElementById('campaign-admin-list');
+  if (!list) return;
+  if (!modernState.campaigns.length) { list.innerHTML = '<p class="empty-state">Пока нет заданий и квестов. Создайте первую запись в форме выше.</p>'; return; }
+  list.innerHTML = modernState.campaigns.map((item) => `<article class="campaign-admin-row" data-campaign-id="${escapeHtml(item.id)}">
+    ${item.poster_url ? `<img src="${escapeHtml(item.poster_url)}" alt="">` : '<span class="campaign-admin-seal">✦</span>'}
+    <span><small>${item.kind === 'quest' ? 'КВЕСТ' : 'ЗАДАНИЕ'} · ${escapeHtml(item.status)}</small><strong>${escapeHtml(item.title)}</strong><em>${Number(item.remaining_slots)} из ${Number(item.total_slots)} мест · ${adminSilarum(item.kind === 'quest' ? item.prize_units : item.reward_units)}</em></span>
+    <span class="campaign-admin-actions"><button type="button" class="secondary-button" data-edit-campaign="${escapeHtml(item.id)}">Изменить</button><button type="button" class="danger" data-archive-campaign="${escapeHtml(item.id)}">В архив</button></span>
+  </article>`).join('');
+}
+
+async function loadCampaigns() {
+  const list = document.getElementById('campaign-admin-list');
+  if (list) list.innerHTML = '<p class="empty-state">Загружаем задания и квесты…</p>';
+  try { const data = await api('/api/admin?campaigns=1'); modernState.campaigns = data.campaigns || []; modernState.campaignsLoaded = true; renderCampaigns(); }
+  catch { if (list) list.innerHTML = '<p class="empty-state">Не удалось загрузить активности.</p>'; }
+}
+
+function editCampaign(id) {
+  const item = modernState.campaigns.find((campaign) => campaign.id === id); const form = campaignForm();
+  if (!item || !form) return;
+  form.elements.id.value = item.id; form.elements.kind.value = item.kind; form.elements.status.value = item.status;
+  form.elements.title.value = item.title || ''; form.elements.description.value = item.description || '';
+  form.elements.actionUrl.value = item.action_url || ''; form.elements.totalSlots.value = item.total_slots;
+  form.elements.remainingSlots.value = item.remaining_slots; form.elements.reward.value = Number(item.reward_units || 0) / 100;
+  form.elements.prize.value = Number(item.prize_units || 0) / 100; form.elements.answer.value = '';
+  syncCampaignKind(); form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function fileDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) return resolve('');
+    if (file.size > 2 * 1024 * 1024) return reject(new Error('poster_too_large'));
+    const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || '')); reader.onerror = reject; reader.readAsDataURL(file);
+  });
+}
+
 const activateLegacyTab = activateTab;
 activateTab = function activateModernTab(name) {
   const effective = ['growth', 'economy'].includes(name) ? 'settings' : name;
@@ -260,6 +320,7 @@ activateTab = function activateModernTab(name) {
   if (name === 'users' && !modernState.users.length) loadUsers(1);
   if (name === 'audit' && !modernState.auditLoaded) loadAudit();
   if (name === 'payments') loadPayments();
+  if (name === 'campaigns' && !modernState.campaignsLoaded) loadCampaigns();
   try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
 };
 
@@ -306,6 +367,16 @@ document.addEventListener('click', async (event) => {
       await refreshSelectedUser();
     } catch { notify('Не удалось сбросить лимиты'); }
   }
+  const editButton = event.target.closest('[data-edit-campaign]');
+  if (editButton) editCampaign(editButton.dataset.editCampaign);
+  const archiveButton = event.target.closest('[data-archive-campaign]');
+  if (archiveButton) {
+    if (!window.confirm('Переместить активность в архив?')) return;
+    archiveButton.disabled = true;
+    try { await api('/api/admin', 'POST', { campaignAction: 'archive', campaignId: archiveButton.dataset.archiveCampaign }); notify('Активность перемещена в архив'); await loadCampaigns(); }
+    catch { notify('Не удалось переместить в архив'); }
+    finally { archiveButton.disabled = false; }
+  }
 });
 
 document.getElementById('users-filter-form')?.addEventListener('submit', (event) => { event.preventDefault(); loadUsers(1); });
@@ -313,6 +384,29 @@ document.getElementById('users-prev')?.addEventListener('click', () => loadUsers
 document.getElementById('users-next')?.addEventListener('click', () => loadUsers(Math.min(modernState.pagination.pages, modernState.pagination.page + 1)));
 document.getElementById('refresh-overview-button')?.addEventListener('click', loadAdminOverview);
 document.getElementById('refresh-audit-button')?.addEventListener('click', loadAudit);
+document.getElementById('refresh-campaigns')?.addEventListener('click', loadCampaigns);
+document.getElementById('reset-campaign-form')?.addEventListener('click', resetCampaignForm);
+document.getElementById('campaign-form')?.elements.kind?.addEventListener('change', syncCampaignKind);
+document.getElementById('campaign-form')?.elements.totalSlots?.addEventListener('input', (event) => { const form = campaignForm(); if (!form.elements.id.value) form.elements.remainingSlots.value = event.currentTarget.value; });
+document.getElementById('campaign-form')?.elements.poster?.addEventListener('change', async (event) => {
+  const preview = document.getElementById('campaign-poster-preview');
+  try { const data = await fileDataUrl(event.currentTarget.files?.[0]); if (data && preview) { preview.src = data; preview.hidden = false; } }
+  catch { notify('Афиша должна быть изображением до 2 МБ'); event.currentTarget.value = ''; }
+});
+document.getElementById('campaign-form')?.addEventListener('submit', async (event) => {
+  event.preventDefault(); const form = event.currentTarget; const button = form.querySelector('button[type="submit"]'); button.disabled = true;
+  try {
+    const posterDataUrl = await fileDataUrl(form.elements.poster.files?.[0]);
+    const current = modernState.campaigns.find((item) => item.id === form.elements.id.value);
+    const campaign = { id: form.elements.id.value || undefined, kind: form.elements.kind.value, status: form.elements.status.value,
+      title: form.elements.title.value.trim(), description: form.elements.description.value.trim(), actionUrl: form.elements.actionUrl.value.trim(),
+      totalSlots: Number(form.elements.totalSlots.value), remainingSlots: Number(form.elements.remainingSlots.value), reward: Number(form.elements.reward.value || 0),
+      prize: Number(form.elements.prize.value || 0), answer: form.elements.answer.value.trim(), posterDataUrl, posterUrl: current?.poster_url || '' };
+    if (campaign.kind === 'quest' && !campaign.id && !campaign.answer) throw new Error('answer_required');
+    await api('/api/admin', 'POST', { campaignAction: 'save', campaign }); notify('Активность сохранена'); resetCampaignForm(); await loadCampaigns();
+  } catch (error) { notify(error.message === 'answer_required' ? 'Для нового квеста укажите правильный ответ' : 'Не удалось сохранить активность'); }
+  finally { button.disabled = false; }
+});
 
 document.getElementById('user-drawer')?.addEventListener('submit', async (event) => {
   event.preventDefault();

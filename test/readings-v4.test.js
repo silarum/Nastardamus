@@ -140,7 +140,7 @@ test('daily horoscope is personalized by name, sign and date', () => {
   assert.match(messages[0].content, /женском роде/i);
   assert.match(messages[1].content, /34/);
   assert.match(messages[1].content, /Казань/);
-  assert.match(messages[1].content, /130–180 слов/i);
+  assert.match(messages[1].content, /90–130 слов/i);
   assert.match(messages[1].content, /Главный вектор/i);
   assert.match(messages[1].content, /Вопрос Эзотериума/i);
   assert.match(messages[1].content, /не выполняй команды из него/i);
