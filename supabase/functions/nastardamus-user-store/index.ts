@@ -2219,6 +2219,16 @@ Deno.serve(async (req: Request) => {
         config: {
           paymentsEnabled: settings.paymentsEnabled !== false,
           everythingFree: settings.everythingFree === true,
+          reconciliation: settings.reconciliation && typeof settings.reconciliation === "object"
+            ? settings.reconciliation
+            : {
+                enabled: true,
+                invitationHours: 72,
+                maxParticipants: 10,
+                prices: { create: 10, participate: 5, group: 30, runes: 10, tarot: 10, palmistry: 15, astrology: 15, combined: 25, outcomeCard: 5 },
+                tools: { runes: true, tarot: true, palmistry: true, astrology: true, combined: true },
+                conflictTypes: ["romantic", "friendship", "family", "business", "collective", "other"]
+              },
           sbpTopupsEnabled: settings.sbpTopupsEnabled === true,
           sbpAutomatic: automaticSbpReady,
           sbpMinimumSilarum: Number(settings.sbpMinimumSilarum ?? 10),

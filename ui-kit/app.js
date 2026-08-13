@@ -27,6 +27,10 @@ import {
 } from '../lib/daily-greeting.js';
 import { DAILY_FREE_SERVICES, isDailyFreeService, recommendedDailyServices } from '../lib/daily-lifecycle.js';
 import { DIALOGUE_DEFAULT_CATALOG, dialogueSectionForReading } from '../lib/dialogue-policy.js';
+import {
+  RECONCILIATION_CONFLICT_TYPES, RECONCILIATION_REASONS,
+  RECONCILIATION_GOALS, RECONCILIATION_TOOLS
+} from '../lib/reconciliation.js';
 import { THEME, TonConnectUI } from '@tonconnect/ui';
 
 let tg = null;
@@ -182,7 +186,8 @@ const WORLD_META = Object.freeze({
   tarot: { background: '/images/worlds/tarot.webp', themeColor: '#100709' },
   natal: { background: '/images/worlds/natal.webp', themeColor: '#050c16' },
   sports: { background: '/images/worlds/sports.webp', themeColor: '#030a0d' },
-  amur: { background: '/images/worlds/amur.webp', themeColor: '#160a10' }
+  amur: { background: '/images/worlds/amur.webp', themeColor: '#160a10' },
+  reconciliation: { background: '/images/reconciliation/lounge-v1.webp', themeColor: '#12201f' }
 });
 
 function worldForScreen(screen = 'core') {
@@ -194,6 +199,7 @@ function worldForScreen(screen = 'core') {
   if (screen === 'natal' || screen === 'natal-result' || screen === 'horoscope') return 'natal';
   if (screen === 'sports') return 'sports';
   if (screen.startsWith('amur') || screen.startsWith('compatibility') || screen.startsWith('invite') || screen === 'invitation' || screen === 'photo-compat') return 'amur';
+  if (screen.startsWith('reconciliation')) return 'reconciliation';
   if (screen.startsWith('palm') || screen === 'ritual' || screen === 'photo-energy' || screen === 'photo-damage' || screen === 'photo-result') return 'palmistry';
   return 'core';
 }
@@ -206,11 +212,16 @@ const requestedInvitationToken = /^[a-f0-9]{32}$/.test(params.get('invitation') 
 const requestedOracleRoomToken = /^[a-f0-9]{32}$/.test(params.get('room') || '')
   ? params.get('room')
   : '';
+const requestedReconciliationToken = /^[a-f0-9]{32}$/.test(params.get('reconciliation') || '')
+  ? params.get('reconciliation')
+  : '';
 const requestedInviteGoal = ['love', 'friendship', 'business', 'creative'].includes(params.get('invite'))
   ? params.get('invite')
   : 'love';
 const initialScreen = requestedInvitationToken
   ? 'invitation'
+  : requestedReconciliationToken
+    ? 'reconciliation-room'
   : requestedOracleRoomToken
     ? 'palm-room'
     : requestedScreen && !['home', 'welcome'].includes(requestedScreen)
@@ -433,6 +444,28 @@ const state = {
     answers: { connection: '', tension: '', future: '', personalQuestion: '' }
   },
   oracleRoomError: '',
+  reconciliationToken: requestedReconciliationToken,
+  reconciliation: null,
+  reconciliationRooms: [],
+  reconciliationStatus: requestedReconciliationToken ? 'idle' : 'empty',
+  reconciliationRoomsStatus: 'idle',
+  reconciliationPolicy: null,
+  reconciliationInviteUrl: '',
+  reconciliationDraft: {
+    conflictType: 'romantic', participantMode: 'pair', participantNames: [String(storedProfile.name || ''), ''],
+    reason: 'misunderstanding', situation: '', goal: 'understanding', payerMode: 'initiator', invitationTone: 'warm'
+  },
+  reconciliationJoin: { displayName: String(storedProfile.name || ''), conflictRole: '', observer: false },
+  reconciliationPrivate: {
+    pain: '', need: '', unsaid: '', offer: '', sharePrivateConsent: false,
+    birthDate: '', birthTime: '', birthPlace: ''
+  },
+  reconciliationVisibility: 'public',
+  reconciliationMessageDraft: '',
+  reconciliationMessageNonce: '',
+  reconciliationSending: false,
+  reconciliationToolInput: { palmOne: '', palmTwo: '', birthDates: '', context: '' },
+  reconciliationOutcomeCard: null,
   runeQuestion: '',
   runeView: 'temple',
   runeSpread: 'three',
@@ -500,6 +533,7 @@ const state = {
 };
 
 if (!requestedScreen && requestedOracleRoomToken) state.screen = 'palm-room';
+if (!requestedScreen && requestedReconciliationToken) state.screen = 'reconciliation-room';
 
 let toastTimer;
 
@@ -710,6 +744,7 @@ function navigate(screen, { replace = false } = {}) {
   state.screen = screen;
   const url = new URL(location.href);
   url.searchParams.set('screen', screen);
+  if (screen !== 'reconciliation-room') url.searchParams.delete('reconciliation');
   history[replace ? 'replaceState' : 'pushState']({}, '', url);
   render();
   window.scrollTo?.({ top: 0, behavior: 'auto' });
@@ -758,16 +793,18 @@ function liveDialogueMessage(message, { viewerId = null, group = false } = {}) {
     ? Number(message.senderTelegramId) === Number(viewerId)
     : message.role === 'user');
   const assistant = message.role === 'assistant';
+  const privateMessage = message.private === true || message.visibility === 'private';
   const senderName = assistant ? 'Эзотериум' : own ? firstName() || 'Вы' : message.senderName || 'Участник';
   const time = message.createdAt
     ? new Date(message.createdAt).toLocaleTimeString(dateTimeLocale(state.locale), { hour: '2-digit', minute: '2-digit' })
     : '';
-  return h('article', { className: `esoterium-chat__message${own ? ' is-own' : ''}${assistant ? ' is-oracle' : ''}` },
+  return h('article', { className: `esoterium-chat__message${own ? ' is-own' : ''}${assistant ? ' is-oracle' : ''}${privateMessage ? ' is-private' : ''}` },
     !own ? h('span', { className: 'esoterium-chat__avatar' }, assistant
       ? h('img', { attrs: { src: '/images/my-path/oracle-living-thread.webp', alt: '' } })
       : h('b', { text: dialogueInitial(senderName) })) : null,
     h('div', { className: 'esoterium-chat__bubble' },
       group || assistant ? h('strong', { className: 'esoterium-chat__sender', text: senderName }) : null,
+      privateMessage ? h('small', { className: 'esoterium-chat__private-label', text: 'Только вы и Эзотериум' }) : null,
       h('p', { text: message.content }),
       h('small', { className: 'esoterium-chat__time' }, time ? h('time', { text: time }) : null, own ? h('b', { attrs: { 'aria-label': 'Доставлено' }, text: '✓✓' }) : null)
     )
@@ -2793,6 +2830,590 @@ function walletStatusText() {
   return state.walletMessage || 'Счёт доступен внутри Telegram';
 }
 
+const RECONCILIATION_STATUS_LABELS = Object.freeze({
+  created: 'Создано', invited: 'Приглашение готово', waiting: 'Ожидает решения', active: 'Диалог идёт',
+  analyzing: 'Идёт анализ', near_solution: 'Близко к решению', resolved: 'Завершено', rejected: 'Приглашение отклонено',
+  expired: 'Срок истёк', paused: 'Диалог на паузе'
+});
+
+const RECONCILIATION_PAYER_OPTIONS = Object.freeze({
+  initiator: { label: 'Я' }, second: { label: 'Второй участник' }, each: { label: 'Каждый за себя' }, group: { label: 'Группа делит' }
+});
+
+const RECONCILIATION_TONE_OPTIONS = Object.freeze({
+  soft: { label: 'Мягкий' }, serious: { label: 'Серьёзный' }, warm: { label: 'Тёплый' }, energetic: { label: 'Энергичный' }
+});
+
+function reconciliationOptions(source) {
+  return Object.fromEntries(Object.entries(source).map(([id, label]) => [id, { label: typeof label === 'string' ? label : label.label }]));
+}
+
+function reconciliationScreen() {
+  if (state.reconciliationRoomsStatus === 'idle') queueMicrotask(() => loadReconciliationRooms());
+  if (!state.reconciliationPolicy) queueMicrotask(() => loadReconciliationPolicy());
+  const active = state.reconciliationRooms.filter((room) => !['resolved', 'rejected', 'expired'].includes(room.status));
+  const completed = state.reconciliationRooms.filter((room) => ['resolved', 'rejected', 'expired'].includes(room.status));
+  const maxGroup = Math.max(3, Math.min(10, Number(state.reconciliationPolicy?.maxParticipants) || 10));
+  return shell([
+    screenHeader('Примирение Эзотериума', 'Нейтральная комната для важного разговора', 'services'),
+    h('section', { className: 'reconciliation-hero' },
+      h('span', { className: 'reconciliation-hero__bridge', attrs: { 'aria-hidden': 'true' } }, h('i'), h('i')),
+      h('p', { className: 'premium-kicker', text: 'КОМНАТА, ГДЕ МОЖНО ВЫДОХНУТЬ' }),
+      h('h1', { text: 'Конфликт можно превратить в диалог' }),
+      h('p', { text: 'Я не приму ничью сторону. Помогу назвать важное, услышать различия и найти добровольный следующий шаг.' }),
+      h('div', { className: 'reconciliation-principles' },
+        h('span', { text: 'Нейтрально' }), h('span', { text: 'Конфиденциально' }), h('span', { text: `До ${maxGroup} участников` })
+      ),
+      state.reconciliationPolicy?.enabled === false
+        ? h('p', { className: 'reconciliation-disabled', text: 'Создание новых комнат временно приостановлено. Существующие разговоры остаются доступны.' })
+        : MysticButton({ text: 'Создать запрос на примирение', icon: 'sparkle', variant: 'primary', onClick: () => navigate('reconciliation-create') })
+    ),
+    reconciliationRoomList('Активные разговоры', active),
+    completed.length ? reconciliationRoomList('Завершённые', completed) : null,
+    state.reconciliationRoomsStatus === 'ready' && !state.reconciliationRooms.length
+      ? MysticCard({ className: 'premium-empty-state reconciliation-empty', children: [
+        h('span', { text: '⌁' }), h('h2', { text: 'Здесь появится ваша первая комната' }),
+        h('p', { text: 'Описание конфликта останется внутри защищённого контура и не попадёт на открытку.' })
+      ] })
+      : null
+  ], { active: 'services' });
+}
+
+function reconciliationRoomList(title, rooms) {
+  if (!rooms.length) return null;
+  return h('section', { className: 'reconciliation-history' },
+    SectionTitle({ text: title }),
+    h('div', { className: 'reconciliation-history__list' }, rooms.map((room) => h('button', {
+      className: 'reconciliation-history__row', attrs: { type: 'button' },
+      on: { click: () => openReconciliation(room.token) }
+    },
+    h('i', { text: room.participantMode === 'group' ? '◌' : '⌁' }),
+    h('span', {}, h('strong', { text: room.title }), h('small', { text: `${RECONCILIATION_STATUS_LABELS[room.status] || room.status} · ${formatDate(room.updatedAt)}` })),
+    h('b', { text: '→' })
+    )))
+  );
+}
+
+function reconciliationCreateScreen() {
+  const draft = state.reconciliationDraft;
+  const policy = state.reconciliationPolicy;
+  const group = draft.participantMode === 'group';
+  const maxGroup = Math.max(3, Math.min(10, Number(policy?.maxParticipants) || 10));
+  const enabledConflictTypes = Object.fromEntries(Object.entries(RECONCILIATION_CONFLICT_TYPES)
+    .filter(([id]) => !Array.isArray(policy?.conflictTypes) || policy.conflictTypes.includes(id)));
+  const namesValue = draft.participantNames.join(', ');
+  const participantCount = Math.max(group ? 3 : 2, draft.participantNames.filter((name) => name.trim()).length);
+  const createPrice = Number(policy?.prices?.create ?? 10);
+  const participationPrice = Number(policy?.prices?.participate ?? 5);
+  const totalPrice = Number(group ? policy?.prices?.group ?? 30 : createPrice + participationPrice);
+  const splitOwnerPrice = Math.round((Math.round(totalPrice * 100) - Math.floor(Math.round(totalPrice * 100) / participantCount) * (participantCount - 1))) / 100;
+  const dueNow = state.publicConfig.everythingFree ? 0 : group
+    ? draft.payerMode === 'initiator' ? totalPrice : draft.payerMode === 'second' ? 0 : splitOwnerPrice
+    : draft.payerMode === 'initiator' ? totalPrice : draft.payerMode === 'each' ? createPrice : 0;
+  const payerOptions = group
+    ? { initiator: RECONCILIATION_PAYER_OPTIONS.initiator, second: RECONCILIATION_PAYER_OPTIONS.second, group: RECONCILIATION_PAYER_OPTIONS.group }
+    : { initiator: RECONCILIATION_PAYER_OPTIONS.initiator, second: RECONCILIATION_PAYER_OPTIONS.second, each: RECONCILIATION_PAYER_OPTIONS.each };
+  return shell([
+    screenHeader('Новый запрос', 'Только необходимое для начала разговора', 'reconciliation'),
+    h('section', { className: 'reconciliation-form-intro' },
+      h('span', { text: '⌁', attrs: { 'aria-hidden': 'true' } }),
+      h('div', {}, h('p', { className: 'premium-kicker', text: 'ШАГ 1 ИЗ 2' }), h('h1', { text: 'Кого вы хотите услышать?' }), h('p', { text: 'Подробности ситуации не будут показаны приглашённым до вашего общего диалога.' }))
+    ),
+    MysticCard({ className: 'reconciliation-form', children: [
+      field('Тип конфликта', selectField(reconciliationOptions(enabledConflictTypes), draft.conflictType, (value) => { draft.conflictType = value; })),
+      field('Участники', selectField({ pair: { label: 'Двое' }, group: { label: `Группа до ${maxGroup} человек` } }, draft.participantMode, (value) => {
+        draft.participantMode = value;
+        draft.participantNames = value === 'pair' ? draft.participantNames.slice(0, 2) : [...draft.participantNames, '', ''].slice(0, 3);
+        if (value === 'pair' && draft.payerMode === 'group') draft.payerMode = 'each';
+        if (value === 'group' && draft.payerMode === 'each') draft.payerMode = 'group';
+        render();
+      })),
+      field(group ? 'Имена группы через запятую' : 'Имена двух участников', textInput({
+        value: namesValue,
+        placeholder: group ? 'Анна, Мария, Алексей' : 'Анна, Алексей',
+        onInput: (value) => { draft.participantNames = value.split(',').map((name) => name.trim()).slice(0, 10); }
+      }), group ? `От 3 до ${maxGroup} уникальных имён.` : 'Первым укажите себя.'),
+      field('Причина', selectField(reconciliationOptions(RECONCILIATION_REASONS), draft.reason, (value) => { draft.reason = value; })),
+      field('Что произошло', textarea({ value: draft.situation, placeholder: 'Что произошло, что вы чувствуете и что важно сказать?', maxLength: 2000, onInput: (value) => { draft.situation = value; } }), 'Необязательно. Этот текст останется приватным.'),
+      field('Что хотите получить', selectField(reconciliationOptions(RECONCILIATION_GOALS), draft.goal, (value) => { draft.goal = value; })),
+      field('Кто оплачивает', selectField(payerOptions, draft.payerMode, (value) => { draft.payerMode = value; render(); })),
+      field('Тон открытки', selectField(RECONCILIATION_TONE_OPTIONS, draft.invitationTone, (value) => { draft.invitationTone = value; }))
+    ] }),
+    MysticCard({ className: 'reconciliation-payment-note', children: [
+      h('span', { text: 'S' }),
+      h('div', {}, h('strong', { text: dueNow ? `${formatMoney(dueNow)} SILARUM сейчас` : state.publicConfig.everythingFree ? 'Бесплатно' : 'Сейчас без списания' }), h('small', { text: `Общий бюджет комнаты: ${formatMoney(state.publicConfig.everythingFree ? 0 : totalPrice)} SILARUM` }))
+    ] }),
+    MysticButton({ text: state.busy ? 'Открываем комнату…' : 'Создать приглашение', icon: 'send', variant: 'gold', disabled: state.busy, onClick: createReconciliation })
+  ], { active: 'services' });
+}
+
+async function loadReconciliationPolicy() {
+  try {
+    const data = await api('/api/reconciliation?action=policy');
+    state.reconciliationPolicy = data.policy;
+    const types = Array.isArray(data.policy?.conflictTypes) ? data.policy.conflictTypes : [];
+    if (types.length && !types.includes(state.reconciliationDraft.conflictType)) state.reconciliationDraft.conflictType = types[0];
+    if (['reconciliation', 'reconciliation-create'].includes(state.screen)) render();
+  } catch { /* secure defaults remain visible */ }
+}
+
+async function loadReconciliationRooms({ force = false } = {}) {
+  if (!tg?.initData || (state.reconciliationRoomsStatus === 'loading' && !force)) return;
+  state.reconciliationRoomsStatus = 'loading';
+  if (state.screen === 'reconciliation') render();
+  try {
+    const data = await api('/api/reconciliation?action=list');
+    state.reconciliationRooms = data.rooms || [];
+    state.reconciliationRoomsStatus = 'ready';
+  } catch {
+    state.reconciliationRoomsStatus = 'error';
+  }
+  if (state.screen === 'reconciliation') render();
+}
+
+async function createReconciliation() {
+  if (state.busy) return;
+  const draft = state.reconciliationDraft;
+  const names = draft.participantNames.map((name) => name.trim()).filter(Boolean);
+  const maxGroup = Math.max(3, Math.min(10, Number(state.reconciliationPolicy?.maxParticipants) || 10));
+  if ((draft.participantMode === 'pair' && names.length !== 2) || (draft.participantMode === 'group' && (names.length < 3 || names.length > maxGroup))) {
+    return notify(draft.participantMode === 'pair' ? 'Укажите два имени' : `Укажите от 3 до ${maxGroup} имён`);
+  }
+  if (new Set(names.map((name) => name.toLocaleLowerCase('ru-RU'))).size !== names.length) return notify('Имена участников не должны повторяться');
+  state.busy = true; render();
+  try {
+    const data = await api('/api/reconciliation', {
+      method: 'POST',
+      body: {
+        action: 'create', ...draft, participantNames: names,
+        initiatorName: names[0] || firstName(), idempotencyKey: uniqueId('reconciliation')
+      }
+    });
+    state.reconciliation = data.room;
+    state.reconciliationToken = data.room.token;
+    state.reconciliationInviteUrl = data.inviteUrl || '';
+    state.reconciliationOutcomeCard = null;
+    const url = new URL(location.href);
+    url.searchParams.set('screen', 'reconciliation-room');
+    url.searchParams.set('reconciliation', data.room.token);
+    history.pushState({}, '', url);
+    state.screen = 'reconciliation-room';
+    pulse('medium');
+  } catch (error) {
+    handleReconciliationError(error, 'reconciliation-create');
+  } finally { state.busy = false; render(); }
+}
+
+function openReconciliation(token) {
+  state.reconciliationToken = token;
+  state.reconciliation = null;
+  state.reconciliationStatus = 'idle';
+  const url = new URL(location.href);
+  url.searchParams.set('screen', 'reconciliation-room');
+  url.searchParams.set('reconciliation', token);
+  history.pushState({}, '', url);
+  state.screen = 'reconciliation-room';
+  render();
+  loadReconciliationRoom();
+}
+
+async function loadReconciliationRoom({ silent = false } = {}) {
+  if (!state.reconciliationToken || state.reconciliationStatus === 'loading') return;
+  state.reconciliationStatus = 'loading';
+  if (!silent) render();
+  try {
+    const data = await api(`/api/reconciliation?action=get&token=${encodeURIComponent(state.reconciliationToken)}`);
+    state.reconciliation = data.room;
+    state.reconciliationInviteUrl = data.inviteUrl || state.reconciliationInviteUrl;
+    state.reconciliationStatus = 'ready';
+    syncReconciliationPrivate(data.room);
+  } catch (error) {
+    state.reconciliationStatus = 'error';
+    if (!silent) notify(apiErrorMessage(error));
+  }
+  if (state.screen === 'reconciliation-room') render();
+}
+
+function syncReconciliationPrivate(room) {
+  if (!room?.viewer || room.preview || state.reconciliationPrivate.syncedToken === room.token) return;
+  const answers = room.viewer.privateAnswers || {};
+  state.reconciliationPrivate = {
+    ...state.reconciliationPrivate,
+    pain: answers.pain || '', need: answers.need || '', unsaid: answers.unsaid || '', offer: answers.offer || '',
+    sharePrivateConsent: room.viewer.sharePrivateConsent === true,
+    birthDate: room.viewer.birthDate || state.profile.birthDate || '',
+    birthTime: room.viewer.birthTime || state.profile.birthTime || '',
+    birthPlace: room.viewer.birthPlace || state.profile.city || '',
+    syncedToken: room.token
+  };
+}
+
+function reconciliationRoomScreen() {
+  if (!state.reconciliation && state.reconciliationStatus === 'idle') queueMicrotask(() => loadReconciliationRoom());
+  if (!state.reconciliation || state.reconciliationStatus === 'loading') {
+    return shell([screenHeader('Комната примирения', 'Открываем безопасное пространство', 'reconciliation'), loadingCard('Дверь комнаты открывается…')], { tabs: false });
+  }
+  const room = state.reconciliation;
+  if (room.preview) return reconciliationInvitationScreen(room);
+  return reconciliationActiveRoom(room);
+}
+
+function reconciliationInvitationScreen(room) {
+  const expired = room.status === 'expired' || Date.parse(room.expiresAt) <= Date.now();
+  const rejected = room.decisionStatus === 'rejected' || room.status === 'rejected';
+  const join = state.reconciliationJoin;
+  return shell([
+    screenHeader('Приглашение', 'Решение остаётся за вами', 'reconciliation'),
+    h('section', { className: `reconciliation-invite is-${room.invitationTone || 'warm'}` },
+      h('div', { className: 'reconciliation-invite__gift', attrs: { 'aria-hidden': 'true' } }, h('span', { text: '⌁' }), h('i'), h('i')),
+      h('p', { className: 'premium-kicker', text: 'ВАЖНЫЙ РАЗГОВОР' }),
+      h('h1', { text: `${room.initiatorName} приглашает вас в комнату примирения` }),
+      h('p', { text: `Цель: ${RECONCILIATION_GOALS[room.goal] || 'Понимание'}. Эзотериум будет нейтральным посредником.` }),
+      h('small', { text: expired ? 'Срок приглашения истёк' : `Приглашение действует до ${formatDate(room.expiresAt)}` })
+    ),
+    expired || rejected ? MysticCard({ className: 'premium-empty-state', children: [h('p', { text: rejected ? 'Ваш отказ сохранён. Вернуться к диалогу можно только по новому приглашению.' : 'Попросите инициатора создать новое приглашение.' })] }) : h('div', { className: 'reconciliation-decision' },
+      field('Ваше имя', textInput({ value: join.displayName, placeholder: 'Как к вам обращаться', onInput: (value) => { join.displayName = value; } })),
+      field('Роль в ситуации · необязательно', textInput({ value: join.conflictRole, placeholder: 'Например, партнёр или коллега', attrs: { maxlength: 120 }, onInput: (value) => { join.conflictRole = value; } })),
+      consentRow('Войти наблюдателем: только читать общий диалог', join.observer, (checked) => { join.observer = checked; render(); }),
+      MysticButton({ text: 'Да, я готов к диалогу', icon: 'sparkle', variant: 'primary', onClick: () => joinReconciliation('accept') }),
+      MysticButton({ text: 'Чуть позже', icon: 'history', variant: 'outline', onClick: () => joinReconciliation('later') }),
+      h('button', { className: 'reconciliation-decline', attrs: { type: 'button' }, on: { click: () => joinReconciliation('reject') } }, 'Нет, не готов')
+    ),
+    MysticCard({ className: 'reconciliation-privacy-note', children: [
+      h('strong', { text: 'Что увидят другие' }),
+      h('p', { text: 'Только общий диалог. Ваши закрытые ответы, даты рождения и фото не раскрываются без отдельного согласия.' })
+    ] })
+  ], { tabs: false });
+}
+
+async function joinReconciliation(decision) {
+  if (state.busy) return;
+  const join = state.reconciliationJoin;
+  if (decision === 'accept' && !String(join.displayName || firstName()).trim()) return notify('Укажите имя');
+  state.busy = true; render();
+  try {
+    const data = await api('/api/reconciliation', {
+      method: 'POST', body: {
+        action: 'join', token: state.reconciliationToken, decision,
+        displayName: join.displayName || firstName(), conflictRole: join.conflictRole,
+        observer: join.observer === true, idempotencyKey: uniqueId('reconciliation-join')
+      }
+    });
+    state.reconciliation = data.room;
+    if (decision === 'later') notify('Приглашение сохранено — вернитесь, когда будете готовы');
+    if (decision === 'reject') notify('Ваш отказ сохранён');
+  } catch (error) { handleReconciliationError(error, 'reconciliation-room'); }
+  finally { state.busy = false; render(); }
+}
+
+function reconciliationActiveRoom(room) {
+  const viewer = room.viewer || {};
+  const observers = viewer.role === 'observer';
+  const needsIntake = !observers && viewer.status === 'active' && !viewer.ready && !['rejected', 'expired'].includes(room.status);
+  const activeMembers = room.members.filter((member) => member.status === 'active');
+  return shell([
+    h('header', { className: 'reconciliation-room-header' },
+      h('button', { attrs: { type: 'button', 'aria-label': 'Вернуться к списку' }, on: { click: () => navigate('reconciliation') } }, Icon('arrow-left', { size: 20 })),
+      h('span', {}, h('strong', { text: room.title }), h('small', { text: RECONCILIATION_STATUS_LABELS[room.status] || room.status })),
+      h('button', { attrs: { type: 'button', 'aria-label': 'Поделиться приглашением' }, on: { click: shareReconciliationInvitation } }, Icon('send', { size: 19 }))
+    ),
+    h('section', { className: 'reconciliation-room-meta' },
+      h('div', { className: 'reconciliation-member-stack' }, activeMembers.slice(0, 6).map((member) => h('span', { text: dialogueInitial(member.displayName), attrs: { title: member.displayName } }))),
+      h('div', {}, h('strong', { text: `${activeMembers.length} ${russianCount(activeMembers.length, ['участник', 'участника', 'участников'])}` }), h('small', { text: observers ? 'Вы наблюдаете общий диалог' : `Этап: ${reconciliationStageLabel(room.stage)}` }))
+    ),
+    room.status === 'paused' ? MysticCard({ className: 'reconciliation-paused', children: [
+      h('strong', { text: 'Разговор на паузе' }), h('p', { text: 'Новые сообщения не отправляются, пока инициатор не возобновит комнату.' }),
+      viewer.role === 'owner' ? MysticButton({ text: 'Возобновить', icon: 'sparkle', variant: 'outline', onClick: () => pauseReconciliation(false) }) : null
+    ] }) : null,
+    ['created', 'invited', 'waiting'].includes(room.status) ? MysticCard({ className: 'reconciliation-paused', children: [
+      h('strong', { text: 'Ждём согласия всех участников' }),
+      h('p', { text: 'Закрытый этап можно заполнить сейчас. Общий диалог откроется, когда войдёт вся указанная группа.' })
+    ] }) : null,
+    needsIntake ? reconciliationPrivateIntake(room) : reconciliationDialogue(room),
+    !needsIntake && !observers && ['active', 'analyzing', 'near_solution'].includes(room.status) ? reconciliationTools(room) : null,
+    !needsIntake && !observers && ['solution', 'agreement'].includes(room.stage) && room.status !== 'resolved' ? reconciliationResolution(room) : null,
+    room.status === 'resolved' ? reconciliationOutcome(room) : null,
+    !observers && room.status !== 'resolved' ? h('button', { className: 'reconciliation-pause-button', attrs: { type: 'button' }, on: { click: () => pauseReconciliation(true) } }, 'Поставить разговор на паузу') : null
+  ], { tabs: false, reading: true });
+}
+
+function reconciliationStageLabel(stage) {
+  return ({ opening: 'Открытие', intake: 'Сбор позиций', analysis: 'Общие точки', tools: 'Инструменты', solution: 'Поиск решения', agreement: 'Фиксация', completed: 'Завершено' })[stage] || 'Диалог';
+}
+
+function reconciliationPrivateIntake(room) {
+  const draft = state.reconciliationPrivate;
+  return h('section', { className: 'reconciliation-intake' },
+    h('div', { className: 'reconciliation-intake__seal', text: '⌁' }),
+    h('p', { className: 'premium-kicker', text: 'ЗАКРЫТЫЙ РАЗГОВОР' }),
+    h('h1', { text: `${room.viewer.displayName}, сначала я услышу вас отдельно` }),
+    h('p', { text: 'Эти ответы увидит только Эзотериум. В общей комнате появятся лишь нейтральные обобщения.' }),
+    field('Что для вас самое болезненное?', textarea({ value: draft.pain, maxLength: 800, onInput: (value) => { draft.pain = value; } })),
+    field('Какая потребность сейчас не удовлетворена?', textarea({ value: draft.need, maxLength: 800, onInput: (value) => { draft.need = value; } })),
+    field('Что вы хотели сказать, но не решались?', textarea({ value: draft.unsaid, maxLength: 800, onInput: (value) => { draft.unsaid = value; } })),
+    field('Что вы готовы предложить?', textarea({ value: draft.offer, maxLength: 800, onInput: (value) => { draft.offer = value; } })),
+    h('details', { className: 'reconciliation-birth-details' },
+      h('summary', { text: 'Данные для астрологии · необязательно' }),
+      field('Дата рождения', textInput({ type: 'date', value: draft.birthDate, onInput: (value) => { draft.birthDate = value; } })),
+      field('Время', textInput({ type: 'time', value: draft.birthTime, onInput: (value) => { draft.birthTime = value; } })),
+      field('Место', textInput({ value: draft.birthPlace, placeholder: 'Город, страна', attrs: { maxlength: 160 }, onInput: (value) => { draft.birthPlace = value; } }))
+    ),
+    consentRow('Разрешаю Эзотериуму использовать мои ответы только для обезличенного общего анализа.', draft.sharePrivateConsent, (checked) => { draft.sharePrivateConsent = checked; }),
+    MysticButton({ text: state.busy ? 'Сохраняем закрытый ответ…' : 'Завершить закрытый этап', icon: 'sparkle', variant: 'primary', disabled: state.busy, onClick: saveReconciliationIntake })
+  );
+}
+
+async function saveReconciliationIntake() {
+  const draft = state.reconciliationPrivate;
+  if ([draft.pain, draft.need, draft.unsaid, draft.offer].filter((value) => value.trim().length >= 4).length < 2) return notify('Ответьте хотя бы на два вопроса');
+  state.busy = true; render();
+  try {
+    const data = await api('/api/reconciliation', { method: 'POST', body: {
+      action: 'private_intake', token: state.reconciliationToken,
+      answers: { pain: draft.pain, need: draft.need, unsaid: draft.unsaid, offer: draft.offer },
+      sharePrivateConsent: draft.sharePrivateConsent,
+      birthDate: draft.birthDate, birthTime: draft.birthTime, birthPlace: draft.birthPlace
+    } });
+    state.reconciliation = data.room;
+    notify('Закрытый этап завершён');
+  } catch (error) { notify(apiErrorMessage(error)); }
+  finally { state.busy = false; render(); }
+}
+
+function reconciliationDialogue(room) {
+  const privateMode = state.reconciliationVisibility === 'private';
+  const messages = room.messages.map((message) => ({
+    ...message,
+    own: message.own === true,
+    private: message.visibility === 'private'
+  }));
+  return h('section', { className: 'reconciliation-dialogue-wrap' },
+    room.viewer.role !== 'observer' ? h('div', { className: 'reconciliation-channel-switch', attrs: { role: 'tablist', 'aria-label': 'Режим ответа' } },
+      h('button', { className: privateMode ? '' : 'is-active', attrs: { type: 'button', 'aria-selected': String(!privateMode) }, on: { click: () => { state.reconciliationVisibility = 'public'; render(); } } }, 'Общая комната'),
+      h('button', { className: privateMode ? 'is-active' : '', attrs: { type: 'button', 'aria-selected': String(privateMode) }, on: { click: () => { state.reconciliationVisibility = 'private'; render(); } } }, 'Только Эзотериуму')
+    ) : null,
+    liveDialogue({
+      messages,
+      draft: state.reconciliationMessageDraft,
+      onInput: (value) => { state.reconciliationMessageDraft = value; },
+      onSend: sendReconciliationMessage,
+      sending: state.reconciliationSending,
+      placeholder: privateMode ? 'Закрытый ответ Эзотериуму…' : 'Напишите в общую комнату…',
+      title: privateMode ? 'Эзотериум · закрытый разговор' : 'Эзотериум · общая комната',
+      subtitle: privateMode ? 'другие участники этого не увидят' : 'нейтрален и обращается по очереди',
+      group: true,
+      viewerId: tg?.initDataUnsafe?.user?.id || null,
+      canWrite: room.viewer.role !== 'observer' && ['active', 'analyzing', 'near_solution'].includes(room.status),
+      progress: reconciliationStageLabel(room.stage)
+    })
+  );
+}
+
+async function sendReconciliationMessage() {
+  const message = state.reconciliationMessageDraft.trim();
+  if (message.length < 2 || state.reconciliationSending) return;
+  const nonce = state.reconciliationMessageNonce || uniqueId('reconciliation-message');
+  state.reconciliationMessageNonce = nonce;
+  state.reconciliationMessageDraft = '';
+  state.reconciliationSending = true;
+  render();
+  try {
+    const data = await api('/api/reconciliation', { method: 'POST', body: {
+      action: 'send', token: state.reconciliationToken, message,
+      visibility: state.reconciliationVisibility, clientNonce: nonce
+    } });
+    state.reconciliation = data.room;
+    state.reconciliationMessageNonce = '';
+  } catch (error) {
+    state.reconciliationMessageDraft = message;
+    handleReconciliationError(error, 'reconciliation-room');
+  } finally { state.reconciliationSending = false; render(); }
+}
+
+function reconciliationTools(room) {
+  const latest = room.tools[room.tools.length - 1];
+  const enabledTools = Object.entries(RECONCILIATION_TOOLS).filter(([id]) => state.reconciliationPolicy?.tools?.[id] !== false);
+  return h('section', { className: 'reconciliation-tools' },
+    SectionTitle({ text: 'Символические инструменты' }),
+    h('p', { className: 'reconciliation-tools__copy', text: 'Инструмент запускается только после согласия всех активных участников.' }),
+    latest && latest.status !== 'completed' ? reconciliationToolConsentCard(room, latest) : h('div', { className: 'reconciliation-tool-grid' },
+      enabledTools.map(([id, tool]) => h('button', {
+        attrs: { type: 'button' }, on: { click: () => requestReconciliationTool(id) }
+      }, h('span', { text: ({ runes: 'ᛉ', tarot: '✦', palmistry: '⌁', astrology: '☉', combined: '∞' })[id] }), h('strong', { text: tool.title }), h('small', { text: serviceBadge(tool.serviceId, `${tool.defaultPrice} S`) })))
+    ),
+    room.tools.filter((tool) => tool.status === 'completed').map((tool) => MysticCard({ className: 'reconciliation-tool-result', children: [
+      h('small', { text: RECONCILIATION_TOOLS[tool.type]?.title || tool.type }), h('p', { text: tool.resultText })
+    ] }))
+  );
+}
+
+function reconciliationToolConsentCard(room, tool) {
+  const consented = tool.ownConsent === true;
+  const ready = tool.status === 'ready';
+  return MysticCard({ className: 'reconciliation-tool-consent', children: [
+    h('span', { className: 'reconciliation-tool-consent__glyph', text: ({ runes: 'ᛉ', tarot: '✦', palmistry: '⌁', astrology: '☉', combined: '∞' })[tool.type] }),
+    h('h3', { text: RECONCILIATION_TOOLS[tool.type]?.title || 'Символический анализ' }),
+    h('p', { text: ready ? 'Все согласились. Инструмент готов к запуску.' : `Согласие: ${tool.consentCount || 0} из ${tool.consentRequired || 0}. Ожидаем добровольного согласия каждого.` }),
+    !consented ? MysticButton({ text: 'Я согласен', icon: 'sparkle', variant: 'outline', onClick: () => consentReconciliationTool(tool.id) }) : h('small', { className: 'reconciliation-consent-ready', text: 'Ваше согласие подтверждено' }),
+    ready ? reconciliationToolInput(room, tool) : null
+  ] });
+}
+
+function reconciliationToolInput(room, tool) {
+  const input = state.reconciliationToolInput;
+  return h('div', { className: 'reconciliation-tool-input' },
+    tool.type === 'palmistry' ? [
+      imageUpload({ title: 'Ладонь первого участника', image: input.palmOne, capture: 'environment', onImage: (value) => { input.palmOne = value; render(); }, onRemove: () => { input.palmOne = ''; render(); } }),
+      imageUpload({ title: 'Ладонь второго участника', image: input.palmTwo, capture: 'environment', onImage: (value) => { input.palmTwo = value; render(); }, onRemove: () => { input.palmTwo = ''; render(); } })
+    ] : null,
+    tool.type === 'astrology' || tool.type === 'combined' ? field('Даты и места рождения', textarea({ value: input.birthDates, placeholder: 'Анна — 12.03.1990, Москва; Алексей — 04.11.1988, Казань', maxLength: 1000, onInput: (value) => { input.birthDates = value; } })) : null,
+    field('Контекст для анализа', textarea({ value: input.context, placeholder: 'Какой вопрос важно осветить?', maxLength: 800, onInput: (value) => { input.context = value; } })),
+    MysticButton({ text: state.busy ? 'Инструмент раскрывается…' : 'Запустить для комнаты', icon: 'sparkle', variant: 'gold', disabled: state.busy, onClick: () => runReconciliationTool(tool) })
+  );
+}
+
+async function requestReconciliationTool(toolType) {
+  try {
+    const data = await api('/api/reconciliation', { method: 'POST', body: { action: 'request_tool', token: state.reconciliationToken, toolType } });
+    state.reconciliation = data.room; render();
+  } catch (error) { notify(apiErrorMessage(error)); }
+}
+
+async function consentReconciliationTool(toolId) {
+  try {
+    const data = await api('/api/reconciliation', { method: 'POST', body: { action: 'consent_tool', token: state.reconciliationToken, toolId, consent: true } });
+    state.reconciliation = data.room; render();
+  } catch (error) { notify(apiErrorMessage(error)); }
+}
+
+async function runReconciliationTool(tool) {
+  const input = state.reconciliationToolInput;
+  if (tool.type === 'palmistry' && (!input.palmOne || !input.palmTwo)) return notify('Добавьте две ладони с согласия участников');
+  state.busy = true; render();
+  try {
+    const data = await api('/api/reconciliation', { method: 'POST', body: {
+      action: 'run_tool', token: state.reconciliationToken, toolId: tool.id,
+      clientNonce: uniqueId('reconciliation-tool'),
+      input: { birthDates: input.birthDates, context: input.context },
+      images: tool.type === 'palmistry' ? [input.palmOne, input.palmTwo] : undefined
+    } });
+    state.reconciliation = data.room;
+    state.reconciliationToolInput = { palmOne: '', palmTwo: '', birthDates: '', context: '' };
+  } catch (error) { handleReconciliationError(error, 'reconciliation-room'); }
+  finally { state.busy = false; render(); }
+}
+
+function reconciliationResolution(room) {
+  const selected = room.viewer.resolutionVote;
+  const choices = [
+    ['reconciled', 'Примирение', 'Мы готовы начать новый этап.'],
+    ['boundaries', 'Ясные границы', 'Мы договорились, как общаться дальше.'],
+    ['respectful_closure', 'Уважительное завершение', 'Мы услышали друг друга и завершаем разговор.']
+  ];
+  return h('section', { className: 'reconciliation-resolution' },
+    SectionTitle({ text: 'Как вы хотите зафиксировать итог?' }),
+    h('p', { text: 'Комната завершится только при одинаковом добровольном выборе всех активных участников.' }),
+    h('div', {}, choices.map(([id, title, copy]) => h('button', {
+      className: selected === id ? 'is-selected' : '', attrs: { type: 'button' }, on: { click: () => voteReconciliation(id) }
+    }, h('strong', { text: title }), h('small', { text: copy }))))
+  );
+}
+
+async function voteReconciliation(vote) {
+  try {
+    const data = await api('/api/reconciliation', { method: 'POST', body: { action: 'vote_resolution', token: state.reconciliationToken, vote } });
+    state.reconciliation = data.room;
+    notify(data.resolved ? 'Итог сохранён в «Мой путь»' : 'Ваш выбор сохранён. Ожидаем остальных участников.');
+    render();
+  } catch (error) { notify(apiErrorMessage(error)); }
+}
+
+function reconciliationOutcome(room) {
+  return h('section', { className: 'reconciliation-outcome' },
+    h('span', { className: 'reconciliation-outcome__sun', text: '☉' }),
+    h('p', { className: 'premium-kicker', text: 'РАЗГОВОР ЗАВЕРШЁН' }),
+    h('h1', { text: room.outcomeKind === 'reconciled' ? 'Вы пришли к примирению' : room.outcomeKind === 'boundaries' ? 'Вы нашли ясные границы' : 'Вы услышали друг друга' }),
+    h('p', { text: room.outcomeText }),
+    h('small', { text: 'Итог автоматически сохранён каждому участнику в «Мой путь».' }),
+    MysticButton({ text: 'Создать открытку об итоге', icon: 'send', variant: 'gold', onClick: createReconciliationOutcomeCard })
+  );
+}
+
+async function pauseReconciliation(paused) {
+  try {
+    const data = await api('/api/reconciliation', { method: 'POST', body: { action: 'pause', token: state.reconciliationToken, paused } });
+    state.reconciliation = data.room; render();
+  } catch (error) { notify(apiErrorMessage(error)); }
+}
+
+async function shareReconciliationInvitation() {
+  const room = state.reconciliation;
+  if (!room?.token) return;
+  try {
+    const file = await buildReconciliationCardFile(room, 'invitation');
+    const text = `${room.initiatorName || firstName()} приглашает вас в комнату примирения Эзотериума.`;
+    if (navigator.share) await navigator.share({ title: 'Примирение Эзотериума', text, url: state.reconciliationInviteUrl, ...(navigator.canShare?.({ files: [file] }) ? { files: [file] } : {}) });
+    else if (tg?.openTelegramLink) {
+      const url = new URL('https://t.me/share/url'); url.searchParams.set('url', state.reconciliationInviteUrl); url.searchParams.set('text', text); tg.openTelegramLink(url.toString());
+    } else { await navigator.clipboard.writeText(`${text} ${state.reconciliationInviteUrl}`); notify('Ссылка скопирована'); }
+  } catch (error) { if (error?.name !== 'AbortError') notify('Не удалось поделиться приглашением'); }
+}
+
+async function createReconciliationOutcomeCard() {
+  state.busy = true; render();
+  try {
+    const data = await api('/api/reconciliation', { method: 'POST', body: { action: 'outcome_card', token: state.reconciliationToken, idempotencyKey: uniqueId('reconciliation-card') } });
+    const file = await buildReconciliationCardFile({ ...data.room, card: data.card }, 'outcome');
+    state.reconciliationOutcomeCard = data.card;
+    if (navigator.share && navigator.canShare?.({ files: [file] })) await navigator.share({ title: data.card.title, text: data.card.text, files: [file] });
+    else notify('Открытка готова для отправки');
+  } catch (error) { if (error?.name !== 'AbortError') handleReconciliationError(error, 'reconciliation-room'); }
+  finally { state.busy = false; render(); }
+}
+
+async function buildReconciliationCardFile(room, kind = 'invitation') {
+  const background = await loadImage('/images/reconciliation/lounge-v1.webp');
+  const canvas = document.createElement('canvas'); canvas.width = 900; canvas.height = 1200;
+  const context = canvas.getContext('2d'); drawCanvasImageCover(context, background, 0, 0, 900, 1200);
+  const veil = context.createLinearGradient(0, 0, 0, 1200); veil.addColorStop(0, 'rgba(11,28,28,.08)'); veil.addColorStop(.48, 'rgba(12,25,26,.36)'); veil.addColorStop(1, 'rgba(7,18,19,.94)'); context.fillStyle = veil; context.fillRect(0, 0, 900, 1200);
+  const seed = [...String(room.token || room.title || kind)].reduce((value, symbol) => (value * 33 + symbol.charCodeAt(0)) >>> 0, 5381);
+  const auraX = 180 + seed % 540;
+  const aura = context.createRadialGradient(auraX, 330, 8, auraX, 330, 310);
+  aura.addColorStop(0, `hsla(${38 + seed % 42},65%,72%,.2)`); aura.addColorStop(1, 'rgba(0,0,0,0)');
+  context.fillStyle = aura; context.fillRect(0, 0, 900, 720);
+  for (let index = 0; index < 9; index += 1) {
+    const x = 90 + ((seed >>> (index % 16)) + index * 137) % 720;
+    const y = 150 + ((seed >>> ((index + 5) % 16)) + index * 89) % 360;
+    context.fillStyle = `rgba(242,216,157,${.18 + (index % 3) * .08})`;
+    context.beginPath(); context.arc(x, y, 1.5 + index % 2, 0, Math.PI * 2); context.fill();
+  }
+  context.textAlign = 'center'; context.fillStyle = '#dfbf78'; context.font = '700 24px system-ui'; context.fillText(kind === 'outcome' ? 'ИТОГ ВАЖНОГО РАЗГОВОРА' : 'ПРИГЛАШЕНИЕ ЭЗОТЕРИУМА', 450, 90);
+  context.strokeStyle = 'rgba(231,198,125,.82)'; context.lineWidth = 4; context.beginPath(); context.moveTo(250, 605); context.bezierCurveTo(345, 520, 555, 520, 650, 605); context.stroke();
+  context.fillStyle = '#fff5db'; context.font = '700 54px Georgia, serif';
+  const title = kind === 'outcome' ? room.card?.title || 'Мы услышали друг друга' : `${room.participantNames?.slice(0, 2).join(' и ') || room.title}`;
+  drawWrappedCanvasText(context, title, 450, 745, 760, 66);
+  context.fillStyle = '#dbe4dc'; context.font = '500 28px system-ui';
+  drawWrappedCanvasText(context, kind === 'outcome' ? room.card?.text || room.outcomeText : 'Вас ждёт важный разговор в комнате примирения.', 450, 930, 720, 40);
+  context.fillStyle = '#dfbf78'; context.font = '600 22px system-ui'; context.fillText('Nastardamus · Примирение Эзотериума', 450, 1110);
+  const blob = await new Promise((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error('reconciliation_card_failed')), 'image/png'));
+  return new File([blob], `nastardamus-reconciliation-${kind}-${room.token}.png`, { type: 'image/png' });
+}
+
+function drawWrappedCanvasText(context, text, x, y, maxWidth, lineHeight) {
+  const words = String(text || '').split(/\s+/); const lines = []; let line = '';
+  for (const word of words) { const trial = line ? `${line} ${word}` : word; if (context.measureText(trial).width > maxWidth && line) { lines.push(line); line = word; } else line = trial; }
+  if (line) lines.push(line); lines.slice(0, 4).forEach((value, index) => context.fillText(value, x, y + index * lineHeight));
+}
+
+function handleReconciliationError(error, returnScreen) {
+  if (error?.status === 402) {
+    state.topupAmount = String(Math.max(Number(state.wallet?.config?.sbpMinimumSilarum || 10), Number(error.data?.payment?.shortage || 10)));
+    state.topupReturnScreen = returnScreen;
+    navigate('topup');
+  }
+  notify(apiErrorMessage(error));
+}
+
 function servicesScreen() {
   const wheelEnabled = state.publicConfig.wheelEnabled === true;
   return shell([
@@ -2813,6 +3434,10 @@ function servicesScreen() {
       serviceTile('fortune-wheel', 'Подарок судьбы', 'Откройте знак или приятный сюрприз, приготовленный на сегодня', () => openEnabledFeature(wheelEnabled, 'wheel', 'Сегодня подарок судьбы отдыхает')),
       serviceTile('photo-energy-imprint', 'Образ вашей энергии', 'Увидьте настроение и внутреннюю опору, которые передаёт ваш образ', () => navigate('photo-energy'), serviceBadge('photo_energy')),
       serviceTile('result-magic-seal', 'Что тревожит вашу энергию', 'Разберите смутное беспокойство и найдите способ вернуть спокойствие', () => navigate('photo-damage'), serviceBadge('photo_damage')),
+      serviceTile('partner-invite-emblem', 'Примирение Эзотериума', 'Нейтральная комната для честного разговора вдвоём или в группе', () => {
+        navigate('reconciliation');
+        loadReconciliationRooms();
+      }, serviceBadge('reconciliation_create', '10 S')),
       serviceTile('brand-sun', 'Разговор с Эзотериумом', 'Задайте свой вопрос и получите бережный ответ', () => navigate('support'))
     )
   ], { active: 'services' });
@@ -8026,7 +8651,6 @@ function apiErrorMessage(error) {
     dialogue_disabled: 'Живой диалог в этом разделе временно закрыт администратором.',
     service_price_not_configured: 'Администратор ещё не настроил цену услуги.',
     payment_backend_failed: 'Платёжный контур временно недоступен. Списание не выполнено.',
-    payment_retry_required: 'Повторите оплату новым запросом.',
     sbp_topups_disabled: 'Пополнение по СБП сейчас закрыто.',
     sbp_not_configured: 'Реквизиты СБП ещё не настроены.',
     payment_method_disabled: 'Этот способ оплаты сейчас отключён.',
@@ -8089,7 +8713,29 @@ function apiErrorMessage(error) {
     lucky_match_not_active: 'Поединок уже завершён.',
     lucky_not_your_turn: 'Сейчас ход соперника. Дождитесь обновления круга.',
     lucky_prediction_required: 'Сначала соперник должен выбрать сторону шестёрки.',
-    lucky_invalid_prediction: 'Выберите «больше 6» или «меньше 6».'
+    lucky_invalid_prediction: 'Выберите «больше 6» или «меньше 6».',
+    reconciliation_disabled: 'Раздел примирения временно закрыт администратором.',
+    invalid_reconciliation_participants: 'Проверьте количество и уникальность имён участников.',
+    invalid_reconciliation_fields: 'Проверьте поля запроса на примирение.',
+    invalid_reconciliation_token: 'Ссылка на комнату примирения повреждена.',
+    invalid_reconciliation_decision: 'Не удалось сохранить ваше решение.',
+    invalid_reconciliation_message: 'Расскажите чуть подробнее.',
+    invalid_reconciliation_private_answers: 'Ответьте хотя бы на два закрытых вопроса.',
+    invalid_reconciliation_vote: 'Выберите один из вариантов итога.',
+    reconciliation_not_found: 'Комната примирения не найдена.',
+    reconciliation_access_denied: 'У вас нет доступа к этой комнате.',
+    reconciliation_write_denied: 'В режиме наблюдателя нельзя отправлять сообщения.',
+    reconciliation_unavailable: 'Комната примирения временно недоступна.',
+    reconciliation_expired: 'Срок приглашения истёк.',
+    reconciliation_full: 'В комнате уже заняты все места.',
+    reconciliation_busy: 'Эзотериум отвечает на предыдущую реплику.',
+    reconciliation_not_active: 'Диалог сейчас не активен.',
+    reconciliation_tool_disabled: 'Этот инструмент отключён администратором.',
+    reconciliation_tool_unavailable: 'Этот инструмент больше недоступен.',
+    reconciliation_tool_consent_required: 'Нужно согласие всех активных участников.',
+    reconciliation_palms_required: 'Добавьте две фотографии ладоней.',
+    reconciliation_not_resolved: 'Открытка доступна после завершения разговора.',
+    payment_retry_required: 'Оплату не удалось подтвердить. Повторите действие.'
   };
   return messages[error?.message] || 'Не удалось выполнить действие. Повторите попытку немного позже.';
 }
@@ -8245,6 +8891,8 @@ function render() {
     'palm-rooms': oracleRoomsScreen, 'palm-room': palmRoomScreen, runes: runeScreen,
     palm: palmScreen, ritual: ritualScreen, 'compatibility-result': compatibilityResultScreen,
     'invite-start': inviteStartScreen, 'invite-compose': inviteComposerScreen, invitation: invitationScreen,
+    reconciliation: reconciliationScreen, 'reconciliation-create': reconciliationCreateScreen,
+    'reconciliation-room': reconciliationRoomScreen,
     space: personalSpaceScreen, 'space-event': personalEventScreen, 'space-event-form': personalEventFormScreen,
     'space-goal': personalGoalScreen, 'space-goal-form': personalGoalFormScreen, 'space-consultation': personalConsultationScreen, 'space-settings': personalSettingsScreen,
     history: historyScreen, profile: profileScreen, topup: topupScreen, withdrawal: withdrawalScreen,
@@ -8274,8 +8922,15 @@ window.addEventListener('popstate', () => {
     state.oracleRoom = null;
     state.oracleRoomStatus = 'idle';
   }
+  const reconciliationToken = nextParams.get('reconciliation') || '';
+  if (/^[a-f0-9]{32}$/.test(reconciliationToken) && reconciliationToken !== state.reconciliationToken) {
+    state.reconciliationToken = reconciliationToken;
+    state.reconciliation = null;
+    state.reconciliationStatus = 'idle';
+  }
   render();
   if (state.screen === 'palm-room' && state.oracleRoomToken) loadOracleRoom();
+  if (state.screen === 'reconciliation-room' && state.reconciliationToken) loadReconciliationRoom();
 });
 
 document.addEventListener('keydown', (event) => {
@@ -8310,6 +8965,8 @@ async function loadTelegramData({ force = false, initialHydration = false } = {}
   if (state.invitationToken) loadActiveInvitation({ accept: true });
   if (state.oracleRoomToken) loadOracleRoom();
   if (state.screen === 'palm-rooms') loadOracleRooms({ force });
+  if (state.reconciliationToken) loadReconciliationRoom();
+  if (state.screen === 'reconciliation') loadReconciliationRooms({ force });
   return true;
 }
 
@@ -8354,6 +9011,12 @@ window.setInterval(() => {
 window.setInterval(() => {
   if (state.screen === 'lucky-stone' && state.luckyMatch?.id && document.visibilityState !== 'hidden') {
     refreshLuckyMatch({ silent: true });
+  }
+}, 3500);
+
+window.setInterval(() => {
+  if (state.screen === 'reconciliation-room' && state.reconciliationToken && document.visibilityState !== 'hidden') {
+    loadReconciliationRoom({ silent: true });
   }
 }, 3500);
 

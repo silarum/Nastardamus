@@ -9,6 +9,7 @@ import { buildTarotDialogueAgentRequest } from '../lib/tarot-dialogue.js';
 import { buildReadingDialogueAgentRequest } from '../lib/reading-dialogue.js';
 import { classifyDialogueTurn } from '../lib/dialogue-intelligence.js';
 import { dialogueSectionForReading } from '../lib/dialogue-policy.js';
+import reconciliationHandler from '../lib/reconciliation-api.js';
 import { getRequestHeader, validateTelegramInitData } from '../lib/telegram.js';
 import { assertChannelMembership, checkChannelMembership } from '../lib/channel-access.js';
 import { isDailyFreeService } from '../lib/daily-lifecycle.js';
@@ -987,6 +988,9 @@ async function answerReadingDialogueTurn(botToken, telegramId, body) {
 }
 
 export default async function handler(req, res) {
+    if (String(req.query?.reconciliation || '') === '1') {
+        return reconciliationHandler(req, res);
+    }
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
         return sendJson(res, 405, { error: 'method_not_allowed' });

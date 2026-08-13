@@ -33,8 +33,91 @@ const modernState = {
   selectedUser: null,
   auditLoaded: false,
   campaigns: [],
-  campaignsLoaded: false
+  campaignsLoaded: false,
+  currentTab: 'overview',
+  tabHistory: [],
+  suppressHistory: false,
+  reconciliationLoaded: false,
+  reconciliationOverview: null
 };
+
+function updateAdminBackButton() {
+  const button = document.getElementById('admin-section-back');
+  if (!button) return;
+  button.disabled = modernState.tabHistory.length === 0;
+  const previous = modernState.tabHistory.at(-1);
+  button.title = previous ? `Вернуться в раздел «${previous}»` : 'Предыдущего раздела пока нет';
+}
+
+function reconciliationAdminDefaults() {
+  return {
+    enabled: true, invitationHours: 72, maxParticipants: 10,
+    prices: { create: 10, participate: 5, group: 30, runes: 10, tarot: 10, palmistry: 15, astrology: 15, combined: 25, outcomeCard: 5 },
+    tools: { runes: true, tarot: true, palmistry: true, astrology: true, combined: true },
+    conflictTypes: ['romantic', 'friendship', 'family', 'business', 'collective', 'other'],
+    invitationText: '{initiator} приглашает вас в комнату примирения. Эзотериум поможет услышать друг друга.',
+    outcomeText: 'Мы завершили важный разговор вместе с Эзотериумом.'
+  };
+}
+
+function fillReconciliationSettings(settings) {
+  const form = document.getElementById('reconciliation-settings-form');
+  if (!form) return;
+  const value = { ...reconciliationAdminDefaults(), ...(settings || {}) };
+  value.prices = { ...reconciliationAdminDefaults().prices, ...(settings?.prices || {}) };
+  value.tools = { ...reconciliationAdminDefaults().tools, ...(settings?.tools || {}) };
+  form.elements.enabled.checked = value.enabled !== false;
+  form.elements.invitationHours.value = value.invitationHours;
+  form.elements.maxParticipants.value = value.maxParticipants;
+  for (const [field, key] of [['priceCreate','create'],['priceParticipate','participate'],['priceGroup','group'],['priceRunes','runes'],['priceTarot','tarot'],['pricePalmistry','palmistry'],['priceAstrology','astrology'],['priceCombined','combined'],['priceOutcomeCard','outcomeCard']]) {
+    form.elements[field].value = Number(value.prices[key] ?? 0).toFixed(2);
+  }
+  for (const [field, key] of [['toolRunes','runes'],['toolTarot','tarot'],['toolPalmistry','palmistry'],['toolAstrology','astrology'],['toolCombined','combined']]) {
+    form.elements[field].checked = value.tools[key] !== false;
+  }
+  const allowed = new Set(value.conflictTypes || []);
+  form.querySelectorAll('input[name="conflictTypes"]').forEach((input) => { input.checked = allowed.has(input.value); });
+  form.elements.invitationText.value = value.invitationText || '';
+  form.elements.outcomeText.value = value.outcomeText || '';
+}
+
+async function loadReconciliationSettings() {
+  const form = document.getElementById('reconciliation-settings-form');
+  if (!form) return;
+  form.classList.add('is-loading');
+  try {
+    const data = await api('/api/admin');
+    modernState.reconciliationOverview = data;
+    modernState.reconciliationLoaded = true;
+    fillReconciliationSettings(data.settings?.reconciliation);
+    form.querySelector('button[type="submit"]').disabled = data.canManageSettings !== true;
+  } catch {
+    notify('Не удалось загрузить настройки примирения');
+  } finally { form.classList.remove('is-loading'); }
+}
+
+function collectReconciliationSettings(form) {
+  return {
+    enabled: form.elements.enabled.checked,
+    invitationHours: Number(form.elements.invitationHours.value),
+    maxParticipants: Number(form.elements.maxParticipants.value),
+    prices: {
+      create: Number(form.elements.priceCreate.value), participate: Number(form.elements.priceParticipate.value),
+      group: Number(form.elements.priceGroup.value), runes: Number(form.elements.priceRunes.value),
+      tarot: Number(form.elements.priceTarot.value), palmistry: Number(form.elements.pricePalmistry.value),
+      astrology: Number(form.elements.priceAstrology.value), combined: Number(form.elements.priceCombined.value),
+      outcomeCard: Number(form.elements.priceOutcomeCard.value)
+    },
+    tools: {
+      runes: form.elements.toolRunes.checked, tarot: form.elements.toolTarot.checked,
+      palmistry: form.elements.toolPalmistry.checked, astrology: form.elements.toolAstrology.checked,
+      combined: form.elements.toolCombined.checked
+    },
+    conflictTypes: [...form.querySelectorAll('input[name="conflictTypes"]:checked')].map((input) => input.value),
+    invitationText: form.elements.invitationText.value.trim(),
+    outcomeText: form.elements.outcomeText.value.trim()
+  };
+}
 
 function adminDate(value, withTime = true) {
   if (!value) return '—';
@@ -299,6 +382,15 @@ function fileDataUrl(file) {
 
 const activateLegacyTab = activateTab;
 activateTab = function activateModernTab(name) {
+  if (modernState.currentTab !== name) {
+    if (!modernState.suppressHistory && modernState.currentTab) {
+      modernState.tabHistory.push(modernState.currentTab);
+      modernState.tabHistory = modernState.tabHistory.slice(-20);
+    }
+    modernState.currentTab = name;
+  }
+  modernState.suppressHistory = false;
+  updateAdminBackButton();
   const effective = ['growth', 'economy'].includes(name) ? 'settings' : name;
   const activeNavigation = name === 'economy' ? 'payments' : name;
   document.querySelectorAll('[data-tab]').forEach((button) => {
@@ -321,10 +413,18 @@ activateTab = function activateModernTab(name) {
   if (name === 'audit' && !modernState.auditLoaded) loadAudit();
   if (name === 'payments') loadPayments();
   if (name === 'campaigns' && !modernState.campaignsLoaded) loadCampaigns();
+  if (name === 'reconciliation' && !modernState.reconciliationLoaded) loadReconciliationSettings();
   try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
 };
 
 document.addEventListener('click', async (event) => {
+  const adminBack = event.target.closest('#admin-section-back');
+  if (adminBack && modernState.tabHistory.length) {
+    const previous = modernState.tabHistory.pop();
+    modernState.suppressHistory = true;
+    activateTab(previous);
+    return;
+  }
   const quick = event.target.closest('[data-quick-tab]');
   if (quick) activateTab(quick.dataset.quickTab);
   const settingsButton = event.target.closest('[data-open-settings]');
@@ -377,6 +477,28 @@ document.addEventListener('click', async (event) => {
     catch { notify('Не удалось переместить в архив'); }
     finally { archiveButton.disabled = false; }
   }
+});
+
+document.getElementById('reconciliation-settings-form')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('button[type="submit"]');
+  const conflictTypes = [...form.querySelectorAll('input[name="conflictTypes"]:checked')];
+  if (!conflictTypes.length) return notify('Оставьте хотя бы один тип конфликта');
+  button.disabled = true;
+  try {
+    const current = modernState.reconciliationOverview || await api('/api/admin');
+    const settings = {
+      ...(current.settings || {}),
+      reconciliation: collectReconciliationSettings(form)
+    };
+    const result = await api('/api/admin', 'POST', { settings });
+    modernState.reconciliationOverview = { ...current, settings: result.settings };
+    fillReconciliationSettings(result.settings?.reconciliation);
+    notify('Настройки примирения сохранены');
+  } catch (error) {
+    notify(error.data?.error || 'Не удалось сохранить настройки примирения');
+  } finally { button.disabled = false; }
 });
 
 document.getElementById('users-filter-form')?.addEventListener('submit', (event) => { event.preventDefault(); loadUsers(1); });

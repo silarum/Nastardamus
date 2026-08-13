@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/api/reconciliation", "destination": "/api/proxy?reconciliation=1" },
     { "source": "/admin", "destination": "/api/admin?control=page" },
     { "source": "/admin/", "destination": "/api/admin?control=page" },
     { "source": "/admin/index.html", "destination": "/api/admin?control=page" },
