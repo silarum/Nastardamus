@@ -74,6 +74,8 @@ test('server separates a paid question from a free correction or dialogue repair
     hasPriorQuestion: true
   });
   assert.equal(classifyDialogueTurn({ message: 'Поменяю ли я работу в этом месяце?', history }).messageKind, 'question');
+  assert.equal(classifyDialogueTurn({ message: 'С чего ты это взял?', history }).intent, 'repair');
+  assert.equal(classifyDialogueTurn({ message: 'Почему ты так думаешь?', history }).billable, false);
   assert.equal(classifyDialogueTurn({ message: 'Нет, я говорил о работе, а не об отношениях.', history }).intent, 'correction');
 });
 

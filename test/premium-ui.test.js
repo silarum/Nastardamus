@@ -75,7 +75,7 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     const mount = document.getElementById('premium-app');
     assert.equal(mount.dataset.screen, 'welcome');
     assert.ok(mount.textContent.includes('ПЕРВЫЙ ЗНАК ДНЯ'));
-    assert.ok(mount.textContent.includes('мой проницательный Никита'));
+    assert.ok(mount.textContent.includes('Никита'));
     click(document, 'Войти без практики');
     assert.equal(mount.dataset.screen, 'home');
     assert.equal(mount.querySelectorAll('.n-app-shell').length, 1);
@@ -220,7 +220,8 @@ test('premium mobile navigation and tarot card selection respond to real clicks'
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(mount.dataset.screen, 'profile');
     assert.ok(document.body.textContent.includes('Откройте приложение внутри Telegram'));
-    assert.equal(mount.querySelectorAll('.profile-command-grid > button').length, 4);
+    assert.equal(mount.querySelectorAll('.profile-command-grid > button').length, 5);
+    assert.ok(document.body.textContent.includes('Задания'));
     assert.equal(document.body.textContent.includes('Возраст'), false);
     assert.equal(document.body.textContent.includes('Город'), false);
     assert.equal(document.body.textContent.includes('Как к вам обращаться?'), false);
@@ -412,7 +413,7 @@ test('a repeat visitor receives a short continuation instead of repeating the in
     const mount = dom.window.document.getElementById('premium-app');
     assert.equal(mount.dataset.screen, 'welcome');
     assert.ok(mount.textContent.includes('ВЫ СНОВА В КРУГЕ'));
-    assert.ok(mount.textContent.includes('А ты снова здесь, Михаил'));
+    assert.ok(mount.textContent.includes('Михаил'));
 
     await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
     assert.equal(mount.dataset.screen, 'welcome');

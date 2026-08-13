@@ -64,6 +64,10 @@ const READING_STORE_ACTIONS = new Set([
     'delete_personal_item',
     'clear_personal_space'
 ]);
+const CAMPAIGN_ACTIONS = new Set([
+    'list_campaigns', 'submit_campaign', 'join_lucky_match', 'get_lucky_match',
+    'play_lucky_match', 'send_lucky_message'
+]);
 const ORACLE_ROOM_ACTIONS = new Set([
     'create_oracle_room',
     'list_oracle_rooms',
@@ -1250,6 +1254,33 @@ export default async function handler(req, res) {
             return sendJson(res, Number(error?.status) || 503, {
                 error: error?.message || 'reading_store_unavailable'
             });
+        }
+    }
+
+    if (CAMPAIGN_ACTIONS.has(action)) {
+        if (!auth.ok) return sendJson(res, 401, { error: 'telegram_auth_required' });
+        try {
+            const rateLimit = await enforceRateLimit(req, {
+                botToken,
+                telegramId,
+                scope: `campaign:${action}`,
+                limit: ['submit_campaign', 'play_lucky_match', 'send_lucky_message'].includes(action) ? 80 : 240,
+                windowSeconds: 60 * 60,
+                persistent: true
+            });
+            setRateLimitHeaders(res, rateLimit);
+            if (!rateLimit.allowed) return sendJson(res, 429, { error: 'rate_limited' });
+            const { action: _ignoredAction, ...payload } = req.body || {};
+            const data = await userStore(botToken, action, { ...payload, telegramId });
+            return sendJson(res, 200, data);
+        } catch (error) {
+            const code = error?.message || 'campaign_unavailable';
+            const status = Number(error?.status) || (
+                code === 'campaign_not_found' ? 404
+                    : ['campaign_not_active', 'campaign_not_started', 'campaign_ended', 'campaign_full'].includes(code) ? 409
+                        : 503
+            );
+            return sendJson(res, status, { error: code });
         }
     }
 

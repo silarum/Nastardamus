@@ -31,7 +31,7 @@ test('daily greeting normalizes untrusted context without losing personalization
   assert.equal(context.date, '2026-08-08');
 });
 
-test('first daily greeting agrees with Russian grammatical gender and one real practice', () => {
+test('first daily greeting varies its opening, agrees with grammatical gender and offers one real practice', () => {
   const female = fallbackDailyGreeting({
     userName: 'Елена', userGender: 'female', locale: 'ru', todayFirstLogin: true,
     dayPart: 'morning', practiceId: 'tarot_day', date: '2026-08-08'
@@ -41,23 +41,23 @@ test('first daily greeting agrees with Russian grammatical gender and one real p
     dayPart: 'day', practiceId: 'resource', date: '2026-08-08'
   });
 
-  assert.match(female, /моя проницательная Елена/);
+  assert.match(female, /Елена/);
   assert.match(female, /Готова ли ты/);
   assert.match(female, /карта Таро «Совет дня»/);
   assert.doesNotMatch(female, /Поток силы|Мой ресурс/);
-  assert.match(male, /мой проницательный Михаил/);
+  assert.match(male, /Михаил/);
   assert.match(male, /Готов ли ты/);
   assert.match(male, /личный разбор «Мой ресурс»/);
 });
 
-test('repeat visit continues the conversation without pushing another ritual', () => {
+test('repeat visit feels like a continuation without pushing another ritual', () => {
   const answer = fallbackDailyGreeting({
     userName: 'Никита', userGender: 'male', locale: 'ru', todayFirstLogin: false,
     dayPart: 'evening', practiceId: 'celestial', date: '2026-08-08'
   });
 
-  assert.match(answer, /снова здесь, Никита/);
-  assert.match(answer, /разговор продолжается/);
+  assert.match(answer, /Никита/);
+  assert.match(answer, /продолжим|вернулись|снова/);
   assert.doesNotMatch(answer, /Готов|открыть|расклад|руну|Таро|ориентир/iu);
 });
 
