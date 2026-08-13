@@ -19,3 +19,20 @@ test('shared bot invitation opens the requested Nastardamus section', () => {
   assert.equal(buttons.some((button) => button.text.includes('Админ')), false);
   assert.equal(buttons.some((button) => button.url?.includes('t.me/')), false);
 });
+
+test('reconciliation invitation opens a voluntary consent screen', () => {
+  const token = 'a'.repeat(32);
+  const reply = buildBotReply({
+    message: {
+      text: `/start reconcile_${token}`,
+      chat: { id: 42 },
+      from: { id: 42 }
+    }
+  }, 'https://nastardamus.vercel.app');
+
+  const button = reply.payload.reply_markup.inline_keyboard[0][0];
+  const url = new URL(button.web_app.url);
+  assert.equal(url.searchParams.get('screen'), 'reconciliation-room');
+  assert.equal(url.searchParams.get('reconciliation'), token);
+  assert.match(reply.payload.text, /добровольно/u);
+});
